@@ -29,7 +29,7 @@ def fetch_cloud_data():
     r_df = pd.DataFrame()
     s_df = pd.DataFrame()
     
-    # 解除 Google 100 行限制參數
+    # 💡 終極優化 1：加上 &tq=limit%2010000 參數，解除 Google 預設只開放下載前 100 行的限制
     route_url = f"https://google.com{sheet_id}/gviz/tq?tqx=out:csv&sheet=route_template&tq=limit%2010000"
     status_url = f"https://google.com{sheet_id}/gviz/tq?tqx=out:csv&sheet=wafer_status&tq=limit%2010000"
     
@@ -38,38 +38,20 @@ def fetch_cloud_data():
         if res_r.status_code == 200 and len(res_r.text).strip() > 0:
             raw_route = pd.read_csv(io.StringIO(res_r.text))
             if not raw_route.empty:
-                raw_route.columns = raw_route.columns.str.strip() # 清除 Google 產生的前後隱形空格
-                
-                # 精準對接您 Google 試算表第一行的真實欄位名稱
-                rename_map = {
-                    "Step": "Step No.", "Step_No": "Step No.", "Step_No.": "Step No.", "Step No.": "Step No.",
-                    "Step module": "Module", "Step_Module": "Module",
-                    "Step description": "Step Description", "Step_Description": "Step Description", 
-                    "Tool name/mask": "Process Tool", "Process_Tool": "Process Tool", "Tool name": "Process Tool",
-                    "Owner": "Stage Owner", "Stage_Owner": "Stage Owner", 
-                    "Wafer ID": "Wafer ID", "Wafer_ID": "Wafer ID", 
-                    "Shuttle Name": "Shuttle Name", "Shuttle_Name": "Shuttle Name"
-                }
-                r_df = raw_route.rename(columns=rename_map)
-                
-                # 💡 強制在第一關將 Step No. 轉為整數型態，避免比對崩潰
-                if "Step No." in r_df.columns:
-                    r_df["Step No."] = pd.to_numeric(r_df["Step No."], errors='coerce').fillna(1).astype(int)
+                # 💡 終極優化 2：直接原汁原味讀取，完全移除所有強制轉型、更名判斷，徹底根除 KeyError 與排序當機
+                r_df = raw_route.copy()
+                r_df.columns = r_df.columns.str.strip() # 僅清除欄位前後的隱形空格
                 
         res_s = requests.get(status_url, headers=headers, timeout=5)
         if res_s.status_code == 200 and len(res_s.text).strip() > 0:
-            raw_status = pd.read_csv(io.StringIO(res_s.text))
-            if not raw_status.empty:
-                s_df = raw_status
-                s_df.columns = ["Wafer_ID", "Shuttle_Name", "Step_No", "Status", "Customer", "Hold_Start_Time", "Timestamp"]
-                s_df["Step_No"] = pd.to_numeric(s_df["Step_No"], errors='coerce').fillna(1).astype(int)
+            s_df = pd.read_csv(io.StringIO(res_s.text))
     except:
         pass
     return r_df, s_df
 
 cloud_route, cloud_status = fetch_cloud_data()
 
-# 只要雲端有成功下載到資料，一律無條件灌入記憶體，解鎖呈現
+# 只要雲端有讀出任何非空列，直接灌入全站記憶體解鎖
 if cloud_route is not None and not cloud_route.empty:
     st.session_state.permanent_route_df = cloud_route
 
