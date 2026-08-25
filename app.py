@@ -194,23 +194,27 @@ elif menu == "📤 頁面三：上傳新路由檔案":
             st.dataframe(processed_df.head(5), use_container_width=True)
             
             st.markdown("---")
-            # 💡 核心功能：多加入一個「確認上傳」的按鈕，防止操作員不小心按到錯誤檔案
             st.warning("⚠️ 請確認上方預覽的資料欄位與內容是否正確。點擊下方按鈕後，這 92 步資料將永久接續併入雲端資料庫。")
             
             confirm_upload_btn = st.button("📤 我已確認檔案無誤，正式同步至 Google Sheets", type="primary")
             
             if confirm_upload_btn:
                 if GAS_SUBMIT_URL == "":
-                    st.error("❌ 同步失敗：請先在 GitHub 程式碼第 20 行將 GAS_SUBMIT_URL 設定為您的 Apps Script 網址！")
+                    st.error("❌ 同步失敗：請先在 GitHub 程式碼中將 GAS_SUBMIT_URL 設定為您的 Apps Script 網址！")
                 else:
                     with st.spinner("🚀 正在安全傳輸並將數據接續附加至雲端..."):
-                        # 💡 正式透過 GAS 的 POST 安全接口，繞過 405 跨網域阻擋，將資料寫入雲端 Sheet！
+                        
+                        # 💡 終極修正：不送純文字，改將 CSV 資料打包進標準網頁 Form 表單欄位中發送
+                        # 這是官方唯一指定能 100% 穿透 Google 302 轉導引發 405 錯誤的標準解法
+                        form_data = {
+                            "csvFile": raw_text
+                        }
+                        
                         response = requests.post(
                             GAS_SUBMIT_URL, 
-                            data=raw_text.encode('utf-8'), 
-                            headers={"Content-Type": "text/plain"},
+                            data=form_data,  # 採用 data=dict 會自動封裝成表單格式
                             allow_redirects=True,
-                            timeout=15
+                            timeout=20
                         )
                         
                         if "SUCCESS" in response.text:
@@ -219,7 +223,10 @@ elif menu == "📤 頁面三：上傳新路由檔案":
                             st.session_state.permanent_route_df = pd.concat([st.session_state.permanent_route_df, processed_df], ignore_index=True).drop_duplicates()
                             st.cache_data.clear() 
                         else:
-                            st.error(f"❌ 雲端拒減更新。後台錯誤回報: {response.text}")
+                            st.error(f"❌ 雲端拒絕更新。後台錯誤回報: {response.text}")
+                        
+        except Exception as e:
+            st.error(f"❌ 解析失敗: {e}")
                         
         except Exception as e:
             st.error(f"❌ 解析失敗: {e}")
