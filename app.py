@@ -9,24 +9,26 @@ st.set_page_config(page_title="Wafer Tracing System", page_icon="🏭", layout="
 st.title("🏭 晶圓生產路由與狀態追蹤系統 (自動同步版)")
 st.markdown("---")
 
-# 💡 請在此處貼上您剛剛在 Google Sheet 產生的 Apps Script 網址
-# 系統將會在您上傳 CSV 時，免金鑰自動透過此接口強制更新試算表！
-GAS_SUBMIT_URL = "https://script.google.com/macros/s/AKfycbwEEZf5MjfIuLjQa_uyAr4olDIKh7k_E2cCAqqC5mfgZR1bekwcxoOnVp8M1SNG32t6/exec"
-
+# 設定全站跨頁面持久型記憶體
 if "search_input_val" not in st.session_state:
     st.session_state.search_input_val = ""
+if "permanent_route_df" not in st.session_state:
+    st.session_state.permanent_route_df = pd.DataFrame(columns=["Wafer ID", "Shuttle Name", "Step No.", "Step Description", "Process Tool", "Stage Owner"])
+
+# 💡 已直接幫您填入您專屬的 Google Apps Script 網頁應用程式網址
+GAS_SUBMIT_URL = "https://script.google.com/macros/s/AKfycbwEEZf5MjfIuLjQa_uyAr4olDIKh7k_E2cCAqqC5mfgZR1bekwcxoOnVp8M1SNG32t6/exec"
 
 # 您的試算表 ID
 sheet_id = "1RQt29KIb4rkVo4A-Y3GouMAezYEBakb1q283d1sgdZU"
 headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
 
-@st.cache_data(ttl=2) # 2秒快取
+@st.cache_data(ttl=2) # 2秒自動更新快取
 def fetch_cloud_data():
     route_url = f"https://google.com{sheet_id}/gviz/tq?tqx=out:csv&sheet=route_template"
     status_url = f"https://google.com{sheet_id}/gviz/tq?tqx=out:csv&sheet=wafer_status"
     
-    r_df = pd.DataFrame(columns=["Wafer ID", "Step No.", "Step Description", "Process Tool", "Stage Owner"])
-    s_df = pd.DataFrame(columns=["Wafer_ID", "Shuttle_Name", "Step_No", "Status", "Customer", "Hold_Start_Time", "Timestamp"])
+    r_df = pd.DataFrame()
+    s_df = pd.DataFrame()
     
     try:
         res_r = requests.get(route_url, headers=headers, timeout=5)
@@ -49,6 +51,10 @@ def fetch_cloud_data():
 
 cloud_route, cloud_status = fetch_cloud_data()
 
+# 如果雲端有成功下載到資料，自動載入記憶體
+if not cloud_route.empty and st.session_state.permanent_route_df.empty:
+    st.session_state.permanent_route_df = cloud_route
+
 # ==================== 2. 側邊欄導覽 ====================
 menu = st.sidebar.radio("🧭 系統功能切換", [
     "📋 頁面一：Full Route & 即時狀態", 
@@ -69,7 +75,11 @@ def calculate_hold_time(start_time_str):
 if menu == "📋 頁面一：Full Route & 即時狀態":
     st.subheader("🔍 (上) 晶圓動態查詢")
     
-    search_wafer = st.text_input("請輸入 晶圓/批次/機台/負責人 關鍵字：", value=st.session_state.search_input_val).strip()
+    search_wafer = st.text_input(
+        "請輸入 晶圓/批次/機台/負責人 關鍵字 (支援模糊搜尋)：", 
+        value=st.session_state.search_input_val,
+        placeholder="例如: LOT4-11F0"
+    ).strip()
     st.session_state.search_input_val = search_wafer
 
     current_step, shuttle_name, status_val, customer_val, hold_start = 1, "T18-C14A", "INPR", "蔡作敏/張振豪團隊", ""
@@ -87,10 +97,11 @@ if menu == "📋 頁面一：Full Route & 即時狀態":
     st.markdown("---")
     st.subheader("🛤️ (中) 完整製程路由監控 (Full Route)")
     
-    if not cloud_route.empty:
-        full_route_df = cloud_route.copy()
+    route_df = st.session_state.permanent_route_df
+    
+    if not route_df.empty:
+        full_route_df = route_df.copy()
         
-        # 💡 修正 BUG：如果第一欄本來就叫 Wafer ID，就絕對不要覆寫它，維持檔案原汁原味的資料
         if "Wafer ID" not in full_route_df.columns:
             full_route_df["Wafer ID"] = "LOT4-11F0"
         if "Shuttle Name" not in full_route_df.columns:
@@ -100,6 +111,7 @@ if menu == "📋 頁面一：Full Route & 即時狀態":
         display_cols = [col for col in available_cols if col in full_route_df.columns]
         full_route_df = full_route_df[display_cols].sort_values("Step No.")
         
+        # 模糊搜尋篩選 (打字完全不影響結構)
         if search_wafer:
             mask = full_route_df.astype(str).apply(lambda x: x.str.contains(search_wafer, case=False)).any(axis=1)
             filtered_route_df = full_route_df[mask]
@@ -115,7 +127,7 @@ if menu == "📋 頁面一：Full Route & 即時狀態":
             
         st.dataframe(filtered_route_df.style.apply(highlight_current_step, axis=1), use_container_width=True, height=450)
     else:
-        st.warning("⚠️ 雲端目前的 route_template 工作表內尚無路由範本資料。")
+        st.warning("⚠️ 目前雲端試算表尚無資料。請先前往『📤 頁面三：上傳新路由檔案』將您的 92 步 CSV 導入，資料會自動同步覆寫至 Google Sheet，且本頁面會立刻正常顯示表格！")
 
     st.markdown("---")
     st.subheader("📊 (下) 當前即時狀態指標")
@@ -140,29 +152,28 @@ elif menu == "📜 頁面二：Wafer History":
 
 # ==================== 📤 頁面三：上傳新路由檔案 ====================
 elif menu == "📤 頁面三：上傳新路由檔案":
-    st.subheader("📤 導入晶圓生產路由 CSV 檔案至雲端 (免金鑰硬核更新)")
+    st.subheader("📤 導入晶圓生產路由 CSV 檔案")
     uploaded_file = st.file_uploader("請選擇您的晶圓流程 CSV 檔案 (.csv)", type=["csv"])
     
     if uploaded_file is not None:
         try:
-            # 讀取上傳資料
             raw_text = uploaded_file.getvalue().decode("utf-8")
             raw_df = pd.read_csv(io.StringIO(raw_text))
             
-            st.write("📋 準備同步至 Google Sheets 的檔案內容預覽：")
-            st.dataframe(raw_df.head(5), use_container_width=True)
+            rename_map = {"Step": "Step No.", "Step description": "Step Description", "Tool name/mask": "Process Tool", "Owner": "Stage Owner"}
+            processed = raw_df.rename(columns=rename_map)
             
-            # 💡 核心修改：利用 requests 將整個 CSV 文字丟給您的 Google Apps Script 後台！
-            if GAS_SUBMIT_URL == "YOUR_GAS_WEB_APP_URL_HERE":
-                st.error("❌ 請先在程式碼第 14 行填入您的 Google Apps Script 網頁應用程式網址！")
-            else:
-                with st.spinner("🚀 正在繞過資安封鎖，實時覆寫更新 Google Sheets 雲端資料庫..."):
-                    response = requests.post(GAS_SUBMIT_URL, data=raw_text.encode('utf-8'), headers={"Content-Type": "text/plain"})
-                    
-                    if response.text == "SUCCESS":
-                        st.success("🎉 自動更新成功！92 步製程數據已成功同步覆寫至 Google Sheet 中！")
-                        st.cache_data.clear() # 清除快取讓第一頁立刻拿到最新資料
-                    else:
-                        st.error(f"❌ 雲端更新拒絕。錯誤回報: {response.text}")
+            st.session_state.permanent_route_df = processed
+            st.write("📋 準備發送更新的檔案內容：")
+            st.dataframe(processed.head(5), use_container_width=True)
+            
+            with st.spinner("🚀 正在安全同步覆寫至 Google Sheets 雲端資料庫..."):
+                # 將資料透過 POST 送出
+                response = requests.post(GAS_SUBMIT_URL, data=raw_text.encode('utf-8'), headers={"Content-Type": "text/plain"})
+                if "SUCCESS" in response.text:
+                    st.success("🎉 自動更新成功！92 步製程數據已成功透過安全通道同步寫入 Google Sheet 試算表中！")
+                    st.cache_data.clear()
+                else:
+                    st.error(f"❌ 雲端拒絕更新。請確認 Apps Script 已點擊管理部署並發布。後台回報: {response.text}")
         except Exception as e:
             st.error(f"❌ 解析失敗: {e}")
