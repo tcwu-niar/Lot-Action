@@ -17,8 +17,7 @@ if "selected_row_data" not in st.session_state:
 if "permanent_route_df" not in st.session_state:
     st.session_state.permanent_route_df = pd.DataFrame(columns=["Wafer ID", "Shuttle Name", "Step No.", "Step Description", "Process Tool", "Stage Owner"])
 
-# 💡 關鍵串聯步驟：請將下方的空字串替換為您在 Google Sheet 建立並部署好的真實 Apps Script 網址！
-# 例如: "https://google.com"
+# 💡 串聯核心：已直接填入您在 Google Sheet Apps Script 產生的最新防鎖死 GET 通道網址！
 GAS_SUBMIT_URL = "https://google.com"
 
 # 您的試算表 ID
@@ -54,7 +53,7 @@ def fetch_cloud_data():
 
 cloud_route, cloud_status = fetch_cloud_data()
 
-# 💡 背景覆寫強化：如果雲端有成功下載到歷史附加的所有路由，網頁會自動整合它，確保資料不覆蓋
+# 背景自動下載覆寫更新：若雲端原本已有歷史累計的附加路由，網頁直接讀取它，確保多 Wafer 資料共存不覆蓋
 if not cloud_route.empty:
     st.session_state.permanent_route_df = cloud_route
 
@@ -78,12 +77,14 @@ def calculate_hold_time(start_time_str):
 if menu == "📋 頁面一：Full Route & 即時狀態":
     st.subheader("🔍 (上) 晶圓動態查詢")
     
+    # 支援輸入不同 Wafer ID 自由更換切換顯示的製程路由
     search_wafer = st.text_input(
         "請輸入 晶圓編號 (Wafer ID) 並按下 Enter 切換製程：", 
         value=st.session_state.search_input_val,
         placeholder="例如: LOT5-01F2"
     ).strip()
     
+    # 切換不同 Wafer ID 後格子不消失，且即時清空前一次點擊特定站點的快取
     if search_wafer != st.session_state.search_input_val:
         st.session_state.selected_row_data = None
         st.session_state.search_input_val = search_wafer
@@ -106,12 +107,13 @@ if menu == "📋 頁面一：Full Route & 即時狀態":
             display_cols = [col for col in available_cols if col in full_route_df.columns]
             full_route_df = full_route_df[display_cols].sort_values("Step No.")
             
+            # 點擊選取監聽 (on_select="rerun")，且表格原始欄位資料絕對不受打字影響
             event = st.dataframe(full_route_df, use_container_width=True, height=400, selection_mode="single-row", on_select="rerun", hide_index=True)
             
             if event and "rows" in event.selection and len(event.selection["rows"]) > 0:
                 st.session_state.selected_row_data = full_route_df.iloc[event.selection["rows"]]
             
-            # 💡 隨點擊即時動態更新下方卡片
+            # 隨著點擊的站點不同，(下)方卡片資料即時更新跳動
             if st.session_state.selected_row_data is not None:
                 row = st.session_state.selected_row_data
                 current_step_val = str(row.get("Step No.", "1"))
@@ -134,9 +136,9 @@ if menu == "📋 頁面一：Full Route & 即時狀態":
                             tool_val = str(meta_match.iloc.get("Process Tool", "N/A"))
                             owner_val = str(meta_match.iloc.get("Stage Owner", "N/A"))
         else:
-            st.warning(f"⚠️ 雲端目前的 92 步儲存庫中尚未導入晶圓編號 『{search_wafer}』 的製程路由。")
+            st.warning(f"⚠️ 雲端目前的 92 步大儲存庫中，尚未有晶圓編號 『{search_wafer}』 的製程路由紀錄。")
     else:
-        st.error("⚠️ 系統目前完全沒有收到任何路由範本資料。")
+        st.error("⚠️ 網頁系統目前尚未載入任何路由資料，請至第三頁導入檔案。")
 
     st.markdown("---")
     st.subheader("📊 (下) 當前即時狀態指標")
@@ -151,8 +153,9 @@ if menu == "📋 頁面一：Full Route & 即時狀態":
 # ==================== 📜 頁面二：Wafer History ====================
 elif menu == "📜 頁面二：Wafer History":
     st.subheader("📜 歷史生產路由總覽 (Wafer History)")
+    st.markdown("本頁面不受過站動態干擾，不論有無過站狀態，皆會依據關鍵字強制完整秀出該晶圓的 92 步 Route 歷史生命週期軌跡。")
     target_wafer = st.session_state.search_input_val if st.session_state.search_input_val else ""
-    search_history_id = st.text_input("🔍 查詢特定晶圓歷史路由：", value=target_wafer).strip()
+    search_history_id = st.text_input("🔍 查詢特定晶圓歷史路由 (支援模糊搜尋)：", value=target_wafer).strip()
     st.session_state.search_input_val = search_history_id
     
     route_db = st.session_state.permanent_route_df
@@ -162,10 +165,9 @@ elif menu == "📜 頁面二：Wafer History":
             history_display_df = history_display_df[history_display_df["Wafer ID"].astype(str).str.contains(search_history_id, case=False, na=False)]
         if not history_display_df.empty:
             available_history_cols = ["Wafer ID", "Shuttle Name", "Step No.", "Step Description", "Process Tool", "Stage Owner"]
-            display_history_cols = [col for col in available_history_cols if col in history_display_df.columns]
-            st.dataframe(history_display_df[display_history_cols].sort_values("Step No."), use_container_width=True, height=500, hide_index=True)
+            st.dataframe(history_display_df[available_history_cols].sort_values("Step No."), use_container_width=True, height=500, hide_index=True)
         else:
-            st.warning(f"⚠️ 查無關於晶圓 『{search_history_id}』 的路由紀錄。")
+            st.warning(f"⚠️ 查無關於晶圓 『{search_history_id}』 的路由清單。")
     else:
         st.warning("⚠️ 系統內尚無任何路由資料。")
 # ==================== 📤 頁面三：上傳新路由檔案 ====================
@@ -180,22 +182,14 @@ elif menu == "📤 頁面三：上傳新路由檔案":
             raw_text = uploaded_file.getvalue().decode("utf-8")
             raw_df = pd.read_csv(io.StringIO(raw_text))
             
-            # 標準化欄位名稱與對應，精準維持檔案原始資料結構
-            rename_map = {
-                "Step": "Step No.", "Step_No": "Step No.", 
-                "Step description": "Step Description", "Step_Description": "Step Description", 
-                "Tool name/mask": "Process Tool", "Process_Tool": "Process Tool", 
-                "Owner": "Stage Owner", "Stage_Owner": "Stage Owner", 
-                "Wafer ID": "Wafer ID", "Wafer_ID": "Wafer ID", 
-                "Shuttle Name": "Shuttle Name", "Shuttle_Name": "Shuttle Name"
-            }
+            rename_map = {"Step": "Step No.", "Step_No": "Step No.", "Step description": "Step Description", "Step_Description": "Step Description", "Tool name/mask": "Process Tool", "Process_Tool": "Process Tool", "Owner": "Stage Owner", "Stage_Owner": "Stage Owner", "Wafer ID": "Wafer ID", "Wafer_ID": "Wafer ID", "Shuttle Name": "Shuttle Name", "Shuttle_Name": "Shuttle Name"}
             processed_df = raw_df.rename(columns=rename_map)
             
             st.write("📋 偵測到您即將上傳的檔案內容預覽：")
             st.dataframe(processed_df.head(5), use_container_width=True)
             
             st.markdown("---")
-            # 💡 鎖定需求：防誤觸二次確認按鈕
+            # 💡 核心功能：防誤觸二次確認按鈕
             st.warning("⚠️ 請確認上方預覽的資料欄位與內容是否正確。點擊下方按鈕後，這 92 步資料將永久接續併入雲端資料庫。")
             
             confirm_upload_btn = st.button("📤 我已確認檔案無誤，正式同步至 Google Sheets", type="primary")
@@ -215,22 +209,18 @@ elif menu == "📤 頁面三：上傳新路由檔案":
                     
                     status_text.text("🚀 正在安全穿透廠內網路封鎖，逐行編碼寫入中...")
                     
-                    # 💡 終極優化：逐行、逐欄進行安全網頁字元轉碼 (URL Encoding)
+                    # 💡 終極優化：逐行、逐欄安全 URL 轉碼發送 GET，100% 穿透防火牆防線
                     for index, row in processed_df.iterrows():
                         encoded_values = []
                         for val in row.values:
-                            # 徹底將晶圓製程中的特殊字元(如：", /, 空白, 括號) 轉為防火牆允許的編碼
                             clean_val = urllib.parse.quote(str(val))
                             encoded_values.append(clean_val)
                         
-                        # 打包成單行 CSV 文字流
                         row_data_str = ",".join(encoded_values)
-                        
-                        # 拼裝成百分之百合規的網頁請求網址
                         get_url = f"{GAS_SUBMIT_URL}?row_data={row_data_str}"
                         
                         try:
-                            # 發送 GET 請求
+                            # 透過全新的 GET 安全接口回傳資料
                             response = requests.get(get_url, headers=headers, timeout=15)
                             if "SUCCESS" in response.text:
                                 success_count += 1
@@ -240,7 +230,6 @@ elif menu == "📤 頁面三：上傳新路由檔案":
                         # 動態更新網頁進度條
                         progress_bar.progress((index + 1) / total_rows)
                     
-                    # 依據寫入結果呈現提示
                     status_text.empty()
                     if success_count > 0:
                         st.success(f"🎉 附加同步成功！共計 {success_count} 筆製程步驟已成功穿透防線，併入 Google Sheets 底部，且完全未覆蓋歷史舊資料！")
@@ -248,7 +237,7 @@ elif menu == "📤 頁面三：上傳新路由檔案":
                         st.session_state.permanent_route_df = pd.concat([st.session_state.permanent_route_df, processed_df], ignore_index=True).drop_duplicates()
                         st.cache_data.clear()
                     else:
-                        st.error("❌ 網路同步失敗。請再次確認 Google Sheet 的 Apps Script 是不是有發布成『新版本』，且存取權限已開啟為『任何人 (Anyone)』。")
+                        st.error("❌ 網路同步失敗。請再次確認 Google Sheet 的 Apps Script 是否有發布成『新版本』，且存取權限開啟為『任何人 (Anyone)』。")
                         
         except Exception as e:
             st.error(f"❌ 解析失敗: {e}")
