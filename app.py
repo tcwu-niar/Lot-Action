@@ -191,14 +191,21 @@ elif menu == "📤 頁面三：上傳新路由檔案":
             st.dataframe(raw_df.head(5), use_container_width=True)
             
             st.markdown("---")
-            # 💡 核心功能：加入「確認上傳」的按鈕，防止操作員不小心傳錯檔案
             st.warning("⚠️ 請確認上方預覽的資料欄位與內容是否正確。點擊下方按鈕後，這 92 步資料將永久接續併入雲端資料庫。")
             
             confirm_upload_btn = st.button("📤 我已確認檔案無誤，正式同步至 Google Sheets", type="primary")
             
             if confirm_upload_btn:
                 with st.spinner("🚀 正在安全傳輸並將數據接續附加至雲端..."):
-                    response = requests.post(GAS_SUBMIT_URL, data=raw_text.encode('utf-8'), headers={"Content-Type": "text/plain"})
+                    # 💡 核心修正：加入 allow_redirects=True，徹底解決 Google 轉導時的 405 Method Not Allowed 報錯
+                    response = requests.post(
+                        GAS_SUBMIT_URL, 
+                        data=raw_text.encode('utf-8'), 
+                        headers={"Content-Type": "text/plain"},
+                        allow_redirects=True,
+                        timeout=15
+                    )
+                    
                     if "SUCCESS" in response.text:
                         st.success("🎉 附加同步成功！新晶圓的 92 步流程已成功併入 Google Sheets 底部，且未覆蓋任何歷史舊資料！")
                         st.cache_data.clear() # 強制清空網頁快取以載入新資料
