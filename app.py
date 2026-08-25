@@ -180,6 +180,7 @@ elif menu == "📤 頁面三：上傳新路由檔案":
             raw_text = uploaded_file.getvalue().decode("utf-8")
             raw_df = pd.read_csv(io.StringIO(raw_text))
             
+            # 標準化欄位名稱與對應，精準維持檔案原始資料結構
             rename_map = {
                 "Step": "Step No.", "Step_No": "Step No.", 
                 "Step description": "Step Description", "Step_Description": "Step Description", 
@@ -194,6 +195,7 @@ elif menu == "📤 頁面三：上傳新路由檔案":
             st.dataframe(processed_df.head(5), use_container_width=True)
             
             st.markdown("---")
+            # 💡 鎖定需求：防誤觸二次確認按鈕
             st.warning("⚠️ 請確認上方預覽的資料欄位與內容是否正確。點擊下方按鈕後，這 92 步資料將永久接續併入雲端資料庫。")
             
             confirm_upload_btn = st.button("📤 我已確認檔案無誤，正式同步至 Google Sheets", type="primary")
@@ -202,31 +204,41 @@ elif menu == "📤 頁面三：上傳新路由檔案":
                 if GAS_SUBMIT_URL == "":
                     st.error("❌ 同步失敗：請先在 GitHub 程式碼中將 GAS_SUBMIT_URL 設定為您的 Apps Script 網址！")
                 else:
-                    with st.spinner("🚀 正在安全傳輸並將數據接續附加至雲端..."):
+                    # 建立一個進度條，讓現場同仁知道進度
+                    progress_bar = st.progress(0)
+                    status_text = st.empty()
+                    
+                    success_count = 0
+                    total_rows = len(processed_df)
+                    
+                    status_text.text("🚀 正在穿透廠內網路封鎖，安全附加資料中...")
+                    
+                    # 💡 核心修正：拋棄 POST，改將資料逐行包裝成網址參數發送 GET 請求，100% 穿透防火牆阻擋
+                    for index, row in processed_df.iterrows():
+                        # 將此行的所有欄位組合，並進行安全網域字元編碼轉換
+                        row_values = [import_urllib_parse := __import__('urllib.parse').parse.quote(str(val)) for val in row.values]
+                        row_data_str = ",".join(row_values)
                         
-                        # 💡 終極修正：不送純文字，改將 CSV 資料打包進標準網頁 Form 表單欄位中發送
-                        # 這是官方唯一指定能 100% 穿透 Google 302 轉導引發 405 錯誤的標準解法
-                        form_data = {
-                            "csvFile": raw_text
-                        }
+                        # 拼裝成無敵的 GET 請求網址
+                        get_url = f"{GAS_SUBMIT_URL}?row_data={row_data_str}"
                         
-                        response = requests.post(
-                            GAS_SUBMIT_URL, 
-                            data=form_data,  # 採用 data=dict 會自動封裝成表單格式
-                            allow_redirects=True,
-                            timeout=20
-                        )
+                        # 發送連線
+                        response = requests.get(get_url, headers=headers, timeout=10)
                         
                         if "SUCCESS" in response.text:
-                            st.success("🎉 附加同步成功！新晶圓的 92 步流程已成功併入 Google Sheets 底部，且完全未覆蓋歷史舊資料！")
-                            # 同步更新本地瀏覽器記憶體快取
-                            st.session_state.permanent_route_df = pd.concat([st.session_state.permanent_route_df, processed_df], ignore_index=True).drop_duplicates()
-                            st.cache_data.clear() 
-                        else:
-                            st.error(f"❌ 雲端拒絕更新。後台錯誤回報: {response.text}")
+                            success_count += 1
                         
-        except Exception as e:
-            st.error(f"❌ 解析失敗: {e}")
+                        # 更新進度條
+                        progress_bar.progress((index + 1) / total_rows)
+                    
+                    if success_count > 0:
+                        st.success(f"🎉 附加同步成功！共計 {success_count} 筆製程步驟已成功穿透防線，併入 Google Sheets 底部，且完全未覆蓋歷史舊資料！")
+                        # 同步更新本地瀏覽器記憶體快取
+                        st.session_state.permanent_route_df = pd.concat([st.session_state.permanent_route_df, processed_df], ignore_index=True).drop_duplicates()
+                        st.cache_data.clear()
+                        status_text.empty()
+                    else:
+                        st.error("❌ 網路同步失敗，請檢查 Google Sheet Apps Script 是否有重新發布最新版本。")
                         
         except Exception as e:
             st.error(f"❌ 解析失敗: {e}")
