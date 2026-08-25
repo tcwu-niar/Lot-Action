@@ -15,56 +15,47 @@ if "search_input_val" not in st.session_state:
 if "selected_row_data" not in st.session_state:
     st.session_state.selected_row_data = None
 if "permanent_route_df" not in st.session_state:
-    st.session_state.permanent_route_df = pd.DataFrame(columns=["Wafer ID", "Shuttle Name", "Step No.", "Step Description", "Process Tool", "Stage Owner"])
+    st.session_state.permanent_route_df = pd.DataFrame()
 
-# 💡 核心串聯：已直接替換為您全新的防擋安全 Apps Script 網址
-GAS_SUBMIT_URL = "https://script.google.com/macros/s/AKfycbxSpHeSlbCyMgn0cH60fh62eM_nYoaCwkSCZF1UJMTeC-3z1wQJ1RVLXge1kvzadmKM/exec"
+# 💡 您的 Google Apps Script 雙向安全通道網址
+GAS_SUBMIT_URL = "https://google.com"
 
-# 💡 安全隔離：精準鎖定您專屬的 Lot-Action 試算表 ID
+# 💡 鎖定您最當初建立的專屬 Lot-Action 試算表 ID
 sheet_id = "1RQt29KIb4rkVo4A-Y3GouMAezYEBakb1q283d1sgdZU"
 headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
 
 @st.cache_data(ttl=1) # 1秒動態刷新
 def fetch_cloud_data():
-    r_df = pd.DataFrame(columns=["Wafer ID", "Shuttle Name", "Step No.", "Step Description", "Process Tool", "Stage Owner"])
-    s_df = pd.DataFrame(columns=["Wafer_ID", "Shuttle_Name", "Step_No", "Status", "Customer", "Hold_Start_Time", "Timestamp"])
+    r_df = pd.DataFrame()
+    s_df = pd.DataFrame()
     
-    # 標準網域對接，徹底清除 405 與 404
     route_url = f"https://google.com{sheet_id}/gviz/tq?tqx=out:csv&sheet=route_template"
     status_url = f"https://google.com{sheet_id}/gviz/tq?tqx=out:csv&sheet=wafer_status"
     
     try:
-        # 1. 讀取路由表
         res_r = requests.get(route_url, headers=headers, timeout=5)
         if res_r.status_code == 200 and len(res_r.text).strip() > 0:
-            raw_route = pd.read_csv(io.StringIO(res_r.text))
-            if not raw_route.empty:
-                raw_route.columns = raw_route.columns.str.strip() # 清除 Google 產生的前後空格
+            # 💡 終極優化 1：直接讀取原始 CSV 流，無視任何欄位名稱限制
+            r_df = pd.read_csv(io.StringIO(res_r.text))
+            if not r_df.empty:
+                # 清除欄位名稱的前後空白
+                r_df.columns = r_df.columns.str.strip()
+                # 強制更名映射
                 rename_map = {"Step": "Step No.", "Step_No": "Step No.", "Step_No.": "Step No.", "Step description": "Step Description", "Step_Description": "Step Description", "Tool name/mask": "Process Tool", "Process_Tool": "Process Tool", "Owner": "Stage Owner", "Stage_Owner": "Stage Owner", "Wafer ID": "Wafer ID", "Wafer_ID": "Wafer ID", "Shuttle Name": "Shuttle Name", "Shuttle_Name": "Shuttle Name"}
-                r_df = raw_route.rename(columns=rename_map)
-                if "Step No." in r_df.columns:
-                    r_df["Step No."] = pd.to_numeric(r_df["Step No."], errors='coerce').fillna(1).astype(int)
+                r_df = r_df.rename(columns=rename_map)
                 
-        # 2. 讀取過站歷史
         res_s = requests.get(status_url, headers=headers, timeout=5)
         if res_s.status_code == 200 and len(res_s.text).strip() > 0:
-            raw_status = pd.read_csv(io.StringIO(res_s.text))
-            if not raw_status.empty:
-                s_df = raw_status
-                s_df.columns = ["Wafer_ID", "Shuttle_Name", "Step_No", "Status", "Customer", "Hold_Start_Time", "Timestamp"]
-                s_df["Step_No"] = pd.to_numeric(s_df["Step_No"], errors='coerce').fillna(1).astype(int)
+            s_df = pd.read_csv(io.StringIO(res_s.text))
     except:
         pass
     return r_df, s_df
 
 cloud_route, cloud_status = fetch_cloud_data()
 
-# 強制刷新快取
+# 💡 終極優化 2：只要雲端有讀出任何非空資料，一律無條件灌入記憶體，不再進行任何防錯卡關
 if cloud_route is not None and not cloud_route.empty:
     st.session_state.permanent_route_df = cloud_route
-else:
-    if st.session_state.permanent_route_df.empty:
-        st.session_state.permanent_route_df = pd.DataFrame(columns=["Wafer ID", "Shuttle Name", "Step No.", "Step Description", "Process Tool", "Stage Owner"])
 
 # ==================== 2. 側邊欄功能導覽 ====================
 menu = st.sidebar.radio("🧭 系統功能切換", [
@@ -85,6 +76,7 @@ def calculate_hold_time(start_time_str):
 # ==================== 📋 頁面一：Full Route & 即時狀態 ====================
 if menu == "📋 頁面一：Full Route & 即時狀態":
     st.subheader("🔍 (上) 晶圓動態查詢")
+    
     search_wafer = st.text_input("請輸入 晶圓編號 (Wafer ID) 並按下 Enter 切換製程：", value=st.session_state.search_input_val).strip()
     
     if search_wafer != st.session_state.search_input_val:
@@ -94,50 +86,42 @@ if menu == "📋 頁面一：Full Route & 即時狀態":
     current_step_val, status_val, shuttle_val, tool_val, owner_val, hold_start = "1", "INPR", "T18-C14A", "SE 023", "Bill/yd", ""
     route_df = st.session_state.permanent_route_df
     
-    if route_df is not None and not route_df.empty and len(route_df) > 0:
+    # 💡 終極優化 3：只要記憶體內有任何上傳過的資料列，就強制直接解鎖中段表格！
+    if route_df is not None and not route_df.empty:
         full_route_df = route_df.copy()
+        
+        # 自動校正可能遺失的關鍵欄位，防止表格因為搜尋而空白
+        if "Wafer ID" not in full_route_df.columns and len(full_route_df.columns) > 0:
+            full_route_df = full_route_df.rename(columns={full_route_df.columns[0]: "Wafer ID"})
+            
         if search_wafer:
-            full_route_df = full_route_df[full_route_df["Wafer ID"].astype(str).str.contains(search_wafer, case=False, na=False)]
+            # 模糊過濾關鍵字
+            full_route_df = full_route_df[full_route_df.astype(str).apply(lambda x: x.str.contains(search_wafer, case=False)).any(axis=1)]
         
         if not full_route_df.empty:
-            available_cols = ["Wafer ID", "Shuttle Name", "Step No.", "Step Description", "Process Tool", "Stage Owner"]
-            display_cols = [col for col in available_cols if col in full_route_df.columns]
-            full_route_df = full_route_df[display_cols]
-            
+            # 如果有 Step No. 欄位，自動執行型態轉換與排序
             if "Step No." in full_route_df.columns:
+                full_route_df["Step No."] = pd.to_numeric(full_route_df["Step No."], errors='coerce').fillna(1).astype(int)
                 full_route_df = full_route_df.sort_values("Step No.")
+                
+            # 🚀 正式無痛呈現中段 Full Route 大表！
+            event = st.dataframe(full_route_df, use_container_width=True, height=420, selection_mode="single-row", on_select="rerun", hide_index=True)
             
-            # 滑鼠單行選取監聽 (on_select="rerun")
-            event = st.dataframe(full_route_df, use_container_width=True, height=400, selection_mode="single-row", on_select="rerun", hide_index=True)
             if event and "rows" in event.selection and len(event.selection["rows"]) > 0:
                 st.session_state.selected_row_data = full_route_df.iloc[event.selection["rows"]]
             
-            # 隨選取行動態更新卡片
+            # (下)方指標卡片隨著點擊動態同步跳動
             if st.session_state.selected_row_data is not None:
                 row = st.session_state.selected_row_data
-                current_step_val = str(row.get("Step No.", "1"))
-                shuttle_val = str(row.get("Shuttle Name", "T18-C14A"))
+                current_step_val = str(row.values[1]) if len(row.values) > 1 else "1"
+                shuttle_val = str(row.values[-1]) if len(row.values) > 0 else "T18-C14A"
                 tool_val = str(row.get("Process Tool", "N/A"))
                 owner_val = str(row.get("Stage Owner", "N/A"))
                 status_val = "SELECTED"
-            else:
-                if search_wafer and not cloud_status.empty:
-                    exact_match = cloud_status[cloud_status["Wafer_ID"].astype(str) == search_wafer]
-                    if not exact_match.empty:
-                        latest_info = exact_match.sort_values(by="Timestamp").iloc[-1]
-                        current_step_val = str(latest_info["Step_No"])
-                        shuttle_val = latest_info["Shuttle_Name"]
-                        status_val = latest_info["Status"]
-                        hold_start = latest_info["Hold_Start_Time"]
-                        if "Step No." in full_route_df.columns:
-                            meta_match = full_route_df[full_route_df["Step No."].astype(int) == int(current_step_val)]
-                            if not meta_match.empty:
-                                tool_val = str(meta_match.iloc.get("Process Tool", "N/A"))
-                                owner_val = str(meta_match.iloc.get("Stage Owner", "N/A"))
         else:
-            st.warning(f"⚠️ 專屬路由庫中目前查無晶圓編號 『{search_wafer}』 的 92 步資料。")
+            st.warning(f"⚠️ 專屬獨立路由庫中，目前沒有關於關鍵字 『{search_wafer}』 的製程步驟。")
     else:
-        st.info("💡 獨立安全防護啟動中！請前往『📤 頁面三：上傳新路由檔案』引入新製程，數據將安全附加至您獨立的 Lot-Action 底部。")
+        st.info("💡 歡迎回到獨立隔離系統！請前往『📤 頁面三：上傳新路由檔案』引入新製程，數據將安全附加至您獨立的 Lot-Action 底部。")
 
     st.markdown("---")
     st.subheader("📊 (下) 當前即時狀態指標")
@@ -157,19 +141,18 @@ elif menu == "📜 頁面二：Wafer History":
     st.session_state.search_input_val = search_history_id
     
     route_db = st.session_state.permanent_route_df
-    if route_db is not None and not route_db.empty and len(route_db) > 0:
-        history_display_df = route_db.copy()
+    if route_db is not None and not route_db.empty:
+        history_df = route_db.copy()
         if search_history_id:
-            history_display_df = history_display_df[history_display_df["Wafer ID"].astype(str).str.contains(search_history_id, case=False, na=False)]
-        if not history_display_df.empty:
-            available_cols = ["Wafer ID", "Shuttle Name", "Step No.", "Step Description", "Process Tool", "Stage Owner"]
-            st.dataframe(history_display_df[available_cols], use_container_width=True, height=500, hide_index=True)
+            history_df = history_df[history_df.astype(str).apply(lambda x: x.str.contains(search_history_id, case=False)).any(axis=1)]
+        st.dataframe(history_df, use_container_width=True, height=500, hide_index=True)
     else:
         st.warning("⚠️ 系統雲端目前尚無任何路由紀錄。")
+
 # ==================== 📤 頁面三：上傳新路由檔案 ====================
 elif menu == "📤 頁面三：上傳新路由檔案":
     st.subheader("📤 導入晶圓生產路由 CSV 檔案至雲端 (接續附加模式)")
-    st.markdown("💡 **隔離機制**：此處上傳的資料只會附加寫入您獨立的 `Lot-Action` 試算表底部，與其他系統（如 SPC_Live_DB）完全隔離！")
+    st.markdown("💡 **隔離機制**：此處上傳的資料只會附加寫入您獨立的 `Lot-Action` 試算表底部，與其他系統完全隔離！")
     
     uploaded_file = st.file_uploader("請選擇您的晶圓流程 CSV 檔案 (.csv)", type=["csv"])
     if uploaded_file is not None:
@@ -177,31 +160,19 @@ elif menu == "📤 頁面三：上傳新路由檔案":
             raw_text = uploaded_file.getvalue().decode("utf-8")
             raw_df = pd.read_csv(io.StringIO(raw_text))
             
-            # 欄位標準化對齊
-            rename_map = {"Step": "Step No.", "Step_No": "Step No.", "Step_No.": "Step No.", "Step description": "Step Description", "Step_Description": "Step Description", "Tool name/mask": "Process Tool", "Process_Tool": "Process Tool", "Tool name": "Process Tool", "Owner": "Stage Owner", "Stage_Owner": "Stage Owner", "Wafer ID": "Wafer ID", "Wafer_ID": "Wafer ID", "Shuttle Name": "Shuttle Name", "Shuttle_Name": "Shuttle Name"}
-            processed_df = raw_df.rename(columns=rename_map)
-            
             st.write("📋 偵測到您即將上傳的檔案內容預覽：")
-            st.dataframe(processed_df.head(5), use_container_width=True)
+            st.dataframe(raw_df.head(5), use_container_width=True)
             
             st.markdown("---")
-            # 💡 核心需求：防誤觸二次確認按鈕
             st.warning("⚠️ 確認檔案正確後點擊下方按鈕，這 92 步資料將接續附加併入您獨立的 Lot-Action 雲端資料庫。")
             confirm_upload_btn = st.button("📤 我已確認檔案無誤，正式同步至 Google Sheets", type="primary")
             
             if confirm_upload_btn:
                 with st.spinner("🚀 正在安全附加資料至專屬獨立試算表中..."):
-                    # 💡 終極解鎖：利用 Text 純文字串流直接 POST 發送，100% 穿透 Google 組織型重導向的 405 封鎖
-                    response = requests.post(
-                        GAS_SUBMIT_URL, 
-                        data=raw_text.encode('utf-8'), 
-                        headers={"Content-Type": "text/plain"},
-                        timeout=15
-                    )
-                    
+                    response = requests.post(GAS_SUBMIT_URL, data=raw_text.encode('utf-8'), headers={"Content-Type": "text/plain"}, timeout=15)
                     if "SUCCESS" in response.text:
                         st.success("🎉 附加同步成功！數據已安全併入專屬 Lot-Action 試算表底部！")
-                        st.cache_data.clear() # 強制清空網頁唯讀快取以加載雲端最新附加數據
+                        st.cache_data.clear() 
                     else:
                         st.error(f"❌ 雲端拒絕更新。後台錯誤回報: {response.text}")
         except Exception as e:
