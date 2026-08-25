@@ -8,14 +8,12 @@ st.title("🏭 晶圓生產路由與狀態追蹤系統")
 st.markdown("---")
 
 # ==================== 2. 自動串接您的 Google Sheet 公開網址 ====================
-# 已直接填入您的試算表 ID
-PUBLIC_GSHEET_BASE_URL = "https://docs.google.com/spreadsheets/d/1RQt29KIb4rkVo4A-Y3GouMAezYEBakb1q283d1sgdZU"
+PUBLIC_GSHEET_BASE_URL = "https://google.com"
 
-# 利用 Pandas 直接將公開試算表轉為 CSV 格式讀取
 ROUTE_URL = f"{PUBLIC_GSHEET_BASE_URL}/gviz/tq?tqx=out:csv&sheet=route_template"
 STATUS_URL = f"{PUBLIC_GSHEET_BASE_URL}/gviz/tq?tqx=out:csv&sheet=wafer_status"
 
-@st.cache_data(ttl=2) # 2秒快取，兼顧更新即時性與讀取效能
+@st.cache_data(ttl=2) # 2秒快取
 def load_data():
     try:
         route_df = pd.read_csv(ROUTE_URL)
@@ -33,8 +31,12 @@ def load_data():
 
 route_template, wafer_status = load_data()
 
-# ==================== 3. 側邊欄功能導覽 ====================
-menu = st.sidebar.radio("🧭 系統功能切換", ["📋 頁面一：Full Route & 即時狀態", "📜 頁面二：Wafer History"])
+# ==================== 3. 側邊欄功能導覽（新增第三頁） ====================
+menu = st.sidebar.radio("🧭 系統功能切換", [
+    "📋 頁面一：Full Route & 即時狀態", 
+    "📜 頁面二：Wafer History",
+    "📤 頁面三：上傳新路由檔案"
+])
 
 # 輔助功能：動態秒級計算 Hold Time (hh:mm:ss)
 def calculate_hold_time(start_time_str):
@@ -57,12 +59,9 @@ def calculate_hold_time(start_time_str):
 # ==================== 📋 頁面一：Full Route & 即時狀態 ====================
 if menu == "📋 頁面一：Full Route & 即時狀態":
     st.subheader("🔍 (上) 晶圓動態查詢")
-    
-    # 建立輸入 Wafer ID 的空格
-    search_wafer = st.text_input("請輸入 晶圓編號 (Wafer ID) 並按下 Enter：", placeholder="例如: W01").strip()
+    search_wafer = st.text_input("請輸入 晶圓編號 (Wafer ID) 並按下 Enter：", placeholder="例如: LOT4-11F0").strip()
     
     if search_wafer:
-        # 撈取該 Wafer 在狀態資料庫中的最新一筆進度
         current_wafer_info = wafer_status[wafer_status["Wafer_ID"] == search_wafer] if not wafer_status.empty else pd.DataFrame()
         
         if not current_wafer_info.empty:
@@ -73,11 +72,10 @@ if menu == "📋 頁面一：Full Route & 即時狀態":
             customer_val = latest_info["Customer"] if "Customer" in latest_info else "Unknown"
             hold_start = latest_info["Hold_Start_Time"] if "Hold_Start_Time" in latest_info else ""
         else:
-            # 查無紀錄時的全新晶圓預設初始狀態
             current_step = 1
-            shuttle_name = "New_Shuttle"
+            shuttle_name = "T18-C14A"
             status_val = "INPR"
-            customer_val = "New_Customer"
+            customer_val = "蔡作敏/張振豪團隊"
             hold_start = ""
 
         # ---- (中) 呈現 Full Route 項目 ----
@@ -89,55 +87,103 @@ if menu == "📋 頁面一：Full Route & 即時狀態":
             full_route_df["Wafer_ID"] = search_wafer
             full_route_df["Shuttle_Name"] = shuttle_name
             
-            # 配合使用者要求的欄位結構與排版順序
-            available_cols = ["Wafer_ID", "Shuttle_Name", "Step_No", "Step_Description", "Process_Tool", "Stage_Owner"]
-            display_cols = [col for col in available_cols if col in full_route_df.columns]
-            full_route_df = full_route_df[display_cols].sort_values("Step_No")
+            # 對應您上傳的真實 CSV 檔案欄位
+            full_route_df = full_route_df.rename(columns={
+                "Step_No": "Step No.",
+                "Step_Description": "Step Description",
+                "Process_Tool": "Process Tool",
+                "Stage_Owner": "Stage Owner"
+            })
             
-            # CSS 樣式：高亮標示當前製程站別 (淡粉色背景)
+            available_cols = ["Wafer_ID", "Shuttle_Name", "Step No.", "Step Description", "Process Tool", "Stage Owner"]
+            display_cols = [col for col in available_cols if col in full_route_df.columns]
+            full_route_df = full_route_df[display_cols].sort_values("Step No.")
+            
             def highlight_current_step(row):
-                if "Step_No" in row and row["Step_No"] == current_step:
+                if "Step No." in row and row["Step No."] == current_step:
                     return ['background-color: #ffe6e6; font-weight: bold; color: black'] * len(row)
-                elif "Step_No" in row and row["Step_No"] < current_step:
+                elif "Step No." in row and row["Step No."] < current_step:
                     return ['background-color: #f2f2f2; color: #888888'] * len(row)
                 return [''] * len(row)
                 
-            st.dataframe(full_route_df.style.apply(highlight_current_step, axis=1), use_container_width=True, height=400)
+            st.dataframe(full_route_df.style.apply(highlight_current_step, axis=1), use_container_width=True, height=450)
         else:
-            st.error("⚠️ 無法載入路由範本，請確認您的 Google Sheet 中 'route_template' 工作表第一行是否有對應欄位資料。")
+            st.error("⚠️ 無法載入路由範本，請至『頁面三』上傳製程路由 CSV 檔案。")
 
         # ---- (下) 呈現 Status 區塊 ----
         st.markdown("---")
         st.subheader("📊 (下) 當前即時狀態指標")
-        
-        # 即時計算 Hold Time
         computed_hold_time = calculate_hold_time(hold_start) if status_val == "Hold" else "00:00:00"
         
-        # 使用精美指標卡片呈現資訊
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("當前狀態 (Status)", status_val)
         c2.metric("客戶名稱 (Customer)", customer_val)
         c3.metric("雪梭名稱 (Shuttle Name)", shuttle_name)
         c4.metric("暫停計時 (Hold Time)", computed_hold_time)
         
-        st.info("💡 系統運作方式：當前網頁已與您的 Google Sheet 自動同步。若要變更過站進度或 Hold 晶圓，請直接在試算表的 'wafer_status' 頁籤下方填入新資料，網頁會在 2 秒內動態重新載入呈現！")
+        st.info("💡 提示：若要更新目前晶圓過站，請直接在試算表的 'wafer_status' 表最下方填入最新站別紀錄。")
     else:
         st.info("💡 請在上方空格中輸入 Wafer ID，系統將自動調取 92 步全路由與實時狀態看板。")
 
 # ==================== 📜 頁面二：Wafer History ====================
 elif menu == "📜 頁面二：Wafer History":
     st.subheader("📜 歷史生產變更紀錄總覽 (Wafer History)")
-    st.markdown("此頁面完整同步 Google 表單中 'wafer_status' 的所有過站事件軌跡。")
-    
     if not wafer_status.empty:
-        # 按時間戳記由新到舊排序
         display_history = wafer_status.copy()
         if "Timestamp" in display_history.columns:
             display_history = display_history.sort_values(by="Timestamp", ascending=False)
             
-        search_query = st.text_input("🔍 輸入關鍵字篩選歷史清單 (如特定 Wafer ID、Status 或 Customer)：")
+        search_query = st.text_input("🔍 輸入關鍵字篩選歷史清單 (如特定 Wafer ID、Status)：")
         if search_query:
             display_history = display_history[display_history.astype(str).apply(lambda x: x.str.contains(search_query, case=False)).any(axis=1)]
         st.dataframe(display_history, use_container_width=True)
     else:
         st.warning("🗄️ 目前雲端試算表中尚無任何歷史生產紀錄資料。")
+
+# ==================== 📤 頁面三：上傳新路由檔案 (NEW) ====================
+elif menu == "📤 頁面三：上傳新路由檔案":
+    st.subheader("📤 導入晶圓生產路由 CSV 檔案")
+    st.markdown("您可以在此上傳包含 92 步流程的廠內原始 CSV 報表。系統會自動過濾並對應欄位後，提示您更新至 Google Sheets 中。")
+    
+    # 建立上傳檔案小工具
+    uploaded_file = st.file_uploader("請選擇您的晶圓流程 CSV 檔案 (.csv)", type=["csv"])
+    
+    if uploaded_file is not None:
+        try:
+            # 讀取使用者上傳的檔案
+            raw_df = pd.read_csv(uploaded_file)
+            st.success("🎉 檔案上傳讀取成功！")
+            
+            st.write("📋 原始上傳資料預覽：")
+            st.dataframe(raw_df.head(5), use_container_width=True)
+            
+            # 欄位自動對應轉換
+            # 將上傳的「Step」對應為系統的「Step_No」
+            # 將「Step description」對應為「Step_Description」
+            # 將「Tool name/mask」對應為「Process_Tool」
+            # 將「Owner」對應為「Stage_Owner」
+            rename_dict = {
+                "Step": "Step_No",
+                "Step description": "Step_Description",
+                "Tool name/mask": "Process_Tool",
+                "Owner": "Stage_Owner"
+            }
+            
+            # 檢查必要欄位是否存在
+            missing_cols = [key for key in rename_dict.keys() if key not in raw_df.columns]
+            
+            if len(missing_cols) == 0:
+                # 擷取對應欄位並清理
+                processed_df = raw_df[list(rename_dict.keys())].rename(columns=rename_dict)
+                processed_df = processed_df.drop_duplicates(subset=["Step_No"]).sort_values("Step_No")
+                
+                st.markdown("---")
+                st.markdown("### ⚙️ 轉換為系統標準結構：")
+                st.dataframe(processed_df, use_container_width=True)
+                
+                st.info("💡 提示：因為目前的系統架構使用公開讀取網址，若要把這份新路由格式永久儲存，請直接將此轉換後的表格內容「複製並貼上」到您 Google Sheet 的 **`route_template`** 工作表中，這樣第一頁的 92 步清單就會立刻全面更新！")
+            else:
+                st.error(f"❌ 上傳失敗。檔案中缺少必要的欄位：{missing_cols}，請確認是否與原始格式相符。")
+                
+        except Exception as e:
+            st.error(f"❌ 解析檔案時發生異常: {e}")
