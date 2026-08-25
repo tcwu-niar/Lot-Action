@@ -9,7 +9,7 @@ st.set_page_config(page_title="Wafer Tracing System", page_icon="🏭", layout="
 st.title("🏭 晶圓生產路由與狀態追蹤系統")
 st.markdown("---")
 
-# 設定全站跨頁面持久型記憶體 (鎖定查詢條件)
+# 設定全站跨頁面持久型記憶體 (鎖定查詢條件與選取狀態)
 if "search_input_val" not in st.session_state:
     st.session_state.search_input_val = ""
 if "selected_row_data" not in st.session_state:
@@ -68,14 +68,14 @@ def calculate_hold_time(start_time_str):
 if menu == "📋 頁面一：Full Route & 即時狀態":
     st.subheader("🔍 (上) 晶圓動態查詢")
     
-    # 💡 鎖定需求 2：支援輸入不同 Wafer ID 自由更換顯示的製程路由
+    # 💡 鎖定需求：支援輸入不同 Wafer ID 自由更換顯示的製程路由
     search_wafer = st.text_input(
         "請輸入 晶圓編號 (Wafer ID) 並按下 Enter 切換製程：", 
         value=st.session_state.search_input_val,
         placeholder="例如: LOT4-11F0"
     ).strip()
     
-    # 當使用者輸入不同的 Wafer ID 時，清空之前點擊特定站點的暫存，避免數據錯亂
+    # 當使用者輸入不同的 Wafer ID 時，清空選取狀態，避免與舊資料混淆
     if search_wafer != st.session_state.search_input_val:
         st.session_state.selected_row_data = None
         st.session_state.search_input_val = search_wafer
@@ -95,9 +95,8 @@ if menu == "📋 頁面一：Full Route & 即時狀態":
     if not cloud_route.empty:
         full_route_df = cloud_route.copy()
         
-        # 💡 鎖定需求 2：根據輸入的 Wafer ID 來過濾並更換顯示的路由清單
+        # 💡 鎖定需求：根據輸入的 Wafer ID 來過濾並更換顯示的路由清單
         if search_wafer:
-            # 支援模糊/精準過濾該 Wafer ID 的專屬 92 步
             full_route_df = full_route_df[full_route_df["Wafer ID"].astype(str).str.contains(search_wafer, case=False, na=False)]
         
         if not full_route_df.empty:
@@ -105,7 +104,7 @@ if menu == "📋 頁面一：Full Route & 即時狀態":
             display_cols = [col for col in available_cols if col in full_route_df.columns]
             full_route_df = full_route_df[display_cols].sort_values("Step No.")
             
-            # 💡 鎖定需求 3：啟用動態點擊選取監聽 (selection_mode="single-row")
+            # 💡 鎖定需求：啟用動態點擊選取監聽 (selection_mode="single-row")
             event = st.dataframe(
                 full_route_df,
                 use_container_width=True,
@@ -120,7 +119,7 @@ if menu == "📋 頁面一：Full Route & 即時狀態":
                 selected_index = event.selection["rows"][0]
                 st.session_state.selected_row_data = full_route_df.iloc[selected_index]
             
-            # 💡 鎖定需求 3：如果同仁有點擊特定站點，(下)方的即時指標卡片會隨著點擊站點動態更新
+            # 💡 鎖定需求：如果同仁有點擊特定站點，(下)方的即時指標卡片會隨著點擊站點動態更新
             if st.session_state.selected_row_data is not None:
                 row = st.session_state.selected_row_data
                 current_step_val = str(row.get("Step No.", "1"))
@@ -145,7 +144,7 @@ if menu == "📋 頁面一：Full Route & 即時狀態":
                         shuttle_val = latest_info["Shuttle_Name"]
                         status_val = latest_info["Status"]
                         hold_start = latest_info["Hold_Start_Time"]
-                        # 從路由模板對應當時機台與負責人
+                        
                         meta_match = full_route_df[full_route_df["Step No."].astype(int) == int(current_step_val)]
                         if not meta_match.empty:
                             tool_val = str(meta_match.iloc[0].get("Process Tool", "N/A"))
@@ -176,7 +175,6 @@ elif menu == "📜 頁面二：Wafer History":
         st.dataframe(display_df, use_container_width=True)
     else:
         st.warning("目前雲端尚無任何過站歷史紀錄。")
-
 # ==================== 📤 頁面三：上傳新路由檔案 ====================
 elif menu == "📤 頁面三：上傳新路由檔案":
     st.subheader("📤 導入晶圓生產路由 CSV 檔案至雲端 (接續附加模式)")
@@ -193,7 +191,7 @@ elif menu == "📤 頁面三：上傳新路由檔案":
             st.dataframe(raw_df.head(5), use_container_width=True)
             
             st.markdown("---")
-            # 💡 鎖定需求 4：多加入一個「確認上傳」的按鈕，防止操作員不小心按到錯誤檔案
+            # 💡 核心功能：加入「確認上傳」的按鈕，防止操作員不小心傳錯檔案
             st.warning("⚠️ 請確認上方預覽的資料欄位與內容是否正確。點擊下方按鈕後，這 92 步資料將永久接續併入雲端資料庫。")
             
             confirm_upload_btn = st.button("📤 我已確認檔案無誤，正式同步至 Google Sheets", type="primary")
@@ -203,6 +201,9 @@ elif menu == "📤 頁面三：上傳新路由檔案":
                     response = requests.post(GAS_SUBMIT_URL, data=raw_text.encode('utf-8'), headers={"Content-Type": "text/plain"})
                     if "SUCCESS" in response.text:
                         st.success("🎉 附加同步成功！新晶圓的 92 步流程已成功併入 Google Sheets 底部，且未覆蓋任何歷史舊資料！")
-                        st.cache_data.clear() # 強制清快取
+                        st.cache_data.clear() # 強制清空網頁快取以載入新資料
                     else:
-                        st.error(f"❌ 雲端拒絕更新。後台錯誤回報: {response.text}")except Exception as e:st.error(f"❌ 解析失敗: {e}")
+                        st.error(f"❌ 雲端拒絕更新。後台錯誤回報: {response.text}")
+                        
+        except Exception as e:
+            st.error(f"❌ 解析失敗: {e}")
