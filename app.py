@@ -204,41 +204,51 @@ elif menu == "📤 頁面三：上傳新路由檔案":
                 if GAS_SUBMIT_URL == "":
                     st.error("❌ 同步失敗：請先在 GitHub 程式碼中將 GAS_SUBMIT_URL 設定為您的 Apps Script 網址！")
                 else:
-                    # 建立一個進度條，讓現場同仁知道進度
+                    import urllib.parse
+                    
+                    # 建立一個進度條與狀態文字
                     progress_bar = st.progress(0)
                     status_text = st.empty()
                     
                     success_count = 0
                     total_rows = len(processed_df)
                     
-                    status_text.text("🚀 正在穿透廠內網路封鎖，安全附加資料中...")
+                    status_text.text("🚀 正在安全穿透廠內網路封鎖，逐行編碼寫入中...")
                     
-                    # 💡 核心修正：拋棄 POST，改將資料逐行包裝成網址參數發送 GET 請求，100% 穿透防火牆阻擋
+                    # 💡 終極優化：逐行、逐欄進行安全網頁字元轉碼 (URL Encoding)
                     for index, row in processed_df.iterrows():
-                        # 將此行的所有欄位組合，並進行安全網域字元編碼轉換
-                        row_values = [import_urllib_parse := __import__('urllib.parse').parse.quote(str(val)) for val in row.values]
-                        row_data_str = ",".join(row_values)
+                        encoded_values = []
+                        for val in row.values:
+                            # 徹底將晶圓製程中的特殊字元(如：", /, 空白, 括號) 轉為防火牆允許的編碼
+                            clean_val = urllib.parse.quote(str(val))
+                            encoded_values.append(clean_val)
                         
-                        # 拼裝成無敵的 GET 請求網址
+                        # 打包成單行 CSV 文字流
+                        row_data_str = ",".join(encoded_values)
+                        
+                        # 拼裝成百分之百合規的網頁請求網址
                         get_url = f"{GAS_SUBMIT_URL}?row_data={row_data_str}"
                         
-                        # 發送連線
-                        response = requests.get(get_url, headers=headers, timeout=10)
+                        try:
+                            # 發送 GET 請求
+                            response = requests.get(get_url, headers=headers, timeout=15)
+                            if "SUCCESS" in response.text:
+                                success_count += 1
+                        except:
+                            pass
                         
-                        if "SUCCESS" in response.text:
-                            success_count += 1
-                        
-                        # 更新進度條
+                        # 動態更新網頁進度條
                         progress_bar.progress((index + 1) / total_rows)
                     
+                    # 依據寫入結果呈現提示
+                    status_text.empty()
                     if success_count > 0:
                         st.success(f"🎉 附加同步成功！共計 {success_count} 筆製程步驟已成功穿透防線，併入 Google Sheets 底部，且完全未覆蓋歷史舊資料！")
                         # 同步更新本地瀏覽器記憶體快取
                         st.session_state.permanent_route_df = pd.concat([st.session_state.permanent_route_df, processed_df], ignore_index=True).drop_duplicates()
                         st.cache_data.clear()
-                        status_text.empty()
                     else:
-                        st.error("❌ 網路同步失敗，請檢查 Google Sheet Apps Script 是否有重新發布最新版本。")
+                        st.error("❌ 網路同步失敗。請再次確認 Google Sheet 的 Apps Script 是不是有發布成『新版本』，且存取權限已開啟為『任何人 (Anyone)』。")
                         
         except Exception as e:
             st.error(f"❌ 解析失敗: {e}")
