@@ -9,57 +9,26 @@ st.set_page_config(page_title="Wafer Tracing System", page_icon="🏭", layout="
 st.title("🏭 晶圓生產路由與狀態追蹤系統")
 st.markdown("---")
 
-# ==================== 2. 自動串接您的 Google Sheet 公開網址 ====================
+# 初始化全站的跨頁面記憶體 (Session State)
+if "global_route_df" not in st.session_state:
+    st.session_state.global_route_df = pd.DataFrame(columns=["Step No.", "Step Description", "Process Tool", "Stage Owner"])
+if "global_status_df" not in st.session_state:
+    st.session_state.global_status_df = pd.DataFrame(columns=["Wafer_ID", "Shuttle_Name", "Step_No", "Status", "Customer", "Hold_Start_Time", "Timestamp"])
+
+# 嘗試從網路預載 (當作背景默默嘗試)
 sheet_id = "1RQt29KIb4rkVo4A-Y3GouMAezYEBakb1q283d1sgdZU"
-ROUTE_URL = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet=route_template"
-STATUS_URL = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet=wafer_status"
-
-# 備援資料：如果網路完全斷線時的本地預設路由
-def get_backup_route():
-    return pd.DataFrame([
-        {"Step_No": i, "Step_Description": f"Process Step {i}", "Process_Tool": "SE-023", "Stage_Owner": "Engineer"} 
-        for i in range(1, 93)
-    ])
-
-@st.cache_data(ttl=2) # 2秒快取
-def load_data():
-    # 預設空的備援結構
-    route_df = get_backup_route()
-    status_df = pd.DataFrame(columns=["Wafer_ID", "Shuttle_Name", "Step_No", "Status", "Customer", "Hold_Start_Time", "Timestamp"])
-    
-    # 使用標準 requests 套件，加入 User-Agent 模擬真實瀏覽器防止被 Google Cloud 阻擋
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-    
+headers = {"User-Agent": "Mozilla/5.0 (Windows)"}
+if st.session_state.global_route_df.empty:
     try:
-        # 讀取 92 步路由表
-        r_route = requests.get(ROUTE_URL, headers=headers, timeout=5)
-        if r_route.status_code == 200:
-            route_df = pd.read_csv(io.StringIO(r_route.text))
-            
-        # 讀取即時狀態流水帳
-        r_status = requests.get(STATUS_URL, headers=headers, timeout=5)
-        if r_status.status_code == 200:
-            status_df = pd.read_csv(io.StringIO(r_status.text))
-    except Exception as e:
-        st.sidebar.warning(f"⚠️ 雲端試算表連線超時，目前系統已自動啟用廠內備援安全快取。")
+        r = requests.get(f"https://google.com{sheet_id}/gviz/tq?tqx=out:csv&sheet=route_template", headers=headers, timeout=2)
+        if r.status_code == 200:
+            df_net = pd.read_csv(io.StringIO(r.text))
+            df_net = df_net.rename(columns={"Step": "Step No.", "Step_No": "Step No.", "Step description": "Step Description", "Step_Description": "Step Description", "Tool name/mask": "Process Tool", "Process_Tool": "Process Tool", "Owner": "Stage Owner", "Stage_Owner": "Stage Owner"})
+            st.session_state.global_route_df = df_net
+    except:
+        pass
 
-    # 強制校正欄位結構與格式
-    if "Step_No" in route_df.columns:
-        route_df["Step_No"] = pd.to_numeric(route_df["Step_No"], errors='coerce').fillna(1).astype(int)
-    else:
-        # 萬一 Google Sheet 的欄位叫 Step
-        if "Step" in route_df.columns:
-            route_df = route_df.rename(columns={"Step": "Step_No"})
-            route_df["Step_No"] = pd.to_numeric(route_df["Step_No"], errors='coerce').fillna(1).astype(int)
-
-    if not status_df.empty and "Step_No" in status_df.columns:
-        status_df["Step_No"] = pd.to_numeric(status_df["Step_No"], errors='coerce').fillna(1).astype(int)
-        
-    return route_df, status_df
-
-route_template, wafer_status = load_data()
-
-# ==================== 3. 側邊欄功能導覽 ====================
+# ==================== 2. 側邊欄導覽 ====================
 menu = st.sidebar.radio("🧭 系統功能切換", [
     "📋 頁面一：Full Route & 即時狀態", 
     "📜 頁面二：Wafer History",
@@ -68,36 +37,29 @@ menu = st.sidebar.radio("🧭 系統功能切換", [
 
 def calculate_hold_time(start_time_str):
     try:
-        if pd.isna(start_time_str) or str(start_time_str).strip() == "":
-            return "00:00:00"
         start_dt = datetime.datetime.strptime(str(start_time_str), "%Y-%m-%d %H:%M:%S")
-        now = datetime.datetime.now()
-        if now < start_dt:
-            return "00:00:00"
-        delta = now - start_dt
-        seconds = int(delta.total_seconds())
-        hours = seconds // 3600
-        minutes = (seconds % 3600) // 60
-        secs = seconds % 60
-        return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+        delta = datetime.datetime.now() - start_dt
+        seconds = max(0, int(delta.total_seconds()))
+        return f"{seconds // 3600:02d}:{(seconds % 3600) // 60:02d}:{seconds % 60:02d}"
     except:
         return "00:00:00"
 
 # ==================== 📋 頁面一：Full Route & 即時狀態 ====================
 if menu == "📋 頁面一：Full Route & 即時狀態":
     st.subheader("🔍 (上) 晶圓動態查詢")
-    search_wafer = st.text_input("請輸入 晶圓編號 (Wafer ID) 並按下 Enter：", placeholder="例如: LOT4-11F0").strip()
+    search_wafer = st.text_input("請輸入 晶圓/批次編號 (Wafer/Lot ID) 并按下 Enter：", placeholder="例如: LOT4-11F0").strip()
     
     if search_wafer:
-        current_wafer_info = wafer_status[wafer_status["Wafer_ID"] == search_wafer] if not wafer_status.empty else pd.DataFrame()
+        status_df = st.session_state.global_status_df
+        current_wafer_info = status_df[status_df["Wafer_ID"] == search_wafer] if not status_df.empty else pd.DataFrame()
         
         if not current_wafer_info.empty:
             latest_info = current_wafer_info.sort_values(by="Timestamp").iloc[-1]
-            current_step = int(latest_info["Step_No"]) if "Step_No" in latest_info else 1
-            shuttle_name = latest_info["Shuttle_Name"] if "Shuttle_Name" in latest_info else "Unknown"
-            status_val = latest_info["Status"] if "Status" in latest_info else "INPR"
-            customer_val = latest_info["Customer"] if "Customer" in latest_info else "Unknown"
-            hold_start = latest_info["Hold_Start_Time"] if "Hold_Start_Time" in latest_info else ""
+            current_step = int(latest_info["Step_No"])
+            shuttle_name = latest_info["Shuttle_Name"]
+            status_val = latest_info["Status"]
+            customer_val = latest_info["Customer"]
+            hold_start = latest_info["Hold_Start_Time"]
         else:
             current_step = 1
             shuttle_name = "T18-C14A"
@@ -106,21 +68,13 @@ if menu == "📋 頁面一：Full Route & 即時狀態":
             hold_start = ""
 
         st.markdown("---")
-        st.subheader("🛤️ (中) 完整製程路由監控 (Full Route - 共 92 步)")
+        st.subheader("🛤️ (中) 完整製程路由監控 (Full Route)")
         
-        if not route_template.empty:
-            full_route_df = route_template.copy()
+        route_df = st.session_state.global_route_df
+        if not route_df.empty:
+            full_route_df = route_df.copy()
             full_route_df["Wafer_ID"] = search_wafer
             full_route_df["Shuttle_Name"] = shuttle_name
-            
-            # 對應您上傳的真實表格與標準規範命名轉換
-            rename_map = {
-                "Step_No": "Step No.", "Step": "Step No.",
-                "Step_Description": "Step Description", "Step description": "Step Description",
-                "Process_Tool": "Process Tool", "Tool name/mask": "Process Tool",
-                "Stage_Owner": "Stage Owner", "Owner": "Stage Owner"
-            }
-            full_route_df = full_route_df.rename(columns=rename_map)
             
             available_cols = ["Wafer_ID", "Shuttle_Name", "Step No.", "Step Description", "Process Tool", "Stage Owner"]
             display_cols = [col for col in available_cols if col in full_route_df.columns]
@@ -134,6 +88,8 @@ if menu == "📋 頁面一：Full Route & 即時狀態":
                 return [''] * len(row)
                 
             st.dataframe(full_route_df.style.apply(highlight_current_step, axis=1), use_container_width=True, height=450)
+        else:
+            st.warning("⚠️ 系統記憶體中目前沒有路由資料。請先到『頁面三』導入 92 步 CSV 檔案。")
 
         st.markdown("---")
         st.subheader("📊 (下) 當前即時狀態指標")
@@ -144,28 +100,50 @@ if menu == "📋 頁面一：Full Route & 即時狀態":
         c2.metric("客戶名稱 (Customer)", customer_val)
         c3.metric("雪梭名稱 (Shuttle Name)", shuttle_name)
         c4.metric("暫停計時 (Hold Time)", computed_hold_time)
+        
+        # 允許直接在網頁虛擬操作過站測試
+        with st.expander("🛠️ 本地模擬測試：變更此晶圓狀態或過站步驟"):
+            with st.form("local_test_form"):
+                ca, cb = st.columns(2)
+                with ca:
+                    next_status = st.selectbox("變更狀態", ["INPR", "Hold", "Pass", "Scrap"], index=["INPR", "Hold", "Pass", "Scrap"].index(status_val) if status_val in ["INPR", "Hold", "Pass", "Scrap"] else 0)
+                    next_step = st.number_input("前進製程步數 (Step No.)", min_value=1, max_value=200, value=current_step)
+                with cb:
+                    input_cust = st.text_input("更新客戶名稱", value=customer_val)
+                    input_shuttle = st.text_input("更新 Shuttle Name", value=shuttle_name)
+                if st.form_submit_button("💾 本地模擬更新"):
+                    new_log = pd.DataFrame([{
+                        "Wafer_ID": search_wafer, "Shuttle_Name": input_shuttle, "Step_No": int(next_step),
+                        "Status": next_status, "Customer": input_cust,
+                        "Hold_Start_Time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S") if next_status == "Hold" else "",
+                        "Timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    }])
+                    st.session_state.global_status_df = pd.concat([st.session_state.global_status_df, new_log], ignore_index=True)
+                    st.success("更新成功！")
+                    st.rerun()
     else:
-        st.info("💡 請在上方空格中輸入 Wafer ID，系統將自動調取 92 步全路由與實時狀態看板。")
+        st.info("💡 請在上方空格中輸入 Wafer ID。")
 
 # ==================== 📜 頁面二：Wafer History ====================
 elif menu == "📜 頁面二：Wafer History":
     st.subheader("📜 歷史生產變更紀錄總覽 (Wafer History)")
-    if not wafer_status.empty:
-        display_history = wafer_status.copy()
-        if "Timestamp" in display_history.columns:
-            display_history = display_history.sort_values(by="Timestamp", ascending=False)
-        st.dataframe(display_history, use_container_width=True)
+    if not st.session_state.global_status_df.empty:
+        st.dataframe(st.session_state.global_status_df.sort_values(by="Timestamp", ascending=False), use_container_width=True)
     else:
-        st.warning("🗄️ 目前雲端試算表中尚無任何歷史生產紀錄資料。")
+        st.warning("目前尚無過站紀錄。請在第一頁下方的操作面板建立第一筆紀錄。")
 
 # ==================== 📤 頁面三：上傳新路由檔案 ====================
-elif menu == "📤 頁面三：上傳新路由檔案":
+elif menu == "📤 頁面打三：上傳新路由檔案":
     st.subheader("📤 導入晶圓生產路由 CSV 檔案")
     uploaded_file = st.file_uploader("請選擇您的晶圓流程 CSV 檔案 (.csv)", type=["csv"])
     if uploaded_file is not None:
         try:
             raw_df = pd.read_csv(uploaded_file)
-            st.success("🎉 檔案上傳讀取成功！")
-            st.dataframe(raw_df.head(5), use_container_width=True)
+            # 自動清洗與更名，精準與您的檔案欄位對應
+            rename_map = {"Step": "Step No.", "Step description": "Step Description", "Tool name/mask": "Process Tool", "Owner": "Stage Owner"}
+            processed = raw_df.rename(columns=rename_map)
+            st.session_state.global_route_df = processed
+            st.success("🎉 成功將 92 步製程數據導入全站記憶體！請切換至『頁面一』輸入 Wafer ID 查看成果。")
+            st.dataframe(processed.head(5), use_container_width=True)
         except Exception as e:
-            st.error(f"❌ 解析檔案時發生異常: {e}")
+            st.error(f"❌ 解析失敗: {e}")
