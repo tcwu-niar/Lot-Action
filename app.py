@@ -8,10 +8,12 @@ st.title("🏭 晶圓生產路由與狀態追蹤系統")
 st.markdown("---")
 
 # ==================== 2. 自動串接您的 Google Sheet 公開網址 ====================
-PUBLIC_GSHEET_BASE_URL = "https://google.com"
+PUBLIC_GSHEET_URL = "https://google.com"
 
-ROUTE_URL = f"{PUBLIC_GSHEET_BASE_URL}/gviz/tq?tqx=out:csv&sheet=route_template"
-STATUS_URL = f"{PUBLIC_GSHEET_BASE_URL}/gviz/tq?tqx=out:csv&sheet=wafer_status"
+# 強大且相容性更高的新版轉換邏輯
+sheet_id = "1RQt29KIb4rkVo4A-Y3GouMAezYEBakb1q283d1sgdZU"
+ROUTE_URL = f"https://google.com{sheet_id}/gviz/tq?tqx=out:csv&sheet=route_template"
+STATUS_URL = f"https://google.com{sheet_id}/gviz/tq?tqx=out:csv&sheet=wafer_status"
 
 @st.cache_data(ttl=2) # 2秒快取
 def load_data():
