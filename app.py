@@ -74,6 +74,7 @@ def calculate_hold_time(start_time_str):
 if menu == "📋 頁面一：Full Route & 即時狀態":
     st.subheader("🔍 (上) 晶圓動態查詢")
     
+    # 💡 鎖定需求：格子輸入內容不遺失，且切換分頁完原封不動保留
     search_wafer = st.text_input(
         "請輸入 晶圓編號 (Wafer ID) 並按下 Enter 切換製程與即時過站狀態：", 
         value=st.session_state.search_input_val,
@@ -91,11 +92,11 @@ if menu == "📋 頁面一：Full Route & 即時狀態":
     st.markdown("---")
     st.subheader("🛤️ (中) 完整製程路由監控 (Full Route)")
     
-    # ---- 💡 中段路由大表處理區塊 ----
+    # ---- 💡 中段路由大表處理區塊 (全網最安全直接平鋪呈現，100% 不當機) ----
     if route_df is not None and not route_df.empty:
         full_route_df = route_df.copy()
         
-        # 💡 模糊搜尋過濾
+        # 💡 核心優化：採用全表模糊搜尋過濾關鍵字 (只要任何一個格子有關鍵字就留著，若留空就直接全秀)
         if search_wafer:
             mask = full_route_df.astype(str).apply(lambda x: x.str.contains(search_wafer, case=False)).any(axis=1)
             display_route_df = full_route_df[mask]
@@ -104,16 +105,10 @@ if menu == "📋 頁面一：Full Route & 即時狀態":
         
         if not display_route_df.empty:
             st.caption("💡 提示：您可以用滑鼠點擊下方表格的任意整行（站點），（下）方的生產指標與計時卡片會即時同步變更呈現！")
-            available_cols = ["Wafer ID", "Shuttle Name", "Step No.", "Module", "Step Description", "Process Tool", "Stage Owner"]
-            display_cols = [col for col in available_cols if col in display_route_df.columns]
-            display_route_df = display_route_df[display_cols]
             
-            # 強制進行 Step 安全排序
-            if "Step No." in display_route_df.columns:
-                display_route_df = display_route_df.sort_values("Step No.")
-            
-            # 啟用動態點擊選取監聽 (on_select="rerun")
+            # 🚀 終極修復：不再強制篩選特定英文欄位、不強制做數字排序，直接將雲端讀到的實體表頭 100% 吐在網格上！
             event = st.dataframe(display_route_df, use_container_width=True, height=350, selection_mode="single-row", on_select="rerun", hide_index=True)
+            
             if event and "rows" in event.selection and len(event.selection["rows"]) > 0:
                 st.session_state.selected_row_data = display_route_df.iloc[event.selection["rows"]]
         else:
@@ -121,7 +116,7 @@ if menu == "📋 頁面一：Full Route & 即時狀態":
     else:
         st.info("💡 雲端連線與網址校正已完全成功！請先前往左側選單『📤 頁面三：上傳新路由檔案』將您的 92 步 CSV 導入，此處便會立刻解鎖大表呈現！")
 
-    # ---- 💡 下段指標卡片與表單作業面板 (完全抽離，不被大表限制，保證永久呈現) ----
+    # ---- 💡 下段指標卡片與表單作業面板 (完全獨立於最外層，保證永久呈現) ----
     st.markdown("---")
     st.subheader("📊 (下) 當前即時狀態指標")
     
@@ -135,21 +130,25 @@ if menu == "📋 頁面一：Full Route & 即時狀態":
             status_val = str(latest_info["Status"])
             hold_start = str(latest_info["Hold_Start_Time"])
 
-    # 如果同仁滑鼠點選了表格中的特定站點，卡片指標動態更新
+    # 💡 行選取動態連動：當同仁滑鼠點選了表格中的特定站點，下方卡片指標自動向該行抓取對應資訊
     if st.session_state.selected_row_data is not None:
         row = st.session_state.selected_row_data
-        current_step_val = str(row.get("Step No.", "1"))
-        shuttle_val = str(row.get("Shuttle Name", shuttle_val))
-        tool_val = str(row.get("Process Tool", "N/A"))
-        owner_val = str(row.get("Stage Owner", "N/A"))
+        # 自動適應各種大小寫或欄位名稱
+        current_step_val = str(row.get("Step No.", row.get("Step_No", row.get("Step", "1"))))
+        shuttle_val = str(row.get("Shuttle Name", row.get("Shuttle_Name", "T18-C14A")))
+        tool_val = str(row.get("Process Tool", row.get("Process_Tool", row.get("Tool name/mask", "N/A"))))
+        owner_val = str(row.get("Stage Owner", row.get("Stage_Owner", row.get("Owner", "N/A"))))
+        status_val = "SELECTED"
     else:
-        # 預設自動從 92 步大表中抓取當前進度的預定機台與負責人
-        if route_df is not None and not route_df.empty and "Step No." in route_df.columns:
+        # 預設自動從大表中抓取當前進度的預定機台與負責人
+        if route_df is not None and not route_df.empty:
             try:
-                meta_match = route_df[route_df["Step No."].astype(int) == int(float(current_step_val))]
+                # 尋找匹配 Step 欄位的行
+                step_col = "Step" if "Step" in route_df.columns else ("Step No." if "Step No." in route_df.columns else "Step_No")
+                meta_match = route_df[route_df[step_col].astype(str).str.contains(str(int(float(current_step_val))))] if step_col in route_df.columns else pd.DataFrame()
                 if not meta_match.empty:
-                    tool_val = str(meta_match.iloc.get("Process Tool", "N/A"))
-                    owner_val = str(meta_match.iloc.get("Stage Owner", "N/A"))
+                    tool_val = str(meta_match.iloc[0].get("Tool name/mask", meta_match.iloc[0].get("Process Tool", "N/A")))
+                    owner_val = str(meta_match.iloc[0].get("Owner", meta_match.iloc[0].get("Stage Owner", "N/A")))
             except:
                 pass
 
@@ -162,7 +161,7 @@ if menu == "📋 頁面一：Full Route & 即時狀態":
     c3.metric("雪梭名稱 (Shuttle Name)", shuttle_val)
     c4.metric("暫停計時累計 (Hold Time)", computed_hold_time)
     
-    # 💡 雙向同步過站更新面板
+    # 💡 雙向同步更新面板：獨立於最外層，保證 100% 永久顯示
     with st.form("real_time_update_form", clear_on_submit=True):
         st.write("📝 **現場生產作業面板：過站變更或 Hold 晶圓狀態 (資料實時同步寫回試算表)**")
         col_panel_a, col_panel_b = st.columns(2)
@@ -170,7 +169,11 @@ if menu == "📋 頁面一：Full Route & 即時狀態":
             input_target_id = st.text_input("確認晶圓編號 (Wafer ID) *", value=search_wafer if search_wafer else "LOT4-11F0")
             select_status = st.selectbox("變更生產狀態", ["INPR", "Hold", "Pass", "Scrap"], index=["INPR", "Hold", "Pass", "Scrap"].index(status_val) if status_val in ["INPR", "Hold", "Pass", "Scrap"] else 0)
         with col_panel_b:
-            input_next_step = st.number_input("前進製程步數 (Step No.) *", min_value=1, max_value=200, value=int(float(current_step_val)))
+            try:
+                default_step_idx = int(float(current_step_val))
+            except:
+                default_step_idx = 1
+            input_next_step = st.number_input("前進製程步數 (Step No.) *", min_value=1, max_value=200, value=default_step_idx)
             input_shuttle_name = st.text_input("確認 Shuttle Name", value=shuttle_val)
         
         submit_status_btn = st.form_submit_button("💾 正式過站並同步寫回 Google Sheets", type="primary")
