@@ -47,7 +47,7 @@ def calculate_hold_time(start_time_str):
 # ==================== 📋 頁面一：Full Route & 即時狀態 ====================
 if menu == "📋 頁面一：Full Route & 即時狀態":
     st.subheader("🔍 (上) 晶圓動態查詢")
-    search_wafer = st.text_input("請輸入 晶圓/批次編號 (Wafer/Lot ID) 并按下 Enter：", placeholder="例如: LOT4-11F0").strip()
+    search_wafer = st.text_input("請輸入 晶圓/批次編號 (Wafer/Lot ID) 並按下 Enter：", placeholder="例如: LOT4-11F0").strip()
     
     if search_wafer:
         status_df = st.session_state.global_status_df
@@ -133,7 +133,7 @@ elif menu == "📜 頁面二：Wafer History":
         st.warning("目前尚無過站紀錄。請在第一頁下方的操作面板建立第一筆紀錄。")
 
 # ==================== 📤 頁面三：上傳新路由檔案 ====================
-elif menu == "📤 頁面打三：上傳新路由檔案":
+elif menu == "📤 頁面三：上傳新路由檔案":
     st.subheader("📤 導入晶圓生產路由 CSV 檔案")
     uploaded_file = st.file_uploader("請選擇您的晶圓流程 CSV 檔案 (.csv)", type=["csv"])
     if uploaded_file is not None:
