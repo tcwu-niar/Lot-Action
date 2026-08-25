@@ -73,34 +73,49 @@ def calculate_hold_time(start_time_str):
 # ==================== 📋 頁面一：Full Route & 即時狀態 ====================
 if menu == "📋 頁面一：Full Route & 即時狀態":
     st.subheader("🔍 (上) 晶圓動態查詢")
-    search_wafer = st.text_input("請輸入 晶圓編號 (Wafer ID) 並按下 Enter 切換製程：", value=st.session_state.search_input_val).strip()
+    
+    # 💡 鎖定需求：格子輸入內容不遺失，且支援不同 Wafer ID 自由切換
+    search_wafer = st.text_input(
+        "請輸入 晶圓編號 (Wafer ID) 並按下 Enter 切換製程：", 
+        value=st.session_state.search_input_val,
+        placeholder="例如: LOT4-11F0"
+    ).strip()
     
     if search_wafer != st.session_state.search_input_val:
         st.session_state.selected_row_data = None
         st.session_state.search_input_val = search_wafer
 
+    # 指標卡片預設狀態值
     current_step_val, status_val, shuttle_val, tool_val, owner_val, hold_start = "1", "INPR", "T18-C14A", "SE 023", "Bill/yd", ""
+    
+    # 💡 核心讀取：確保抓取的是透過正確網域（://google.com）與表頭對齊後的雲端資料
     route_df = st.session_state.permanent_route_df
     
-    if route_df is not None and not route_df.empty:
+    # 💡 終極解鎖：只要成功讀到雲端大表，立刻解除藍色引導框鎖定，展現表格
+    if route_df is not None and not route_df.empty and len(route_df) > 0:
         full_route_df = route_df.copy()
         
-        # 進行模糊搜尋過濾
+        # 根據輸入的不同 Wafer ID 來更換顯示對應的製程路由
         if search_wafer:
-            full_route_df = full_route_df[full_route_df.astype(str).apply(lambda x: x.str.contains(search_wafer, case=False)).any(axis=1)]
+            full_route_df = full_route_df[full_route_df["Wafer ID"].astype(str).str.contains(search_wafer, case=False, na=False)]
         
         if not full_route_df.empty:
-            # 💡 核心優化 1：直接執行數值校正與排序，完全拔除原本 103 行導致當機的 # 號判斷
+            # 依據您試算表的真實結構調整最專業的展示順序
+            available_cols = ["Wafer ID", "Shuttle Name", "Step No.", "Module", "Step Description", "Process Tool", "Stage Owner"]
+            display_cols = [col for col in available_cols if col in full_route_df.columns]
+            full_route_df = full_route_df[display_cols]
+            
+            # 強制校正型態並進行 Step 排序
             if "Step No." in full_route_df.columns:
                 full_route_df["Step No."] = pd.to_numeric(full_route_df["Step No."], errors='coerce').fillna(1).astype(int)
                 full_route_df = full_route_df.sort_values("Step No.")
-                
-            # 🚀 重新喚醒中段 Full Route 表格呈現！
+            
+            # 💡 鎖定需求：啟用動態點擊選取監聽 (on_select="rerun")
             event = st.dataframe(full_route_df, use_container_width=True, height=400, selection_mode="single-row", on_select="rerun", hide_index=True)
             if event and "rows" in event.selection and len(event.selection["rows"]) > 0:
                 st.session_state.selected_row_data = full_route_df.iloc[event.selection["rows"]]
             
-            # (下)方指標卡片隨著點擊動態同步跳動
+            # 💡 鎖定需求：(下)的資料隨著點擊的站點不同，毫秒級即時更新跳動
             if st.session_state.selected_row_data is not None:
                 row = st.session_state.selected_row_data
                 current_step_val = str(row.get("Step No.", "1"))
@@ -109,6 +124,7 @@ if menu == "📋 頁面一：Full Route & 即時狀態":
                 owner_val = str(row.get("Stage Owner", "N/A"))
                 status_val = "SELECTED"
             else:
+                # 若同仁未點選表格，則預設調取當前最新進度指標
                 if search_wafer and not cloud_status.empty:
                     exact_match = cloud_status[cloud_status["Wafer_ID"].astype(str) == search_wafer]
                     if not exact_match.empty:
@@ -123,14 +139,15 @@ if menu == "📋 頁面一：Full Route & 即時狀態":
                                 tool_val = str(meta_match.iloc.get("Process Tool", "N/A"))
                                 owner_val = str(meta_match.iloc.get("Stage Owner", "N/A"))
         else:
-            st.warning(f"⚠️ 專屬獨立路由庫中目前查無關鍵字 『{search_wafer}』 的 92 步資料。")
+            st.warning(f"⚠️ 專屬獨立路由庫中目前查無晶圓編號 『{search_wafer}』 的 92 步資料。")
     else:
-        st.info("💡 歡迎回到獨立隔離系統！請前往『📤 頁面三：上傳新路由檔案』引入新製程，數據將安全附加至您獨立的 Lot-Action 底部。")
+        st.info("💡 雲端連線測試正常！請先前往『📤 頁面三：上傳新路由檔案』引入新製程，數據將安全附加至您獨立的 Lot-Action 底部。")
 
     st.markdown("---")
     st.subheader("📊 (下) 當前即時狀態指標")
     computed_hold_time = calculate_hold_time(hold_start) if status_val == "Hold" else "00:00:00"
     
+    # 隨點擊與輸入即時動態跳動更新的四大卡片
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("當前選定站點 (Step No.)", f"第 {current_step_val} 步 ({status_val})")
     c2.metric("製程機台 / 負責人", f"{tool_val} / {owner_val}")
