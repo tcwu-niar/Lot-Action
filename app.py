@@ -17,10 +17,10 @@ if "selected_row_data" not in st.session_state:
 if "permanent_route_df" not in st.session_state:
     st.session_state.permanent_route_df = pd.DataFrame()
 
-# 💡 與您的 JSON 密道後台完全對齊的安全通道網址
+# 💡 終極對齊核心：請將下方的引號內容，替換為您剛剛在步驟一複製得到的最新 /exec 真實網址！
 GAS_SUBMIT_URL = "https://script.google.com/macros/s/AKfycbxSpHeSlbCyMgn0cH60fh62eM_nYoaCwkSCZF1UJMTeC-3z1wQJ1RVLXge1kvzadmKM/exec"
 
-# 💡 鎖定您專屬的 Lot-Action 試算表 ID
+# 安全隔離：鎖定您專屬的 Lot-Action 試算表 ID
 sheet_id = "1RQt29KIb4rkVo4A-Y3GouMAezYEBakb1q283d1sgdZU"
 headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
 
@@ -29,9 +29,8 @@ def fetch_cloud_data():
     r_df = pd.DataFrame()
     s_df = pd.DataFrame()
     
-    # 💡 終極修正：修正為標準 ://google.com 結構，徹底解除 405 與讀取失敗鎖定！
-    route_url = f"https://://google.com{sheet_id}/gviz/tq?tqx=out:csv&sheet=route_template"
-    status_url = f"https://://google.com{sheet_id}/gviz/tq?tqx=out:csv&sheet=wafer_status"
+    route_url = f"https://google.com{sheet_id}/gviz/tq?tqx=out:csv&sheet=route_template"
+    status_url = f"https://google.com{sheet_id}/gviz/tq?tqx=out:csv&sheet=wafer_status"
     
     try:
         res_r = requests.get(route_url, headers=headers, timeout=5)
@@ -39,16 +38,7 @@ def fetch_cloud_data():
             raw_route = pd.read_csv(io.StringIO(res_r.text))
             if not raw_route.empty:
                 raw_route.columns = raw_route.columns.str.strip() # 清除 Google 產生的前後隱形空格
-                
-                # 精準對接您 Google 試算表第一行的真實欄位名稱 (如 Step description, Tool name/mask)
-                rename_map = {
-                    "Step": "Step No.", "Step_No": "Step No.", "Step_No.": "Step No.", "Step No.": "Step No.",
-                    "Step description": "Step Description", "Step_Description": "Step Description", 
-                    "Tool name/mask": "Process Tool", "Process_Tool": "Process Tool", "Tool name": "Process Tool",
-                    "Owner": "Stage Owner", "Stage_Owner": "Stage Owner", 
-                    "Wafer ID": "Wafer ID", "Wafer_ID": "Wafer ID", 
-                    "Shuttle Name": "Shuttle Name", "Shuttle_Name": "Shuttle Name"
-                }
+                rename_map = {"Step": "Step No.", "Step_No": "Step No.", "Step_No.": "Step No.", "Step description": "Step Description", "Step_Description": "Step Description", "Tool name/mask": "Process Tool", "Process_Tool": "Process Tool", "Owner": "Stage Owner", "Stage_Owner": "Stage Owner", "Wafer ID": "Wafer ID", "Wafer_ID": "Wafer ID", "Shuttle Name": "Shuttle Name", "Shuttle_Name": "Shuttle Name"}
                 r_df = raw_route.rename(columns=rename_map)
                 
         res_s = requests.get(status_url, headers=headers, timeout=5)
@@ -60,7 +50,6 @@ def fetch_cloud_data():
 
 cloud_route, cloud_status = fetch_cloud_data()
 
-# 只要雲端有成功下載到資料，一律無條件灌入記憶體，解鎖呈現
 if cloud_route is not None and not cloud_route.empty:
     st.session_state.permanent_route_df = cloud_route
 
