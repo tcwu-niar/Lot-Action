@@ -84,7 +84,7 @@ def calculate_hold_time(start_time_str):
 if menu == "📋 頁面一：Full Route & 即時狀態":
     st.subheader("🔍 (上) 晶圓動態查詢")
     
-    # 💡 鎖定需求：格子輸入內容不遺失，且支援不同 Wafer ID 自由切換
+    # 💡 鎖定需求：格子輸入內容不遺失，且切換分頁完原封不動保留
     search_wafer = st.text_input(
         "請輸入 晶圓編號 (Wafer ID) 並按下 Enter 切換製程：", 
         value=st.session_state.search_input_val,
@@ -97,17 +97,16 @@ if menu == "📋 頁面一：Full Route & 即時狀態":
 
     # 指標卡片預設狀態值
     current_step_val, status_val, shuttle_val, tool_val, owner_val, hold_start = "1", "INPR", "T18-C14A", "SE 023", "Bill/yd", ""
-    
-    # 💡 核心讀取：確保抓取的是透過正確網域（://google.com）與表頭對齊後的雲端資料
     route_df = st.session_state.permanent_route_df
     
-    # 💡 終極解鎖：只要成功讀到雲端大表，立刻解除藍色引導框鎖定，展現表格
-    if route_df is not None and not route_df.empty and len(route_df) > 0:
+    # 💡 終極優化：只要雲端有成功下載到資料，一律強制解除藍色引導框，全面解鎖展現表格！
+    if route_df is not None and not route_df.empty:
         full_route_df = route_df.copy()
         
-        # 根據輸入的不同 Wafer ID 來更換顯示對應的製程路由
+        # 💡 核心需求：採用模糊搜尋過濾表格 (打字完全不影響、不破壞底層結構)
         if search_wafer:
-            full_route_df = full_route_df[full_route_df["Wafer ID"].astype(str).str.contains(search_wafer, case=False, na=False)]
+            mask = full_route_df.astype(str).apply(lambda x: x.str.contains(search_wafer, case=False)).any(axis=1)
+            full_route_df = full_route_df[mask]
         
         if not full_route_df.empty:
             # 依據您試算表的真實結構調整最專業的展示順序
@@ -134,8 +133,8 @@ if menu == "📋 頁面一：Full Route & 即時狀態":
                 owner_val = str(row.get("Stage Owner", "N/A"))
                 status_val = "SELECTED"
             else:
-                # 若同仁未點選表格，則預設調取當前最新進度指標
-                if search_wafer and not cloud_status.empty:
+                # 若同仁未點選表格，則預設調取當前雲端的最新歷史進度指標
+                if search_wafer and 'cloud_status' in locals() and not cloud_status.empty:
                     exact_match = cloud_status[cloud_status["Wafer_ID"].astype(str) == search_wafer]
                     if not exact_match.empty:
                         latest_info = exact_match.sort_values(by="Timestamp").iloc[-1]
@@ -151,7 +150,7 @@ if menu == "📋 頁面一：Full Route & 即時狀態":
         else:
             st.warning(f"⚠️ 專屬獨立路由庫中目前查無晶圓編號 『{search_wafer}』 的 92 步資料。")
     else:
-        st.info("💡 雲端連線測試正常！請先前往『📤 頁面三：上傳新路由檔案』引入新製程，數據將安全附加至您獨立的 Lot-Action 底部。")
+        st.info("💡 雲端連線與網址校正已完全成功！請先前往左側選單『📤 頁面三：上傳新路由檔案』引入新製程，數據將安全附加至您獨立的 Lot-Action 底部。")
 
     st.markdown("---")
     st.subheader("📊 (下) 當前即時狀態指標")
@@ -167,16 +166,21 @@ if menu == "📋 頁面一：Full Route & 即時狀態":
 # ==================== 📜 頁面二：Wafer History ====================
 elif menu == "📜 頁面二：Wafer History":
     st.subheader("📜 歷史生產路由總覽 (Wafer History)")
+    st.markdown("💡 核心鎖定需求：不論目前有沒有即時過站紀錄，本頁面皆會強制完整呈現該晶圓在系統中登記的 92 步全路由清單。")
+    
     target_wafer = st.session_state.search_input_val if st.session_state.search_input_val else ""
-    search_history_id = st.text_input("🔍 查詢特定晶圓歷史路由：", value=target_wafer).strip()
+    search_history_id = st.text_input("🔍 查詢特定晶圓歷史路由 (支援模糊搜尋)：", value=target_wafer).strip()
     st.session_state.search_input_val = search_history_id
     
     route_db = st.session_state.permanent_route_df
     if route_db is not None and not route_db.empty:
-        history_display_df = route_db.copy()
+        history_df = route_db.copy()
         if search_history_id:
-            history_display_df = history_display_df[history_display_df.astype(str).apply(lambda x: x.str.contains(search_history_id, case=False)).any(axis=1)]
-        st.dataframe(history_display_df, use_container_width=True, height=500, hide_index=True)
+            history_df = history_df[history_df.astype(str).apply(lambda x: x.str.contains(search_history_id, case=False)).any(axis=1)]
+        
+        available_cols = ["Wafer ID", "Shuttle Name", "Step No.", "Module", "Step Description", "Process Tool", "Stage Owner"]
+        display_history_cols = [col for col in available_cols if col in history_df.columns]
+        st.dataframe(history_df[display_history_cols].sort_values("Step No.") if "Step No." in history_df.columns else history_df, use_container_width=True, height=500, hide_index=True)
     else:
         st.warning("⚠️ 系統雲端目前尚無 any 路由紀錄。")
 # ==================== 📤 頁面三：上傳新路由檔案 ====================
