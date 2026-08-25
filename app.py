@@ -11,7 +11,7 @@ st.markdown("---")
 # ==================== 2. 直接設定公開的 Google Sheet 網址 ====================
 # 💡 請將下方的網址替換為您的公開 Google Sheet 網址 (注意：請先刪除網址末尾的 /edit...)
 # 正確範例：https://google.com
-PUBLIC_GSHEET_BASE_URL = "YOUR_GOOGLE_SHEET_URL_HERE"
+PUBLIC_GSHEET_BASE_URL = "https://docs.google.com/spreadsheets/d/1RQt29KIb4rkVo4A-Y3GouMAezYEBakb1q283d1sgdZU/edit?usp=sharing"
 
 # 自動分流讀取兩個工作表
 ROUTE_URL = f"{PUBLIC_GSHEET_BASE_URL}/gviz/tq?tqx=out:csv&sheet=route_template"
