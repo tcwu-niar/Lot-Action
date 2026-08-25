@@ -18,7 +18,7 @@ if "permanent_route_df" not in st.session_state:
     st.session_state.permanent_route_df = pd.DataFrame(columns=["Wafer ID", "Shuttle Name", "Step No.", "Step Description", "Process Tool", "Stage Owner"])
 
 # 💡 安全隔離：導回您專屬的 Lot-Action 專案 Apps Script 通道
-GAS_SUBMIT_URL = "https://google.com"
+GAS_SUBMIT_URL = "https://script.google.com/macros/s/AKfycbxSpHeSlbCyMgn0cH60fh62eM_nYoaCwkSCZF1UJMTeC-3z1wQJ1RVLXge1kvzadmKM/exec"
 
 # 💡 安全隔離：導回您最初建立的專屬 Lot-Action 試算表 ID，絕對不改動到其他系統！
 sheet_id = "1RQt29KIb4rkVo4A-Y3GouMAezYEBakb1q283d1sgdZU"
