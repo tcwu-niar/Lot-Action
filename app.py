@@ -156,14 +156,44 @@ if menu == "📋 頁面一：Full Route & 即時狀態":
 
 # ==================== 📜 頁面二：Wafer History ====================
 elif menu == "📜 頁面二：Wafer History":
-    st.subheader("📜 歷史生產變更紀錄總覽 (Wafer History)")
-    if not cloud_status.empty:
-        display_df = cloud_status.sort_values(by="Timestamp", ascending=False)
-        if st.session_state.search_input_val:
-            display_df = display_df[display_df.astype(str).apply(lambda x: x.str.contains(st.session_state.search_input_val, case=False)).any(axis=1)]
-        st.dataframe(display_df, use_container_width=True)
+    st.subheader("📜 歷史生產路由總覽 (Wafer History)")
+    st.markdown("本頁面不受即時過站動態影響，不論有無過站狀態，皆會強制完整呈現該晶圓編號在資料庫中登記的所有製程步驟。")
+    
+    # 💡 同步第一頁所打的 Wafer ID 作為依據
+    target_wafer = st.session_state.search_input_val if st.session_state.search_input_val else ""
+    
+    # 建立一個局部搜尋空格，讓使用者也能在此直接切換輸入別的 Wafer ID
+    search_history_id = st.text_input(
+        "🔍 查詢特定晶圓歷史路由 (支援模糊搜尋)：", 
+        value=target_wafer,
+        placeholder="例如: LOT5-01F2"
+    ).strip()
+    
+    # 即時同步回全域記憶體，確保切回第一頁時維持同一個 ID
+    st.session_state.search_input_val = search_history_id
+    
+    route_db = st.session_state.permanent_route_df
+    
+    if not route_db.empty:
+        history_display_df = route_db.copy()
+        
+        # 💡 核心修正：利用輸入的 ID 進行模糊篩選，強制秀出該 Wafer ID 的 92 步完整 Route 
+        if search_history_id:
+            # 支援篩選包含此關鍵字的 Wafer ID
+            mask = history_display_df["Wafer ID"].astype(str).str.contains(search_history_id, case=False, na=False)
+            history_display_df = history_display_df[mask]
+        
+        if not history_display_df.empty:
+            # 排序並顯示標準欄位結構
+            available_history_cols = ["Wafer ID", "Shuttle Name", "Step No.", "Step Description", "Process Tool", "Stage Owner"]
+            display_history_cols = [col for col in available_history_cols if col in history_display_df.columns]
+            history_display_df = history_display_df[display_history_cols].sort_values("Step No.")
+            
+            st.dataframe(history_display_df, use_container_width=True, height=500, hide_index=True)
+        else:
+            st.warning(f"⚠️ 系統資料庫目前查無關於晶圓編號 『{search_history_id}』 的路由紀錄。請確認拼字正確，或至第三頁重新附加導入檔案。")
     else:
-        st.warning("目前雲端尚無過站歷史紀錄。")
+        st.warning("⚠️ 系統記憶體中目前尚無任何路由資料。請先至『📤 頁面三：上傳新路由檔案』將您的 92 步 CSV 導入，本頁面即可立刻正常呈現完整歷史路由！")
 
 # ==================== 📤 頁面三：上傳新路由檔案 ====================
 elif menu == "📤 頁面三：上傳新路由檔案":
