@@ -18,7 +18,7 @@ if "permanent_route_df" not in st.session_state:
     st.session_state.permanent_route_df = pd.DataFrame()
 
 # 💡 串聯核心：已直接填入與您最新 JSON 密道後台對齊的 GET 網址
-GAS_SUBMIT_URL = "https://google.com"
+GAS_SUBMIT_URL = "https://script.google.com/macros/s/AKfycbxSpHeSlbCyMgn0cH60fh62eM_nYoaCwkSCZF1UJMTeC-3z1wQJ1RVLXge1kvzadmKM/exec"
 
 # 💡 安全隔離：精準鎖定您專屬的 Lot-Action 試算表 ID
 sheet_id = "1RQt29KIb4rkVo4A-Y3GouMAezYEBakb1q283d1sgdZU"
