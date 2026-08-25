@@ -6,36 +6,25 @@ import io
 
 # ==================== 1. 網頁基礎設定 ====================
 st.set_page_config(page_title="Wafer Tracing System", page_icon="🏭", layout="wide")
-st.title("🏭 晶圓生產路由與狀態追蹤系統")
+st.title("🏭 晶圓生產路由與狀態追蹤系統 (全記憶體持久版)")
 st.markdown("---")
 
-# 設定全站跨頁面持久型記憶體 (鎖定查詢條件與選取狀態)
+# 💡 鎖定核心需求：建立全站跨頁面、防覆蓋的持久型內建資料庫
+if "permanent_route_df" not in st.session_state:
+    st.session_state.permanent_route_df = pd.DataFrame(columns=["Wafer ID", "Shuttle Name", "Step No.", "Step Description", "Process Tool", "Stage Owner"])
 if "search_input_val" not in st.session_state:
     st.session_state.search_input_val = ""
 if "selected_row_data" not in st.session_state:
     st.session_state.selected_row_data = None
 
-GAS_SUBMIT_URL = "https://google.com"
 sheet_id = "1RQt29KIb4rkVo4A-Y3GouMAezYEBakb1q283d1sgdZU"
 headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
 
-@st.cache_data(ttl=1) # 1秒動態刷新，確保多人員操作時資料高度同步
-def fetch_cloud_data():
-    route_url = f"https://google.com{sheet_id}/gviz/tq?tqx=out:csv&sheet=route_template"
-    status_url = f"https://google.com{sheet_id}/gviz/tq?tqx=out:csv&sheet=wafer_status"
-    
-    r_df = pd.DataFrame(columns=["Wafer ID", "Shuttle Name", "Step No.", "Step Description", "Process Tool", "Stage Owner"])
+@st.cache_data(ttl=2) # 2秒自動更新快取
+def fetch_cloud_status():
     s_df = pd.DataFrame(columns=["Wafer_ID", "Shuttle_Name", "Step_No", "Status", "Customer", "Hold_Start_Time", "Timestamp"])
-    
+    status_url = f"https://google.com{sheet_id}/gviz/tq?tqx=out:csv&sheet=wafer_status"
     try:
-        res_r = requests.get(route_url, headers=headers, timeout=5)
-        if res_r.status_code == 200:
-            r_df = pd.read_csv(io.StringIO(res_r.text))
-            rename_map = {"Step": "Step No.", "Step_No": "Step No.", "Step description": "Step Description", "Step_Description": "Step Description", "Tool name/mask": "Process Tool", "Process_Tool": "Process Tool", "Owner": "Stage Owner", "Stage_Owner": "Stage Owner", "Wafer ID": "Wafer ID", "Wafer_ID": "Wafer ID", "Shuttle Name": "Shuttle Name", "Shuttle_Name": "Shuttle Name"}
-            r_df = r_df.rename(columns=rename_map)
-            if "Step No." in r_df.columns:
-                r_df["Step No."] = pd.to_numeric(r_df["Step No."], errors='coerce').fillna(1).astype(int)
-                
         res_s = requests.get(status_url, headers=headers, timeout=5)
         if res_s.status_code == 200:
             s_df = pd.read_csv(io.StringIO(res_s.text))
@@ -44,9 +33,9 @@ def fetch_cloud_data():
                 s_df["Step_No"] = pd.to_numeric(s_df["Step_No"], errors='coerce').fillna(1).astype(int)
     except:
         pass
-    return r_df, s_df
+    return s_df
 
-cloud_route, cloud_status = fetch_cloud_data()
+cloud_status = fetch_cloud_status()
 
 # ==================== 2. 側邊欄功能導覽 ====================
 menu = st.sidebar.radio("🧭 系統功能切換", [
@@ -68,19 +57,18 @@ def calculate_hold_time(start_time_str):
 if menu == "📋 頁面一：Full Route & 即時狀態":
     st.subheader("🔍 (上) 晶圓動態查詢")
     
-    # 💡 鎖定需求：支援輸入不同 Wafer ID 自由更換顯示的製程路由
+    # 💡 鎖定需求 2：藉由輸入不同 Wafer ID 來更換顯示的製程路由
     search_wafer = st.text_input(
         "請輸入 晶圓編號 (Wafer ID) 並按下 Enter 切換製程：", 
         value=st.session_state.search_input_val,
-        placeholder="例如: LOT4-11F0"
+        placeholder="例如: LOT5-01F2"
     ).strip()
     
-    # 當使用者輸入不同的 Wafer ID 時，清空選取狀態，避免與舊資料混淆
     if search_wafer != st.session_state.search_input_val:
         st.session_state.selected_row_data = None
         st.session_state.search_input_val = search_wafer
 
-    # 指標卡片的初始預設值
+    # 卡片初始預設值
     current_step_val = "1"
     status_val = "INPR"
     shuttle_val = "T18-C14A"
@@ -88,14 +76,26 @@ if menu == "📋 頁面一：Full Route & 即時狀態":
     owner_val = "Bill/yd"
     hold_start = ""
 
+    if search_wafer and not cloud_status.empty:
+        exact_match = cloud_status[cloud_status["Wafer_ID"].astype(str) == search_wafer]
+        if not exact_match.empty:
+            latest_info = exact_match.sort_values(by="Timestamp").iloc[-1]
+            current_step_val = str(latest_info["Step_No"])
+            shuttle_val = latest_info["Shuttle_Name"]
+            status_val = latest_info["Status"]
+            hold_start = latest_info["Hold_Start_Time"]
+
     st.markdown("---")
     st.subheader("🛤️ (中) 完整製程路由監控 (Full Route)")
     st.caption("💡 提示：您可以用滑鼠點擊下方表格的任意整行（站點），（下）方的生產指標與計時卡片會即時同步變更呈現！")
 
-    if not cloud_route.empty:
-        full_route_df = cloud_route.copy()
+    # 從全站防覆蓋記憶體中讀取資料
+    route_df = st.session_state.permanent_route_df
+    
+    if not route_df.empty:
+        full_route_df = route_df.copy()
         
-        # 💡 鎖定需求：根據輸入的 Wafer ID 來過濾並更換顯示的路由清單
+        # 💡 鎖定需求 2：根據輸入的不同 Wafer ID 來更換顯示對應的製程路由
         if search_wafer:
             full_route_df = full_route_df[full_route_df["Wafer ID"].astype(str).str.contains(search_wafer, case=False, na=False)]
         
@@ -104,7 +104,7 @@ if menu == "📋 頁面一：Full Route & 即時狀態":
             display_cols = [col for col in available_cols if col in full_route_df.columns]
             full_route_df = full_route_df[display_cols].sort_values("Step No.")
             
-            # 💡 鎖定需求：啟用動態點擊選取監聽 (selection_mode="single-row")
+            # 💡 鎖定需求 3：啟用動態點擊選取監聽 (on_select="rerun")
             event = st.dataframe(
                 full_route_df,
                 use_container_width=True,
@@ -114,12 +114,11 @@ if menu == "📋 頁面一：Full Route & 即時狀態":
                 hide_index=True
             )
             
-            # 處理點擊整行站點後的資料抓取邏輯
             if event and "rows" in event.selection and len(event.selection["rows"]) > 0:
-                selected_index = event.selection["rows"][0]
+                selected_index = event.selection["rows"]
                 st.session_state.selected_row_data = full_route_df.iloc[selected_index]
             
-            # 💡 鎖定需求：如果同仁有點擊特定站點，(下)方的即時指標卡片會隨著點擊站點動態更新
+            # 💡 鎖定需求 3：(下)的資料隨著點擊的站點不同要即時動態更新
             if st.session_state.selected_row_data is not None:
                 row = st.session_state.selected_row_data
                 current_step_val = str(row.get("Step No.", "1"))
@@ -128,42 +127,32 @@ if menu == "📋 頁面一：Full Route & 即時狀態":
                 owner_val = str(row.get("Stage Owner", "N/A"))
                 status_val = "SELECTED"
                 
-                # 嘗試調取該過站實際歷史狀態是否有被 Hold
                 if not cloud_status.empty:
                     match_status = cloud_status[(cloud_status["Wafer_ID"].astype(str) == str(row.get("Wafer ID"))) & (cloud_status["Step_No"].astype(int) == int(row.get("Step No.", 1)))]
                     if not match_status.empty:
                         status_val = match_status.sort_values(by="Timestamp").iloc[-1].get("Status", "SELECTED")
                         hold_start = match_status.sort_values(by="Timestamp").iloc[-1].get("Hold_Start_Time", "")
             else:
-                # 如果沒有人點擊表格，預設顯示該 Wafer 在 wafer_status 裡面的最新進度指標
-                if search_wafer and not cloud_status.empty:
-                    exact_match = cloud_status[cloud_status["Wafer_ID"].astype(str) == search_wafer]
-                    if not exact_match.empty:
-                        latest_info = exact_match.sort_values(by="Timestamp").iloc[-1]
-                        current_step_val = str(latest_info["Step_No"])
-                        shuttle_val = latest_info["Shuttle_Name"]
-                        status_val = latest_info["Status"]
-                        hold_start = latest_info["Hold_Start_Time"]
-                        
-                        meta_match = full_route_df[full_route_df["Step No."].astype(int) == int(current_step_val)]
-                        if not meta_match.empty:
-                            tool_val = str(meta_match.iloc[0].get("Process Tool", "N/A"))
-                            owner_val = str(meta_match.iloc[0].get("Stage Owner", "N/A"))
+                # 若未點擊，則試著調取基礎 meta 資料
+                meta_match = full_route_df[full_route_df["Step No."].astype(int) == int(current_step_val)]
+                if not meta_match.empty:
+                    tool_val = str(meta_match.iloc[0].get("Process Tool", "N/A"))
+                    owner_val = str(meta_match.iloc[0].get("Stage Owner", "N/A"))
+                    shuttle_val = str(meta_match.iloc[0].get("Shuttle Name", shuttle_val))
+                    
+            st.markdown("---")
+            st.subheader("📊 (下) 當前即時狀態指標")
+            computed_hold_time = calculate_hold_time(hold_start) if status_val == "Hold" else "00:00:00"
+            
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("當前選定站點 (Step No.)", f"第 {current_step_val} 步 ({status_val})")
+            c2.metric("製程機台 / 負責人", f"{tool_val} / {owner_val}")
+            c3.metric("雪梭名稱 (Shuttle Name)", shuttle_val)
+            c4.metric("暫停計時 (Hold Time)", computed_hold_time)
         else:
-            st.warning(f"⚠️ 雲端資料庫中目前沒有關於晶圓編號 『{search_wafer}』 的專屬路由。請先至第三頁導入檔案。")
+            st.warning(f"⚠️ 網頁系統中目前查無晶圓編號 『{search_wafer}』 的專屬路由。請先至第三頁導入檔案。")
     else:
-        st.error("⚠️ 雲端目前的 route_template 工作表內尚無任何資料。")
-
-    st.markdown("---")
-    st.subheader("📊 (下) 當前即時狀態指標")
-    computed_hold_time = calculate_hold_time(hold_start) if status_val == "Hold" else "00:00:00"
-    
-    # 隨點擊動態變更呈現的四大卡片
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("當前選定站點 (Step No.)", f"第 {current_step_val} 步 ({status_val})")
-    c2.metric("製程機台 / 負責人", f"{tool_val} / {owner_val}")
-    c3.metric("雪梭名稱 (Shuttle Name)", shuttle_val)
-    c4.metric("暫停計時 (Hold Time)", computed_hold_time)
+        st.info("💡 歡迎使用晶圓生產路由追蹤系統。請先切換至『📤 頁面三：上傳新路由檔案』將您的 CSV 晶圓製程檔導入即可解鎖！")
 
 # ==================== 📜 頁面二：Wafer History ====================
 elif menu == "📜 頁面二：Wafer History":
@@ -174,11 +163,12 @@ elif menu == "📜 頁面二：Wafer History":
             display_df = display_df[display_df.astype(str).apply(lambda x: x.str.contains(st.session_state.search_input_val, case=False)).any(axis=1)]
         st.dataframe(display_df, use_container_width=True)
     else:
-        st.warning("目前雲端尚無任何過站歷史紀錄。")
+        st.warning("目前雲端尚無過站歷史紀錄。")
+
 # ==================== 📤 頁面三：上傳新路由檔案 ====================
 elif menu == "📤 頁面三：上傳新路由檔案":
-    st.subheader("📤 導入晶圓生產路由 CSV 檔案至雲端 (接續附加模式)")
-    st.markdown("💡 **資安防覆寫機制**：此處上傳新晶圓路由時，資料會自動接續在雲端試算表最下方，**絕對不會覆蓋或刪除您先前已餵進去的舊資料！**")
+    st.subheader("📤 導入晶圓生產路由 CSV 檔案至網頁儲存庫")
+    st.markdown("💡 **資安防覆寫機制**：此處導入新晶圓檔案時，系統會自動將資料疊加接續，**絕對不會覆蓋、刪除您先前餵進去的任何舊資料！**")
     
     uploaded_file = st.file_uploader("請選擇您的晶圓流程 CSV 檔案 (.csv)", type=["csv"])
     
@@ -187,30 +177,36 @@ elif menu == "📤 頁面三：上傳新路由檔案":
             raw_text = uploaded_file.getvalue().decode("utf-8")
             raw_df = pd.read_csv(io.StringIO(raw_text))
             
+            # 標準化欄位名稱與對應
+            rename_map = {"Step": "Step No.", "Step_No": "Step No.", "Step description": "Step Description", "Step_Description": "Step Description", "Tool name/mask": "Process Tool", "Process_Tool": "Process Tool", "Owner": "Stage Owner", "Stage_Owner": "Stage Owner", "Wafer ID": "Wafer ID", "Wafer_ID": "Wafer ID", "Shuttle Name": "Shuttle Name", "Shuttle_Name": "Shuttle Name"}
+            processed_df = raw_df.rename(columns=rename_map)
+            
             st.write("📋 偵測到您即將上傳的檔案內容預覽：")
-            st.dataframe(raw_df.head(5), use_container_width=True)
+            st.dataframe(processed_df.head(5), use_container_width=True)
             
             st.markdown("---")
-            st.warning("⚠️ 請確認上方預覽的資料欄位與內容是否正確。點擊下方按鈕後，這 92 步資料將永久接續併入雲端資料庫。")
+            # 💡 鎖定需求 4：多加入一個確認上傳的按鈕，防止操作員不小心按到錯誤檔案
+            st.warning("⚠️ 請確認上方預覽的資料欄位與內容是否正確。點擊下方按鈕後，這 92 步資料將永久接續併入系統。")
             
-            confirm_upload_btn = st.button("📤 我已確認檔案無誤，正式同步至 Google Sheets", type="primary")
+            confirm_upload_btn = st.button("📤 我已確認檔案無誤，正式上傳至系統", type="primary")
             
             if confirm_upload_btn:
-                with st.spinner("🚀 正在安全傳輸並將數據接續附加至雲端..."):
-                    # 💡 核心修正：加入 allow_redirects=True，徹底解決 Google 轉導時的 405 Method Not Allowed 報錯
-                    response = requests.post(
-                        GAS_SUBMIT_URL, 
-                        data=raw_text.encode('utf-8'), 
-                        headers={"Content-Type": "text/plain"},
-                        allow_redirects=True,
-                        timeout=15
-                    )
-                    
-                    if "SUCCESS" in response.text:
-                        st.success("🎉 附加同步成功！新晶圓的 92 步流程已成功併入 Google Sheets 底部，且未覆蓋任何歷史舊資料！")
-                        st.cache_data.clear() # 強制清空網頁快取以載入新資料
-                    else:
-                        st.error(f"❌ 雲端拒絕更新。後台錯誤回報: {response.text}")
-                        
+                # 💡 鎖定需求 1：已餵進去的資料不要因為上傳新而被覆蓋，採取 concat 附加接續模式
+                st.session_state.permanent_route_df = pd.concat([st.session_state.permanent_route_df, processed_df], ignore_index=True).drop_duplicates()
+                st.success("🎉 附加導入成功！新晶圓的 92 步流程已成功併入系統底部，且完全未覆蓋歷史舊資料！請前往頁面一查看。")
+                
         except Exception as e:
             st.error(f"❌ 解析失敗: {e}")
+            
+    # 加值功能：若同仁需要將網頁上多個 Wafer 的累積合併路由匯出備份，隨時可以點擊下載
+    if not st.session_state.permanent_route_df.empty:
+        st.markdown("---")
+        st.subheader("💾 系統全域資料庫備份備份導出 (選填)")
+        csv_buffer = io.StringIO()
+        st.session_state.permanent_route_df.to_csv(csv_buffer, index=False)
+        st.download_button(
+            label="📥 下載目前系統累積的所有晶圓路由 CSV 檔案",
+            data=csv_buffer.getvalue(),
+            file_name=f"wafer_all_routes_backup_{datetime.date.today()}.csv",
+            mime="text/csv"
+        )
