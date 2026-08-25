@@ -189,14 +189,13 @@ elif menu == "📤 頁面三：上傳新路由檔案":
             st.dataframe(processed_df.head(5), use_container_width=True)
             
             st.markdown("---")
-            # 💡 核心功能：防誤觸二次確認按鈕
             st.warning("⚠️ 確認檔案正確後點擊下方按鈕，這 92 步資料將接續附加併入您獨立的 Lot-Action 雲端資料庫。")
             
             confirm_upload_btn = st.button("📤 我已確認檔案無誤，正式同步至 Google Sheets", type="primary")
             
             if confirm_upload_btn:
                 with st.spinner("🚀 正在安全附加資料至專屬獨立試算表中..."):
-                    # 💡 官方密道寫法：利用強大的 Text 流直接 POST 發送，完全穿透 Google 302 重導向封鎖
+                    # 💡 終極解鎖：利用 Text 純文字串流直接 POST 發送，完全穿透 Google 組織型重導向的 405 封鎖
                     response = requests.post(
                         GAS_SUBMIT_URL, 
                         data=raw_text.encode('utf-8'), 
