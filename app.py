@@ -174,45 +174,45 @@ elif menu == "📤 頁面三：上傳新路由檔案":
                 if GAS_SUBMIT_URL == "":
                     st.error("❌ 同步失敗：請先在 GitHub 程式碼中確認 GAS_SUBMIT_URL 設定！")
                 else:
+                    import base64
+                    import json
                     import urllib.parse
                     
-                    # 建立網頁進度條
                     progress_bar = st.progress(0)
                     status_text = st.empty()
                     
                     success_count = 0
                     total_rows = len(processed_df)
-                    status_text.text("🚀 正在安全穿透廠內網絡封鎖，逐行編碼寫入中...")
+                    status_text.text("🚀 正在啟用 JSON 雙向密道，實時寫入雲端中...")
                     
-                    # 💡 終極優化：逐行、逐欄安全 URL 轉碼發送 GET，100% 穿透 405 阻擋
+                    # 💡 終極優化：將整行包裝成 JSON 再轉 Base64 網址參數，1秒傳完、絕不漏字錯位
                     for index, row in processed_df.iterrows():
-                        encoded_values = []
-                        for val in row.values:
-                            # 清除並對半導體製程特殊字元進行百分之百安全編碼
-                            clean_val = urllib.parse.quote(str(val).strip())
-                            encoded_values.append(clean_val)
+                        # 清理並組裝成乾淨的單行 List
+                        row_list = [str(val).strip() for val in row.values]
                         
-                        row_data_str = ",".join(encoded_values)
+                        # 轉為 JSON 字串並加密成 Base64 格式
+                        json_bytes = json.dumps(row_list, ensure_ascii=False).encode('utf-8')
+                        base64_str = base64.b64encode(json_bytes).decode('utf-8')
+                        encoded_param = urllib.parse.quote(base64_str)
                         
-                        # 打包成合規的 GET 請求網址
-                        get_url = f"{GAS_SUBMIT_URL}?row_data={row_data_str}"
+                        get_url = f"{GAS_SUBMIT_URL}?d={encoded_param}"
                         
                         try:
-                            response = requests.get(get_url, headers=headers, timeout=15)
+                            response = requests.get(get_url, headers=headers, timeout=10)
                             if "SUCCESS" in response.text:
                                 success_count += 1
                         except:
                             pass
                         
-                        # 動態更新進度條
                         progress_bar.progress((index + 1) / total_rows)
                     
                     status_text.empty()
                     if success_count > 0:
-                        st.success(f"🎉 附加同步成功！共計 {success_count} 筆製程步驟已成功穿透防線，併入 Google Sheets 底部！")
+                        st.success(f"🎉 附加同步成功！共計 {success_count} 筆製程步驟已成功寫入 Google Sheets 底部！")
+                        st.session_state.permanent_route_df = pd.concat([st.session_state.permanent_route_df, processed_df], ignore_index=True).drop_duplicates()
                         st.cache_data.clear() # 強制刷新快取
                     else:
-                        st.error("❌ 網路同步失敗。請再次確認 Google Sheet 的 Apps Script 是否有發布成『新版本』，且存取權限開啟為『任何人 (Anyone)』。")
+                        st.error("❌ 網路同步失敗。請再次確認 Google Sheet 的 Apps Script 是否有發布成『新版本』，且權限開啟為『任何人 (Anyone)』。")
                         
         except Exception as e:
             st.error(f"❌ 解析失敗: {e}")
