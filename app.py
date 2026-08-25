@@ -73,6 +73,7 @@ def calculate_hold_time(start_time_str):
 if menu == "📋 頁面一：Full Route & 即時狀態":
     st.subheader("🔍 (上) 晶圓動態查詢")
     
+    # 💡 鎖定需求：格子輸入內容不遺失，且切換分頁完原封不動保留
     search_wafer = st.text_input(
         "請輸入 晶圓編號 (Wafer ID) 並按下 Enter 切換製程與即時過站狀態：", 
         value=st.session_state.search_input_val,
@@ -90,7 +91,7 @@ if menu == "📋 頁面一：Full Route & 即時狀態":
     if route_df is not None and not route_df.empty:
         full_route_df = route_df.copy()
         
-        # 模糊搜尋
+        # 💡 核心需求：採用模糊搜尋過濾表格
         if search_wafer:
             mask = full_route_df.astype(str).apply(lambda x: x.str.contains(search_wafer, case=False)).any(axis=1)
             full_route_df = full_route_df[mask]
@@ -104,12 +105,12 @@ if menu == "📋 頁面一：Full Route & 即時狀態":
                 full_route_df["Step No."] = pd.to_numeric(full_route_df["Step No."], errors='coerce').fillna(1).astype(int)
                 full_route_df = full_route_df.sort_values("Step No.")
             
-            # 啟用動態點擊選取監聽 (on_select="rerun")
+            # 💡 鎖定需求：啟用動態點擊選取監聽 (on_select="rerun")
             event = st.dataframe(full_route_df, use_container_width=True, height=350, selection_mode="single-row", on_select="rerun", hide_index=True)
             if event and "rows" in event.selection and len(event.selection["rows"]) > 0:
                 st.session_state.selected_row_data = full_route_df.iloc[event.selection["rows"]]
             
-            # 優先調取雲端的即時過站最新進度紀錄
+            # 💡 核心優化：優先調取雲端的即時過站最新進度紀錄
             if search_wafer and cloud_status is not None and not cloud_status.empty:
                 exact_match = cloud_status[cloud_status["Wafer_ID"].astype(str) == search_wafer]
                 if not exact_match.empty:
@@ -119,15 +120,16 @@ if menu == "📋 頁面一：Full Route & 即時狀態":
                     status_val = str(latest_info["Status"])
                     hold_start = str(latest_info["Hold_Start_Time"])
             
-            # 如果同仁滑鼠點選了表格中的特定站點，暫時切換顯示該站點資訊
+            # 💡 鎖定需求：如果同仁滑鼠點選了表格中的特定站點，下方卡片指標會隨著點擊站點動態更新跳動
             if st.session_state.selected_row_data is not None:
                 row = st.session_state.selected_row_data
                 current_step_val = str(row.get("Step No.", "1"))
                 shuttle_val = str(row.get("Shuttle Name", shuttle_val))
                 tool_val = str(row.get("Process Tool", "N/A"))
                 owner_val = str(row.get("Stage Owner", "N/A"))
+                status_val = "SELECTED"
             else:
-                # 預設自動從 92 步大表中抓取當前進度的機台與負責人
+                # 預設自動從 92 步大表中抓取當前進度的預定機台與負責人
                 meta_match = full_route_df[full_route_df["Step No."].astype(int) == int(current_step_val)]
                 if not meta_match.empty:
                     tool_val = str(meta_match.iloc.get("Process Tool", "N/A"))
@@ -144,7 +146,7 @@ if menu == "📋 頁面一：Full Route & 即時狀態":
             c3.metric("雪梭名稱 (Shuttle Name)", shuttle_val)
             c4.metric("暫停計時累計 (Hold Time)", computed_hold_time)
             
-            # 💡 核心功能解鎖：真正的實時過站、Hold 變更表單面板
+            # 💡 雙向同步更新面板：真正的過站、Hold 變更表單面板
             with st.form("real_time_update_form", clear_on_submit=True):
                 st.write("📝 **現場生產作業面板：過站變更或 Hold 晶圓狀態 (資料實時同步寫回試算表)**")
                 col_panel_a, col_panel_b = st.columns(2)
@@ -166,7 +168,7 @@ if menu == "📋 頁面一：Full Route & 即時狀態":
                         now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         hold_start_str = now_str if select_status == "Hold" else ""
                         
-                        # 依照 wafer_status 的順序打包資料
+                        # 依照 wafer_status 試算表的欄位順序打包
                         status_list = [input_target_id, input_shuttle_name, int(input_next_step), select_status, "蔡作敏/張振豪團隊", hold_start_str, now_str]
                         
                         # 將過站資料打包成免審查 Base64 JSON 串流
@@ -186,7 +188,7 @@ if menu == "📋 頁面一：Full Route & 即時狀態":
                             else:
                                 st.error(f"❌ 雲端更新拒絕: {response.text}")
                         except Exception as ex:
-                            st.error(f"❌ 網路請求超時，請檢查 Google 後台部署。錯誤: {ex}")
+                            st.error(f"❌ 網路請求超時，請確認第 20 行 GAS_SUBMIT_URL 的最新網址。錯誤: {ex}")
         else:
             st.warning(f"⚠️ 獨立路由庫中目前查無晶圓編號 『{search_wafer}』 的 92 步資料。")
     else:
@@ -195,23 +197,37 @@ if menu == "📋 頁面一：Full Route & 即時狀態":
 # ==================== 📜 頁面二：Wafer History ====================
 elif menu == "📜 頁面二：Wafer History":
     st.subheader("📜 歷史生產路由總覽 (Wafer History)")
-    st.markdown("💡 核心鎖定需求：不論目前有沒有即時過站紀錄，本頁面皆會強制完整呈現該晶圓在系統中登記的 92 步全路由清單。")
+    st.markdown("💡 **核心鎖定需求**：本頁面不受即時過站進度干擾，不論有沒有最新過站紀錄，**皆會依據關鍵字強制完整呈現該 Wafer ID 在系統中登記的 92 步全路由軌跡。**")
     
+    # 💡 鎖定需求：格子輸入內容不遺失，即時同步頁面一的打字內容
     target_wafer = st.session_state.search_input_val if st.session_state.search_input_val else ""
     search_history_id = st.text_input("🔍 查詢特定晶圓歷史路由 (支援模糊搜尋)：", value=target_wafer).strip()
-    st.session_state.search_input_val = search_history_id
+    st.session_state.search_input_val = search_history_id # 反向鎖定記憶體
     
     route_db = st.session_state.permanent_route_df
+    
     if route_db is not None and not route_db.empty:
-        history_df = route_db.copy()
-        if search_history_id:
-            history_df = history_df[history_df.astype(str).apply(lambda x: x.str.contains(search_history_id, case=False)).any(axis=1)]
+        history_display_df = route_db.copy()
         
-        available_cols = ["Wafer ID", "Shuttle Name", "Step No.", "Module", "Step Description", "Process Tool", "Stage Owner"]
-        display_history_cols = [col for col in available_cols if col in history_df.columns]
-        st.dataframe(history_df[display_history_cols].sort_values("Step No.") if "Step No." in history_df.columns else history_df, use_container_width=True, height=500, hide_index=True)
+        # 💡 核心需求：採用模糊搜尋過濾大表大表
+        if search_history_id:
+            mask = history_display_df.astype(str).apply(lambda x: x.str.contains(search_history_id, case=False)).any(axis=1)
+            history_display_df = history_display_df[mask]
+        
+        if not history_display_df.empty:
+            # 排序並顯示最精準的實體欄位結構
+            available_history_cols = ["Wafer ID", "Shuttle Name", "Step No.", "Module", "Step Description", "Process Tool", "Stage Owner"]
+            display_history_cols = [col for col in available_history_cols if col in history_display_df.columns]
+            
+            if "Step No." in history_display_df.columns:
+                history_display_df["Step No."] = pd.to_numeric(history_display_df["Step No."], errors='coerce').fillna(1).astype(int)
+                history_display_df = history_display_df.sort_values("Step No.")
+                
+            st.dataframe(history_display_df[display_history_cols], use_container_width=True, height=500, hide_index=True)
+        else:
+            st.warning(f"⚠️ 專屬獨立路由庫中目前查無關於關鍵字 『{search_history_id}』 的 92 步清單。")
     else:
-        st.warning("⚠️ 系統雲端目前尚無 any 路由紀錄。")
+        st.warning("⚠️ 系統雲端目前尚無 any 路由紀錄。請至頁面三附加導入。")
 # ==================== 📤 頁面三：上傳新路由檔案 ====================
 elif menu == "📤 頁面三：上傳新路由檔案":
     st.subheader("📤 導入晶圓生產路由 CSV 檔案至雲端 (接續附加模式)")
@@ -223,7 +239,7 @@ elif menu == "📤 頁面三：上傳新路由檔案":
             raw_text = uploaded_file.getvalue().decode("utf-8")
             raw_df = pd.read_csv(io.StringIO(raw_text))
             
-            # 欄位名稱標準化對齊
+            # 欄位名稱標準化對齊 (精準咬合您試算表的真實表頭名稱)
             rename_map = {"Step": "Step No.", "Step_No": "Step No.", "Step_No.": "Step No.", "Step description": "Step Description", "Step_Description": "Step Description", "Tool name/mask": "Process Tool", "Process_Tool": "Process Tool", "Tool name": "Process Tool", "Owner": "Stage Owner", "Stage_Owner": "Stage Owner", "Wafer ID": "Wafer ID", "Wafer_ID": "Wafer ID", "Shuttle Name": "Shuttle Name", "Shuttle_Name": "Shuttle Name"}
             processed_df = raw_df.rename(columns=rename_map)
             
@@ -232,47 +248,49 @@ elif menu == "📤 頁面三：上傳新路由檔案":
             
             st.markdown("---")
             # 💡 核心功能：防誤觸二次確認按鈕
-            st.warning("⚠️ 確認檔案正確後點擊下方按鈕，這 92 步資料將接續附加併入您獨立的 Lot-Action 雲端資料庫。")
+            st.warning("⚠️ 確認檔案正確後點擊下方按鈕，這 92 步資料將永久接續併入您獨立的 Lot-Action 雲端資料庫。")
             confirm_upload_btn = st.button("📤 我已確認檔案無誤，正式同步至 Google Sheets", type="primary")
             
             if confirm_upload_btn:
-                if GAS_SUBMIT_URL == "":
-                    st.error("❌ 同步失敗：請先在 GitHub 程式碼中確認 GAS_SUBMIT_URL 設定！")
+                if GAS_SUBMIT_URL == "" or "YOUR_NEW_GAS_URL_HERE" in GAS_SUBMIT_URL:
+                    st.error("❌ 同步失敗：請先在 GitHub 程式碼第 20 行將 GAS_SUBMIT_URL 設定為您最新的 Apps Script 網址！")
                 else:
-                    import base64
-                    import json
-                    import urllib.parse
-                    
-                    progress_bar = st.progress(0)
-                    status_text = st.empty()
-                    
-                    success_count = 0
-                    total_rows = len(processed_df)
-                    status_text.text("🚀 正在啟用 JSON 雙向密道，實時寫入雲端中...")
-                    
-                    # 💡 終極優化：將整行打包成 JSON 再轉 Base64 網址參數，防止斜線與逗號錯位
-                    for index, row in processed_df.iterrows():
-                        row_list = [str(val).strip() for val in row.values]
-                        json_bytes = json.dumps(row_list, ensure_ascii=False).encode('utf-8')
-                        base64_str = base64.b64encode(json_bytes).decode('utf-8')
-                        encoded_param = urllib.parse.quote(base64_str)
+                    with st.spinner("🚀 正在安全透過加密密道附加至您專屬的獨立試算表中..."):
+                        import base64
+                        import json
+                        import urllib.parse
                         
-                        get_url = f"{GAS_SUBMIT_URL}?d={encoded_param}"
+                        progress_bar = st.progress(0)
+                        status_text = st.empty()
                         
-                        try:
-                            response = requests.get(get_url, headers=headers, timeout=10)
-                            if "SUCCESS" in response.text:
-                                success_count += 1
-                        except:
-                            pass
+                        success_count = 0
+                        total_rows = len(processed_df)
+                        status_text.text("🚀 正在啟用 JSON 雙向分流密道，實時寫入雲端中...")
                         
-                        progress_bar.progress((index + 1) / total_rows)
-                    
-                    status_text.empty()
-                    if success_count > 0:
-                        st.success(f"🎉 附加同步成功！共計 {success_count} 筆製程步驟已成功寫入 Google Sheets 底部！")
-                        st.cache_data.clear() # 強制刷新唯讀快取以載入最新附加數據
-                    else:
-                        st.error("❌ 網路同步失敗。請再次確認 Google Sheet 的 Apps Script 是否有發布成『新版本』，且權限開啟為『任何人 (Anyone)』。")
+                        # 💡 終極優化：將整行打包成 JSON 再轉 Base64 網址參數，防止斜線與逗號錯位
+                        for index, row in processed_df.iterrows():
+                            row_list = [str(val).strip() for val in row.values]
+                            json_bytes = json.dumps(row_list, ensure_ascii=False).encode('utf-8')
+                            base64_str = base64.b64encode(json_bytes).decode('utf-8')
+                            encoded_param = urllib.parse.quote(base64_str)
+                            
+                            # 💡 核心修正：加入 type=route 參數，精準對接最新版雙接口 Apps Script
+                            get_url = f"{GAS_SUBMIT_URL}?type=route&d={encoded_param}"
+                            
+                            try:
+                                response = requests.get(get_url, headers=headers, timeout=10)
+                                if "SUCCESS" in response.text:
+                                    success_count += 1
+                            except:
+                                pass
+                            
+                            progress_bar.progress((index + 1) / total_rows)
+                        
+                        status_text.empty()
+                        if success_count > 0:
+                            st.success(f"🎉 附加同步成功！共計 {success_count} 筆製程步驟已成功附加寫入您專屬的 Google Sheets 底部！")
+                            st.cache_data.clear() # 強制刷新唯讀快取以載入最新附加數據
+                        else:
+                            st.error("❌ 網路同步失敗。請確認第 20 行的網址是否與 Google 試算表最新的『網頁應用程式 URL』完全一致。")
         except Exception as e:
             st.error(f"❌ 解析失敗: {e}")
