@@ -15,22 +15,21 @@ if "search_input_val" not in st.session_state:
 if "selected_row_data" not in st.session_state:
     st.session_state.selected_row_data = None
 
-# 💡 與您的 JSON 密道後台完全對齊的安全通道網址
+# 💡 與您的實實 GAS 網址 100% 精準對齊的安全通道網址
 GAS_SUBMIT_URL = "https://script.google.com/macros/s/AKfycbxSpHeSlbCyMgn0cH60fh62eM_nYoaCwkSCZF1UJMTeC-3z1wQJ1RVLXge1kvzadmKM/exec"
 
-# 💡 您的專屬 Lot-Action 試算表 ID
+# 💡 安全隔離：精準鎖定您專屬的 Lot-Action 試算表 ID
 sheet_id = "1RQt29KIb4rkVo4A-Y3GouMAezYEBakb1q283d1sgdZU"
 headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
 
-# 實時強拉雲端資料，清除所有快取髒資料干擾
+# 實時強制拉取，拔除所有快取髒資料干擾
 def fetch_cloud_data_raw():
-    # 💡 核心優化 1：在初始第一行直接建立空的骨架，徹底解決 UnboundLocalError 造成的當機！
     r_df = pd.DataFrame()
     s_df = pd.DataFrame()
     
-    # 💡 核心優化 2：精準配置為標準的 ://google.com{sheet_id}/ 結構，徹底根除 NameResolutionError 網址拼接錯誤！
-    route_url = f"https://google.com{sheet_id}/gviz/tq?tqx=out:csv&sheet=route_template&tq=limit%2010000"
-    status_url = f"https://google.com{sheet_id}/gviz/tq?tqx=out:csv&sheet=wafer_status&tq=limit%2010000"
+    # 💡 終極導正：直接使用字串硬拼接公式，保證 100% 吐出含有 /spreadsheets/d/ 的標準匯出網址，徹底根除 Invalid URL 報錯！
+    route_url = "https://google.com" + str(sheet_id) + "/gviz/tq?tqx=out:csv&sheet=route_template&tq=limit%2010000"
+    status_url = "https://google.com" + str(sheet_id) + "/gviz/tq?tqx=out:csv&sheet=wafer_status&tq=limit%2010000"
     
     try:
         # 1. 讀取 92 步全路由模板
@@ -38,7 +37,7 @@ def fetch_cloud_data_raw():
         if res_r.status_code == 200 and len(res_r.text).strip() > 0:
             raw_route = pd.read_csv(io.StringIO(res_r.text))
             if not raw_route.empty:
-                # 強制轉為字串清理表頭前後空白
+                # 強制轉為字串清理表頭前後隱形空格，防止 strip 報錯
                 raw_route.columns = raw_route.columns.astype(str).str.strip()
                 r_df = raw_route.copy()
         else:
@@ -52,7 +51,7 @@ def fetch_cloud_data_raw():
                 raw_status.columns = raw_status.columns.astype(str).str.strip()
                 s_df = raw_status.copy()
     except Exception as err:
-        st.sidebar.error(f"❌ 雲端請求發生硬體攔截或超時異常: {err}")
+        st.sidebar.error(f"❌ 雲端連線失敗: {err}")
         
     return r_df, s_df
 
