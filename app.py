@@ -16,7 +16,7 @@ if "selected_row_data" not in st.session_state:
     st.session_state.selected_row_data = None
 
 # 💡 與您的 JSON 密道後台完全對齊的安全通道網址
-GAS_SUBMIT_URL = "https://google.com"
+GAS_SUBMIT_URL = "https://script.google.com/macros/s/AKfycbxSpHeSlbCyMgn0cH60fh62eM_nYoaCwkSCZF1UJMTeC-3z1wQJ1RVLXge1kvzadmKM/exec"
 
 # 💡 您的專屬 Lot-Action 試算表 ID
 sheet_id = "1RQt29KIb4rkVo4A-Y3GouMAezYEBakb1q283d1sgdZU"
