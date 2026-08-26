@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import datetime
 import requests
+import time
 import io
 
 # ==================== 1. 網頁基礎設定 ====================
@@ -15,7 +16,7 @@ if "search_input_val" not in st.session_state:
 if "selected_row_data" not in st.session_state:
     st.session_state.selected_row_data = None
 
-# 💡 與您的 JSON 密道後台完全對齊的安全通道網址
+# 💡 核心對齊 1：精準綁定您最新部署並具備全網域通行證的真實 GAS 通道 URL
 GAS_SUBMIT_URL = "https://script.google.com/macros/s/AKfycbxSpHeSlbCyMgn0cH60fh62eM_nYoaCwkSCZF1UJMTeC-3z1wQJ1RVLXge1kvzadmKM/exec"
 
 # 💡 安全隔離：精準鎖定您專屬的 Lot-Action 試算表 ID
@@ -27,8 +28,11 @@ def fetch_cloud_data_raw():
     r_df = pd.DataFrame()
     s_df = pd.DataFrame()
     
-    route_url = "https://docs.google.com/spreadsheets/d/" + str(sheet_id) + "/gviz/tq?tqx=out:csv&sheet=route_template&tq=limit%2010000"
-    status_url = "https://docs.google.com/spreadsheets/d/" + str(sheet_id) + "/gviz/tq?tqx=out:csv&sheet=wafer_status&tq=limit%2010000"
+    # 💡 核心對齊 2：精準使用含有 docs. 與 /spreadsheets/d/ 的標準官方路徑！
+    # 💡 終極優化：末端強制拼接動態時間戳 (time.time())，徹底摧毀 Google 預設唯讀暫存阻礙，強迫前後台 100% 毫秒級實時拉取新上傳的製程！
+    timestamp_buster = str(int(time.time()))
+    route_url = "https://docs.google.com/spreadsheets/d/" + str(sheet_id) + "/gviz/tq?tqx=out:csv&sheet=route_template&tq=limit%2010000&cb=" + timestamp_buster
+    status_url = "https://docs.google.com/spreadsheets/d/" + str(sheet_id) + "/gviz/tq?tqx=out:csv&sheet=wafer_status&tq=limit%2010000&cb=" + timestamp_buster
     
     try:
         # 1. 讀取 92 步全路由模板
@@ -36,7 +40,7 @@ def fetch_cloud_data_raw():
         if res_r.status_code == 200 and len(res_r.text).strip() > 0:
             raw_route = pd.read_csv(io.StringIO(res_r.text))
             if not raw_route.empty:
-                # 💡 終極優化：將所有欄位表頭和內容強制轉為字串文字，徹底消滅 'int' object has no attribute 'strip' 報錯！
+                # 強制將所有欄位表頭和內容轉為字串文字，徹底消滅型態錯誤與 strip 報錯
                 raw_route.columns = raw_route.columns.astype(str).str.strip()
                 r_df = raw_route.astype(str)
                 
@@ -54,15 +58,6 @@ def fetch_cloud_data_raw():
     return r_df, s_df
 
 cloud_route, cloud_status = fetch_cloud_data_raw()
-
-def calculate_hold_time(start_time_str):
-    try:
-        start_dt = datetime.datetime.strptime(str(start_time_str), "%Y-%m-%d %H:%M:%S")
-        delta = datetime.datetime.now() - start_dt
-        seconds = max(0, int(delta.total_seconds()))
-        return f"{seconds // 3600:02d}:{(seconds % 3600) // 60:02d}:{seconds % 60:02d}"
-    except:
-        return "00:00:00"
 
 # ==================== 🚀 終極解鎖：改用原生網頁 Tabs 分頁標籤流 ====================
 tab1, tab2, tab3 = st.tabs(["📋 頁面一：Full Route & 即時狀態", "📜 頁面二：Wafer History", "📤 頁面三：上傳新路由檔案"])
