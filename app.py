@@ -28,8 +28,8 @@ def fetch_cloud_data_raw():
     s_df = pd.DataFrame()
     
     # 💡 終極導正：直接使用字串硬拼接公式，保證 100% 吐出含有 /spreadsheets/d/ 的標準匯出網址，徹底根除 Invalid URL 報錯！
-    route_url = "https://google.com" + str(sheet_id) + "/gviz/tq?tqx=out:csv&sheet=route_template&tq=limit%2010000"
-    status_url = "https://google.com" + str(sheet_id) + "/gviz/tq?tqx=out:csv&sheet=wafer_status&tq=limit%2010000"
+    route_url = "https://google.com/spreadsheets/d/" + str(sheet_id) + "/gviz/tq?tqx=out:csv&sheet=route_template&tq=limit%2010000"
+    status_url = "https://google.com/spreadsheets/d/" + str(sheet_id) + "/gviz/tq?tqx=out:csv&sheet=wafer_status&tq=limit%2010000"
     
     try:
         # 1. 讀取 92 步全路由模板
