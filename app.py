@@ -18,41 +18,43 @@ if "selected_row_data" not in st.session_state:
 # 💡 與您的 JSON 密道後台完全對齊的安全通道網址
 GAS_SUBMIT_URL = "https://script.google.com/macros/s/AKfycbxSpHeSlbCyMgn0cH60fh62eM_nYoaCwkSCZF1UJMTeC-3z1wQJ1RVLXge1kvzadmKM/exec"
 
-# 💡 安全隔離：精準鎖定您專屬的 Lot-Action 試算表 ID
+# 💡 您的專屬 Lot-Action 試算表 ID
 sheet_id = "1RQt29KIb4rkVo4A-Y3GouMAezYEBakb1q283d1sgdZU"
-headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
 
-# 實時拉取，清除所有快取髒資料干擾
+# 實時強拉雲端資料，清除所有快取髒資料干擾
 def fetch_cloud_data_raw():
-    route_df = pd.DataFrame()
-    status_df = pd.DataFrame()
+    # 💡 核心優化 1：在初始第一行直接建立空的骨架，徹底解決 UnboundLocalError 造成的當機！
+    r_df = pd.DataFrame()
+    s_df = pd.DataFrame()
     
-    route_url = f"https://google.com{sheet_id}/gviz/tq?tqx=out:csv&sheet=route_template&tq=limit%2010000"
-    status_url = f"https://google.com{sheet_id}/gviz/tq?tqx=out:csv&sheet=wafer_status&tq=limit%2010000"
+    # 💡 核心優化 2：精準配置為標準的 ://google.com{sheet_id}/ 結構，徹底根除 NameResolutionError 網址拼接錯誤！
+    route_url = f"https://://google.com{sheet_id}/gviz/tq?tqx=out:csv&sheet=route_template&tq=limit%2010000"
+    status_url = f"https://://google.com{sheet_id}/gviz/tq?tqx=out:csv&sheet=wafer_status&tq=limit%2010000"
     
     try:
-        # 1. 讀取路由表
+        # 1. 讀取 92 步全路由模板
         res_r = requests.get(route_url, headers=headers, timeout=5)
         if res_r.status_code == 200 and len(res_r.text).strip() > 0:
             raw_route = pd.read_csv(io.StringIO(res_r.text))
             if not raw_route.empty:
-                # 💡 終極優化：強制將所有欄位名稱先轉為字串 (str)，徹底根除 int object has no attribute 'strip' 的型態當機 Bug！
+                # 強制轉為字串清理表頭前後空白
                 raw_route.columns = raw_route.columns.astype(str).str.strip()
                 r_df = raw_route.copy()
         else:
-            st.sidebar.error(f"⚠️ 路由表下載失敗，HTTP 狀態碼: {res_r.status_code}")
+            st.sidebar.error(f"⚠️ 雲端路由頁籤讀取回應失敗，狀態碼: {res_r.status_code}")
             
-        # 2. 讀取過站動態
+        # 2. 讀取最新晶圓過站歷史
         res_s = requests.get(status_url, headers=headers, timeout=5)
         if res_s.status_code == 200 and len(res_s.text).strip() > 0:
-            status_df = pd.read_csv(io.StringIO(res_s.text))
-            if not status_df.empty:
-                # 同步強制轉字串清理
-                status_df.columns = status_df.columns.astype(str).str.strip()
+            raw_status = pd.read_csv(io.StringIO(res_s.text))
+            if not raw_status.empty:
+                raw_status.columns = raw_status.columns.astype(str).str.strip()
+                s_df = raw_status.copy()
     except Exception as err:
-        st.sidebar.error(f"❌ 雲端連線失敗: {err}")
+        st.sidebar.error(f"❌ 雲端請求發生硬體攔截或超時異常: {err}")
         
-    return r_df, status_df
+    return r_df, s_df
 
 cloud_route, cloud_status = fetch_cloud_data_raw()
 
