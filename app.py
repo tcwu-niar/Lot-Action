@@ -59,13 +59,13 @@ def fetch_cloud_data_raw():
 
 cloud_route, cloud_status = fetch_cloud_data_raw()
 
-# ==================== 🚀 終極解鎖：改用原生網頁 Tabs 分頁標籤流 ====================
+# ==================== 🚀 原生網頁 Tabs 分頁標籤流 (後半段完全體) ====================
 tab1, tab2, tab3 = st.tabs(["📋 頁面一：Full Route & 即時狀態", "📜 頁面二：Wafer History", "📤 頁面三：上傳新路由檔案"])
 
 # ==================== 📋 頁面一：Full Route & 即時狀態 ====================
 with tab1:
     st.subheader("🔍 (上) 晶圓動態查詢")
-    search_wafer = st.text_input("請輸入 晶圓編號 (Wafer ID) 並按下 Enter 切換製程：", value=st.session_state.search_input_val, placeholder="例如: LOT4-11F0", key="tab1_search").strip()
+    search_wafer = st.text_input("請輸入 晶圓編號 (Wafer ID) 並按下 Enter 切換製程：", value=st.session_state.search_input_val, placeholder="例如: LOT4-11F0", key="unique_tab1_search_input").strip()
     if search_wafer != st.session_state.search_input_val:
         st.session_state.selected_row_data = None
         st.session_state.search_input_val = search_wafer
@@ -74,23 +74,29 @@ with tab1:
     
     st.markdown("---")
     st.subheader("🛤️ (中) 完整製程路由監控 (Full Route)")
+    
+    # ---- 💡 中段路由大表處理區塊 (全新變數隔離，100% 不撞車) ----
     if cloud_route is not None and not cloud_route.empty:
+        # 全表模糊搜尋過濾關鍵字
         if search_wafer:
             mask = cloud_route.astype(str).apply(lambda x: x.str.contains(search_wafer, case=False)).any(axis=1)
-            display_route_df = cloud_route[mask]
+            display_route_df = cloud_route[mask].copy()
         else:
             display_route_df = cloud_route.copy()
         
         if not display_route_df.empty:
             st.caption("💡 提示：您可以用滑鼠點擊下方表格的任意整行（站點），（下）方的生產指標與計時卡片會即時同步變更呈現！")
-            event = st.dataframe(display_route_df, use_container_width=True, height=320, selection_mode="single-row", on_select="rerun", hide_index=True, key="tab1_grid")
+            
+            # 🚀 終極解鎖 1：完全移除了原本的 key="tab1_grid"，改用完全獨立的隔離網格呈現，徹底粉碎 Duplicate Key 卡死！
+            event = st.dataframe(display_route_df, use_container_width=True, height=320, selection_mode="single-row", on_select="rerun", hide_index=True)
             if event and "rows" in event.selection and len(event.selection["rows"]) > 0:
                 st.session_state.selected_row_data = display_route_df.iloc[event.selection["rows"]]
         else:
-            st.warning(f"⚠️ 專屬獨立路由庫中目前查無關於關鍵字 『{search_wafer}』 的製程路由。")
+            st.warning(f"⚠️ 獨立路由庫中目前查無關於關鍵字 『{search_wafer}』 的製程路由。")
     else:
         st.info("💡 雲端安全接口測試正常！請前往右側分頁『📤 頁面三：上傳新路由檔案』將您的 92 步 CSV 導入，資料便會直接在此呈現大表！")
 
+    # ---- 💡 下段指標卡片與表單作業面板 (保證永久呈現) ----
     st.markdown("---")
     st.subheader("📊 (下) 當前即時狀態指標")
     if search_wafer and cloud_status is not None and not cloud_status.empty:
@@ -131,13 +137,13 @@ with tab1:
         st.write("📝 **現場生產作業面板：過站變更或 Hold 晶圓狀態 (資料實時同步寫回試算表)**")
         col_panel_a, col_panel_b = st.columns(2)
         with col_panel_a:
-            input_target_id = st.text_input("確認晶圓編號 (Wafer ID) *", value=search_wafer if search_wafer else "LOT4-11F0", key="tab1_form_id")
-            select_status = st.selectbox("變更生產狀態", ["INPR", "Hold", "Pass", "Scrap"], index=["INPR", "Hold", "Pass", "Scrap"].index(status_val) if status_val in ["INPR", "Hold", "Pass", "Scrap"] else 0, key="tab1_form_status")
+            input_target_id = st.text_input("確認晶圓編號 (Wafer ID) *", value=search_wafer if search_wafer else "LOT4-11F0", key="tab1_form_id_new")
+            select_status = st.selectbox("變更生產狀態", ["INPR", "Hold", "Pass", "Scrap"], index=["INPR", "Hold", "Pass", "Scrap"].index(status_val) if status_val in ["INPR", "Hold", "Pass", "Scrap"] else 0, key="tab1_form_status_new")
         with col_panel_b:
             try: default_step_idx = int(float(current_step_val))
             except: default_step_idx = 1
-            input_next_step = st.number_input("前進製程步數 (Step) *", min_value=1, max_value=200, value=default_step_idx, key="tab1_form_step")
-            input_shuttle_name = st.text_input("確認 Shuttle Name", value=shuttle_val, key="tab1_form_shuttle")
+            input_next_step = st.number_input("前進製程步數 (Step) *", min_value=1, max_value=200, value=default_step_idx, key="tab1_form_step_new")
+            input_shuttle_name = st.text_input("確認 Shuttle Name", value=shuttle_val, key="tab1_form_shuttle_new")
         
         submit_status_btn = st.form_submit_button("💾 正式過站並同步寫回 Google Sheets", type="primary")
         if submit_status_btn:
