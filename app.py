@@ -15,10 +15,10 @@ if "search_input_val" not in st.session_state:
 if "selected_row_data" not in st.session_state:
     st.session_state.selected_row_data = None
 
-# 💡 正確對齊 1：填入包含 /exec 的 Google Apps Script 網頁應用程式網址
+# 💡 與您的 JSON 密道後台完全對齊的安全通道網址
 GAS_SUBMIT_URL = "https://script.google.com/macros/s/AKfycbxSpHeSlbCyMgn0cH60fh62eM_nYoaCwkSCZF1UJMTeC-3z1wQJ1RVLXge1kvzadmKM/exec"
 
-# 💡 正確對齊 2：填入純粹的試算表英數 ID，精準隔離，絕對不改動到其他系統！
+# 💡 安全隔離：精準鎖定您專屬的 Lot-Action 試算表 ID
 sheet_id = "1RQt29KIb4rkVo4A-Y3GouMAezYEBakb1q283d1sgdZU"
 headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
 
@@ -27,17 +27,18 @@ def fetch_cloud_data_raw():
     route_df = pd.DataFrame()
     status_df = pd.DataFrame()
     
-    # 💡 終極修復：將網址精準配置為標準的 docs.google.com/spreadsheets/d/ 結構，徹底根除 Invalid URL 報錯！
-    route_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet=route_template&tq=limit%2010000"
-    status_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet=wafer_status&tq=limit%2010000"
+    route_url = f"https://google.com{sheet_id}/gviz/tq?tqx=out:csv&sheet=route_template&tq=limit%2010000"
+    status_url = f"https://google.com{sheet_id}/gviz/tq?tqx=out:csv&sheet=wafer_status&tq=limit%2010000"
     
     try:
         # 1. 讀取路由表
         res_r = requests.get(route_url, headers=headers, timeout=5)
         if res_r.status_code == 200 and len(res_r.text).strip() > 0:
-            route_df = pd.read_csv(io.StringIO(res_r.text))
-            if not route_df.empty:
-                route_df.columns = route_df.columns.str.strip() # 清除前後空格
+            raw_route = pd.read_csv(io.StringIO(res_r.text))
+            if not raw_route.empty:
+                # 💡 終極優化：強制將所有欄位名稱先轉為字串 (str)，徹底根除 int object has no attribute 'strip' 的型態當機 Bug！
+                raw_route.columns = raw_route.columns.astype(str).str.strip()
+                r_df = raw_route.copy()
         else:
             st.sidebar.error(f"⚠️ 路由表下載失敗，HTTP 狀態碼: {res_r.status_code}")
             
@@ -46,11 +47,12 @@ def fetch_cloud_data_raw():
         if res_s.status_code == 200 and len(res_s.text).strip() > 0:
             status_df = pd.read_csv(io.StringIO(res_s.text))
             if not status_df.empty:
-                status_df.columns = ["Wafer_ID", "Shuttle_Name", "Step_No", "Status", "Customer", "Hold_Start_Time", "Timestamp"]
+                # 同步強制轉字串清理
+                status_df.columns = status_df.columns.astype(str).str.strip()
     except Exception as err:
         st.sidebar.error(f"❌ 雲端連線失敗: {err}")
         
-    return route_df, status_df
+    return r_df, status_df
 
 cloud_route, cloud_status = fetch_cloud_data_raw()
 
