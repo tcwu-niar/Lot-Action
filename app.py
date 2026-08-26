@@ -29,8 +29,8 @@ def fetch_cloud_data_raw():
     s_df = pd.DataFrame()
     
     # 💡 核心優化 2：精準配置為標準的 ://google.com{sheet_id}/ 結構，徹底根除 NameResolutionError 網址拼接錯誤！
-    route_url = f"https://://google.com{sheet_id}/gviz/tq?tqx=out:csv&sheet=route_template&tq=limit%2010000"
-    status_url = f"https://://google.com{sheet_id}/gviz/tq?tqx=out:csv&sheet=wafer_status&tq=limit%2010000"
+    route_url = f"https://google.com{sheet_id}/gviz/tq?tqx=out:csv&sheet=route_template&tq=limit%2010000"
+    status_url = f"https://google.com{sheet_id}/gviz/tq?tqx=out:csv&sheet=wafer_status&tq=limit%2010000"
     
     try:
         # 1. 讀取 92 步全路由模板
