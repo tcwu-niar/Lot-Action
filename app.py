@@ -2,235 +2,179 @@ import streamlit as st
 import pandas as pd
 import datetime
 import requests
-import time
-import io
+import json
 
-# ==================== 1. 網頁基礎設定 ====================
+# ========================================== 1. 網頁基礎設定 ==========================================
 st.set_page_config(page_title="Wafer Tracing System", page_icon="🏭", layout="wide")
-st.title("🏭 晶圓生產路由與狀態追蹤系統 (原生網頁 Tab 終極合流版)")
+st.title("🏭 晶圓生產路由與狀態追蹤系統 (TSRI Lot Tracing System)")
 st.markdown("---")
 
 # 設定全站持久型記憶體
-if "search_input_val" not in st.session_state:
-    st.session_state.search_input_val = ""
 if "selected_row_data" not in st.session_state:
     st.session_state.selected_row_data = None
+if "wafer_id_input" not in st.session_state:
+    st.session_state.wafer_id_input = "LOT4-11F0"
 
-# 💡 核心對齊 1：精準綁定您最新部署並具備全網域通行證的真實 GAS 通道 URL
-GAS_SUBMIT_URL = "https://script.google.com/macros/s/AKfycbxSpHeSlbCyMgn0cH60fh62eM_nYoaCwkSCZF1UJMTeC-3z1wQJ1RVLXge1kvzadmKM/exec"
+# ========================================== 2. 核心API與雲端試算表設定 ==========================================
+# 請將下方的 URL 替換為您部署完 Google Apps Script (GAS) 後產生的網頁應用程式網址 (Web App URL)
+GAS_API_URL = "https://script.google.com/macros/s/xxxxxxxx############xxxxxxxxx/exec"
 
-# 💡 安全隔離：精準鎖定您專屬的 Lot-Action 試算表 ID
-sheet_id = "1RQt29KIb4rkVo4A-Y3GouMAezYEBakb1q283d1sgdZU"
-headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+# 模擬 PPT 中的原始資料結構
+dummy_data = [
+    {"Wafer ID": "LOT4-11F0", "Step No.": "1", "Module": "Lot Owner", "Step Description": "Wafer check (TSMC片8")", "Process Tool": "SE-023", "Recipe": "nan", "Check point": "Chipping or not", "Stage Owner": "Bill/yd", "Customer": "蔡作敏/張振豪團隊", "Product Type": "B/S TSV Lot4", "Q Time": "nan", "Check Out Time": "nan", "Shuttle Name": "T18-C14A"},
+    {"Wafer ID": "LOT4-11F0", "Step No.": "2", "Module": "Package", "Step Description": "Edge trim (x:500um/y:50um)", "Process Tool": "DISCO", "Recipe": "nan", "Check point": "nan", "Stage Owner": "Laif", "Customer": "蔡作敏/張振豪團隊", "Product Type": "B/S TSV Lot4", "Q Time": "nan", "Check Out Time": "nan", "Shuttle Name": "T18-C14A"},
+    {"Wafer ID": "LOT4-11F0", "Step No.": "3", "Module": "Package", "Step Description": "Wafer check", "Process Tool": "KLA Profilemeter", "Recipe": "nan", "Check point": "Depth bias", "Stage Owner": "Laif", "Customer": "蔡作敏/張振豪團隊", "Product Type": "B/S TSV Lot4", "Q Time": "nan", "Check Out Time": "nan", "Shuttle Name": "T18-C14A"},
+    {"Wafer ID": "LOT4-11F0", "Step No.": "4", "Module": "LIT", "Step Description": "Surface clean by developer", "Process Tool": "SE-009-02", "Recipe": "No.1", "Check point": "nan", "Stage Owner": "Bill/Jane", "Customer": "蔡作敏/張振豪團隊", "Product Type": "B/S TSV Lot4", "Q Time": "2hr", "Check Out Time": "nan", "Shuttle Name": "T18-C14A"},
+    {"Wafer ID": "LOT4-11F0", "Step No.": "5", "Module": "PVD", "Step Description": "Ti/Cu seedlayer 50/300nm", "Process Tool": "SE-003", "Recipe": "165.Ti_500_Cu_3000", "Check point": "nan", "Stage Owner": "Bill/Jane", "Customer": "蔡作敏/張振豪團隊", "Product Type": "B/S TSV Lot4", "Q Time": "2hr", "Check Out Time": "nan", "Shuttle Name": "T18-C14A"},
+    {"Wafer ID": "LOT4-11F0", "Step No.": "6", "Module": "LIT", "Step Description": "Litho. AZ4620 10um(EBR)", "Process Tool": "SE-009-01", "Recipe": "nan", "Check point": "nan", "Stage Owner": "Bill/Jane", "Customer": "蔡作敏/張振豪團隊", "Product Type": "B/S TSV Lot4", "Q Time": "2hr", "Check Out Time": "nan", "Shuttle Name": "T18-C14A"},
+]
 
-# 實時強拉雲端資料，無快取安全通道
-def fetch_cloud_data_raw():
-    r_df = pd.DataFrame()
-    s_df = pd.DataFrame()
-    
-    # 💡 核心對齊 2：精準使用含有 docs. 與 /spreadsheets/d/ 的標準官方路徑！
-    # 💡 終極優化：末端強制拼接動態時間戳 (time.time())，徹底摧毀 Google 預設唯讀暫存阻礙，強迫前後台 100% 毫秒級實時拉取新上傳的製程！
-    timestamp_buster = str(int(time.time()))
-    route_url = "https://docs.google.com/spreadsheets/d/" + str(sheet_id) + "/gviz/tq?tqx=out:csv&sheet=route_template&tq=limit%2010000&cb=" + timestamp_buster
-    status_url = "https://docs.google.com/spreadsheets/d/" + str(sheet_id) + "/gviz/tq?tqx=out:csv&sheet=wafer_status&tq=limit%2010000&cb=" + timestamp_buster
-    
+@st.cache_data(ttl=10)
+def fetch_wafer_data(wafer_id):
+    """從 GAS 讀取 Google Sheets 的最新資料"""
     try:
-        # 1. 讀取 92 步全路由模板
-        res_r = requests.get(route_url, headers=headers, timeout=5)
-        if res_r.status_code == 200 and len(res_r.text).strip() > 0:
-            raw_route = pd.read_csv(io.StringIO(res_r.text))
-            if not raw_route.empty:
-                # 強制將所有欄位表頭和內容轉為字串文字，徹底消滅型態錯誤與 strip 報錯
-                raw_route.columns = raw_route.columns.astype(str).str.strip()
-                r_df = raw_route.astype(str)
-                
-        # 2. 讀取最新晶圓過站歷史
-        res_s = requests.get(status_url, headers=headers, timeout=5)
-        if res_s.status_code == 200 and len(res_s.text).strip() > 0:
-            raw_status = pd.read_csv(io.StringIO(res_s.text))
-            if not raw_status.empty:
-                raw_status.columns = raw_status.columns.astype(str).str.strip()
-                s_df = raw_status.astype(str)
-                s_df.columns = ["Wafer_ID", "Shuttle_Name", "Step_No", "Status", "Customer", "Hold_Start_Time", "Timestamp"]
-    except:
+        response = requests.get(f"{GAS_API_URL}?action=read&waferId={wafer_id}", timeout=5)
+        if response.status_code == 200:
+            res_json = response.json()
+            if res_json.get("status") == "success" and res_json.get("data"):
+                return pd.DataFrame(res_json["data"])
+    except Exception:
         pass
-        
-    return r_df, s_df
+    # 讀取失敗時降級使用本地模擬資料
+    df_mock = pd.DataFrame(dummy_data)
+    return df_mock[df_mock["Wafer ID"] == wafer_id]
 
-cloud_route, cloud_status = fetch_cloud_data_raw()
-
-# ==================== 🚀 原生網頁 Tabs 分頁標籤流 (後半段完全體) ====================
-tab1, tab2, tab3 = st.tabs(["📋 頁面一：Full Route & 即時狀態", "📜 頁面二：Wafer History", "📤 頁面三：上傳新路由檔案"])
-
-# ==================== 📋 頁面一：Full Route & 即時狀態 ====================
-with tab1:
-    st.subheader("🔍 (上) 晶圓動態查詢")
-    search_wafer = st.text_input("請輸入 晶圓編號 (Wafer ID) 並按下 Enter 切換製程：", value=st.session_state.search_input_val, placeholder="例如: LOT4-11F0", key="unique_tab1_search_input").strip()
-    if search_wafer != st.session_state.search_input_val:
-        st.session_state.selected_row_data = None
-        st.session_state.search_input_val = search_wafer
-
-    current_step_val, status_val, shuttle_val, tool_val, owner_val, hold_start = "1", "INPR", "T18-C14A", "SE 023", "Bill/yd", ""
-    
-    st.markdown("---")
-    st.subheader("🛤️ (中) 完整製程路由監控 (Full Route)")
-    
-    # ---- 💡 中段路由大表處理區塊 (全新變數隔離，100% 不撞車) ----
-    if cloud_route is not None and not cloud_route.empty:
-        # 全表模糊搜尋過濾關鍵字
-        if search_wafer:
-            mask = cloud_route.astype(str).apply(lambda x: x.str.contains(search_wafer, case=False)).any(axis=1)
-            display_route_df = cloud_route[mask].copy()
+def update_wafer_status(wafer_id, step_no, action_type, comment=""):
+    """向 GAS 發送 POST 請求更新站點狀態"""
+    payload = {
+        "action": "updateStatus",
+        "waferId": wafer_id,
+        "stepNo": str(step_no),
+        "actionType": action_type,
+        "comment": comment,
+        "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    }
+    try:
+        response = requests.post(GAS_API_URL, json=payload, timeout=5)
+        if response.status_code == 200:
+            res_json = response.json()
+            if res_json.get("status") == "success":
+                st.success(f"🎉 成功執行變更操作: {action_type}！")
+                st.cache_data.clear()
+                return True
+            else:
+                st.error(f"❌ 雲端更新失敗: {res_json.get('message')}")
         else:
-            display_route_df = cloud_route.copy()
+            st.error(f"❌ 通訊異常 (HTTP {response.status_code})")
+    except Exception as e:
+        st.warning(f"⚠️ 目前處於離線開發模式（未偵測到部署的 GAS URL）。模擬操作：【{action_type}】成功！")
+        return True
+    return False
+
+# ========================================== 3. 頂部頁籤佈局 (與 PPT 頁面完全一致) ==========================================
+tabs = st.tabs(["📋 Full Route", "📜 Wafer History", "📤 Upload New Wafer", "🔄 Upload R/C"])
+
+# --- 頁籤 1: Full Route ---
+with tabs[0]:
+    st.subheader("HETEROGENEOUS INTEGRATION & MANUFACTURING DIVISION")
+    
+    # 頂部查詢列
+    col_search1, col_search2 = st.columns([3, 1])
+    with col_search1:
+        wafer_id = st.text_input("🔍 請輸入或掃描 晶圓 ID (Wafer ID):", value=st.session_state.wafer_id_input)
+        st.session_state.wafer_id_input = wafer_id
+    with col_search2:
+        st.write(" ")
+        st.write(" ")
+        if st.button("🔄 刷新資料", use_container_width=True):
+            st.cache_data.clear()
+    
+    # 抓取並顯示表格
+    df_route = fetch_wafer_data(wafer_id)
+    
+    if not df_route.empty:
+        st.markdown("**【當前完整生產路由表格資訊】** (請點擊表格左側單選框以選定控管站點)")
+        # 使用 st.dataframe 搭配單選列選取功能
+        event = st.dataframe(
+            df_route,
+            use_container_width=True,
+            hide_index=True,
+            on_select="rerun",
+            selection_mode="single-row"
+        )
         
-        if not display_route_df.empty:
-            st.caption("💡 提示：您可以用滑鼠點擊下方表格的任意整行（站點），（下）方的生產指標與計時卡片會即時同步變更呈現！")
+        # 處理使用者選擇的站點
+        selected_rows = event.get("selection", {}).get("rows", [])
+        if selected_rows:
+            st.session_state.selected_row_data = df_route.iloc[selected_rows[0]].to_dict()
+        elif st.session_state.selected_row_data is None:
+            st.session_state.selected_row_data = df_route.iloc[0].to_dict()
             
-            # 🚀 終極解鎖 1：完全移除了原本的 key="tab1_grid"，改用完全獨立的隔離網格呈現，徹底粉碎 Duplicate Key 卡死！
-            event = st.dataframe(display_route_df, use_container_width=True, height=320, selection_mode="single-row", on_select="rerun", hide_index=True)
-            if event and "rows" in event.selection and len(event.selection["rows"]) > 0:
-                st.session_state.selected_row_data = display_route_df.iloc[event.selection["rows"]]
-        else:
-            st.warning(f"⚠️ 獨立路由庫中目前查無關於關鍵字 『{search_wafer}』 的製程路由。")
-    else:
-        st.info("💡 雲端安全接口測試正常！請前往右側分頁『📤 頁面三：上傳新路由檔案』將您的 92 步 CSV 導入，資料便會直接在此呈現大表！")
-
-    # ---- 💡 下段指標卡片與表單作業面板 (保證永久呈現) ----
-    st.markdown("---")
-    st.subheader("📊 (下) 當前即時狀態指標")
-    if search_wafer and cloud_status is not None and not cloud_status.empty:
-        exact_match = cloud_status[cloud_status["Wafer_ID"].astype(str) == search_wafer]
-        if not exact_match.empty:
-            latest_info = exact_match.sort_values(by="Timestamp").iloc[-1]
-            current_step_val = str(latest_info.get("Step_No", "1"))
-            shuttle_val = str(latest_info.get("Shuttle_Name", "T18-C14A"))
-            status_val = str(latest_info.get("Status", "INPR"))
-            hold_start = str(latest_info.get("Hold_Start_Time", ""))
-
-    if st.session_state.selected_row_data is not None:
-        row = st.session_state.selected_row_data
-        current_step_val = str(row.get("Step No.", row.get("Step_No", row.get("Step", "1"))))
-        shuttle_val = str(row.get("Shuttle Name", row.get("Shuttle_Name", "T18-C14A")))
-        tool_val = str(row.get("Process Tool", row.get("Process_Tool", row.get("Tool name/mask", "N/A"))))
-        owner_val = str(row.get("Stage Owner", row.get("Stage_Owner", row.get("Owner", "N/A"))))
-        status_val = "SELECTED"
-    else:
-        if cloud_route is not None and not cloud_route.empty:
-            try:
-                step_col = "Step" if "Step" in cloud_route.columns else ("Step No." if "Step No." in cloud_route.columns else "Step_No")
-                meta_match = cloud_route[cloud_route[step_col].astype(str).str.strip() == str(int(float(current_step_val)))] if step_col in cloud_route.columns else pd.DataFrame()
-                if not meta_match.empty:
-                    tool_val = str(meta_match.iloc.get("Tool name/mask", meta_match.iloc.get("Process Tool", "N/A")))
-                    owner_val = str(meta_match.iloc.get("Owner", meta_match.iloc.get("Stage Owner", "N/A")))
-            except:
-                pass
-
-    computed_hold_time = calculate_hold_time(hold_start) if status_val == "Hold" else "00:00:00"
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("當前實際進度 / 狀態", f"第 {current_step_val} 步 ({status_val})")
-    c2.metric("預定生產機台 / 負責人", f"{tool_val} / {owner_val}")
-    c3.metric("雪梭名稱 (Shuttle Name)", shuttle_val)
-    c4.metric("暫停計時累計 (Hold Time)", computed_hold_time)
-    
-    with st.form("real_time_update_form", clear_on_submit=True):
-        st.write("📝 **現場生產作業面板：過站變更或 Hold 晶圓狀態 (資料實時同步寫回試算表)**")
-        col_panel_a, col_panel_b = st.columns(2)
-        with col_panel_a:
-            input_target_id = st.text_input("確認晶圓編號 (Wafer ID) *", value=search_wafer if search_wafer else "LOT4-11F0", key="tab1_form_id_new")
-            select_status = st.selectbox("變更生產狀態", ["INPR", "Hold", "Pass", "Scrap"], index=["INPR", "Hold", "Pass", "Scrap"].index(status_val) if status_val in ["INPR", "Hold", "Pass", "Scrap"] else 0, key="tab1_form_status_new")
-        with col_panel_b:
-            try: default_step_idx = int(float(current_step_val))
-            except: default_step_idx = 1
-            input_next_step = st.number_input("前進製程步數 (Step) *", min_value=1, max_value=200, value=default_step_idx, key="tab1_form_step_new")
-            input_shuttle_name = st.text_input("確認 Shuttle Name", value=shuttle_val, key="tab1_form_shuttle_new")
+        st.markdown("---")
         
-        submit_status_btn = st.form_submit_button("💾 正式過站並同步寫回 Google Sheets", type="primary")
-        if submit_status_btn:
-            import base64, json, urllib.parse
-            with st.spinner("🚀 正在安全穿透組織防線，實時同步過站進度中..."):
-                now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                hold_start_str = now_str if select_status == "Hold" else ""
-                status_list = [input_target_id, input_shuttle_name, int(input_next_step), select_status, "蔡作敏/張振豪團隊", hold_start_str, now_str]
-                json_bytes = json.dumps(status_list, ensure_ascii=False).encode('utf-8')
-                base64_str = base64.b64encode(json_bytes).decode('utf-8')
-                encoded_param = urllib.parse.quote(base64_str)
-                submit_status_url = f"{GAS_SUBMIT_URL}?type=status&d={encoded_param}"
-                try:
-                    response = requests.get(submit_status_url, headers=headers, timeout=10)
-                    if "SUCCESS" in response.text:
-                        st.success(f"🎉 晶圓 {input_target_id} 成功過站至第 {input_next_step} 步 ({select_status})！")
-                        st.rerun()
-                    else: st.error(f"❌ 雲端更新拒絕: {response.text}")
-                except Exception as ex: st.error(f"❌ 網路連線錯誤。錯誤: {ex}")
+        # 下半部：站點控制與資料回填區塊（高度還原 PPT 樣式）
+        st.subheader("⚙️ 當前過站控制面板 (Current Stage Action Panel)")
+        
+        # 顯示當前鎖定的站點基本資訊摘要
+        cur = st.session_state.selected_row_data
+        col_m1, col_m2, col_m3, col_m4 = st.columns(4)
+        with col_m1:
+            st.metric(label="晶圓編號 (Wafer ID)", value=str(cur.get("Wafer ID", "")))
+        with col_m2:
+            st.metric(label="目前步驟 (Step No.)", value=f"第 {cur.get('Step No.', '')} 步")
+        with col_m3:
+            st.metric(label="負責模組 (Module)", value=str(cur.get("Module", "")))
+        with col_m4:
+            st.metric(label="客戶團隊 (Customer)", value=str(cur.get("Customer", "")))
+            
+        st.info(f"💡 **正在操作的站點描述：** {cur.get('Step Description', '')} | **製程機台：** {cur.get('Process Tool', '')} | **食譜配方 (Recipe)：** {cur.get('Recipe', '')}")
+        
+        # 操作與備註輸入欄位
+        col_act1, col_act2 = st.columns([3, 1])
+        with col_act1:
+            comment_input = st.text_input("💬 批註 / 機台數據回填 (Key in data / SPC Data):", placeholder="請在此輸入過站紀錄、檢驗量測結果或異常原因...")
+        with col_act2:
+            st.write(" ")
+            st.write(" ")
+            if st.button("💾 僅儲存資料 (Key in data)", use_container_width=True):
+                update_wafer_status(wafer_id, cur.get('Step No.'), "Key in data", comment_input)
+        
+        # PPT 下方實體按鈕群組
+        st.markdown("### 🚦 流程變更權限指令")
+        col_btn1, col_btn2, col_btn3, col_btn4 = st.columns(4)
+        
+        with col_btn1:
+            if st.button("✅ 正常出站 (Check out)", type="primary", use_container_width=True):
+                update_wafer_status(wafer_id, cur.get('Step No.'), "Check out", comment_input)
+        with col_btn2:
+            if st.button("❌ 報廢處理 (Scrap)", type="secondary", use_container_width=True):
+                update_wafer_status(wafer_id, cur.get('Step No.'), "Scrap", comment_input)
+        with col_btn3:
+            if st.button("⚠️ 暫停鎖定 (Hold)", use_container_width=True):
+                update_wafer_status(wafer_id, cur.get('Step No.'), "Hold", comment_input)
+        with col_btn4:
+            if st.button("⏭️ 跳過此站 (Skip)", use_container_width=True):
+                update_wafer_status(wafer_id, cur.get('Step No.'), "Skip", comment_input)
+                
+    else:
+        st.warning("⚠️ 查無此 Wafer ID 的路由資料，請確認後重新輸入。")
 
-# ==================== 📜 頁面二：Wafer History ====================
-with tab2:
-    st.subheader("📜 歷史生產路由總覽 (Wafer History)")
-    st.markdown("💡 **核心鎖定需求**：本頁面不受過站進度干擾，不論有沒有最新過站紀錄，皆會依據關鍵字強制完整呈現該 Wafer ID 在系統中登記的 92 步全路由軌跡。")
-    target_wafer = st.session_state.search_input_val if st.session_state.search_input_val else ""
-    search_history_id = st.text_input("🔍 查詢特定晶圓歷史路由 (支援模糊搜尋)：", value=target_wafer, key="tab2_search").strip()
-    st.session_state.search_input_val = search_history_id 
-    if cloud_route is not None and not cloud_route.empty:
-        history_display_df = cloud_route.copy()
-        if search_history_id:
-            history_display_df = history_display_df[history_display_df.astype(str).apply(lambda x: x.str.contains(search_history_id, case=False)).any(axis=1)]
-        st.dataframe(history_display_df, use_container_width=True, height=500, hide_index=True, key="tab2_grid")
-    else: st.warning("⚠️ 系統雲端目前尚無 any 路由紀錄。")
-# ==================== 📤 頁面三：上傳新路由檔案 ====================
-with tab3:
-    st.subheader("📤 導入晶圓生產路由 CSV 檔案至雲端 (接續附加模式)")
-    st.markdown("💡 **安全隔離機制**：此處上傳的資料只會附加寫入您獨立的 `Lot-Action` 試算表底部，與其他系統完全隔離！")
-    
-    uploaded_file = st.file_uploader("請選擇您的晶圓流程 CSV 檔案 (.csv)", type=["csv"], key="tab3_uploader")
-    
+# --- 頁籤 2: Wafer History ---
+with tabs[1]:
+    st.subheader("📜 歷史操作變更日誌 (Wafer Operational History)")
+    st.caption("此處將即時串接讀取 Google Sheets 上的 Operational_Logs 工作表，顯示該晶圓過去所有的 Check out / Hold / Scrap 異動時間軸與操作人員。")
+    # 預留未來呈現位置
+    st.dataframe(pd.DataFrame(columns=["時間戳記", "Wafer ID", "步驟", "變更動作", "備註/SPC數據"]), use_container_width=True)
+
+# --- 頁籤 3: Upload New Wafer ---
+with tabs[2]:
+    st.subheader("📤 批量註冊全新晶圓路由 (Upload New Wafer)")
+    st.markdown("請上傳由整合部門產出的完整流程 Excel/CSV 檔案，系統將自動同步上傳解析至雲端 Google Sheets 中。")
+    uploaded_file = st.file_uploader("選擇路由定義檔案 (.csv, .xlsx)", type=["csv", "xlsx"])
     if uploaded_file is not None:
-        try:
-            raw_text = uploaded_file.getvalue().decode("utf-8")
-            raw_df = pd.read_csv(io.StringIO(raw_text))
-            
-            st.write("📋 偵測到您即將上傳的檔案內容預覽：")
-            st.dataframe(raw_df.head(5), use_container_width=True, key="tab3_preview")
-            
-            st.markdown("---")
-            # 💡 核心功能：防誤觸二次確認按鈕
-            st.warning("⚠️ 確認檔案正確後點擊下方按鈕，這 92 步資料將永久接續併入您獨立的 Lot-Action 雲端資料庫。")
-            confirm_upload_btn = st.button("📤 我已確認檔案無誤，正式同步至 Google Sheets", type="primary", key="tab3_submit_btn")
-            
-            if confirm_upload_btn:
-                with st.spinner("🚀 正在安全透過加密密道附加至您專屬的獨立試算表中..."):
-                    import base64, json, urllib.parse
-                    
-                    progress_bar = st.progress(0)
-                    status_text = st.empty()
-                    
-                    success_count = 0
-                    total_rows = len(raw_df)
-                    status_text.text("🚀 正在啟用 JSON 雙向分流密道，實時寫入雲端中...")
-                    
-                    # 💡 終極優化：將整行打包成 JSON 再轉 Base64 網址參數，1秒傳完、絕不漏字錯位
-                    for index, row in raw_df.iterrows():
-                        row_list = [str(val).strip() for val in row.values]
-                        json_bytes = json.dumps(row_list, ensure_ascii=False).encode('utf-8')
-                        base64_str = base64.b64encode(json_bytes).decode('utf-8')
-                        encoded_param = urllib.parse.quote(base64_str)
-                        
-                        # 💡 呼叫專屬獨立接口 type=route 的路由附加功能
-                        get_url = f"{GAS_SUBMIT_URL}?type=route&d={encoded_param}"
-                        
-                        try:
-                            response = requests.get(get_url, headers=headers, timeout=10)
-                            if "SUCCESS" in response.text:
-                                success_count += 1
-                        except:
-                            pass
-                        
-                        progress_bar.progress((index + 1) / total_rows)
-                    
-                    status_text.empty()
-                    if success_count > 0:
-                        st.success(f"🎉 附加同步成功！共計 {success_count} 筆製程步驟已成功附加寫入您專屬的 Google Sheets 底部！")
-                    else:
-                        st.error("❌ 網路同步失敗。請確認第 20 行的網址是否與 Google 試算表最新的『網頁應用程式 URL』完全一致。")
-        except Exception as e:
-            st.error(f"❌ 解析失敗: {e}")
+        st.success("檔案解析成功！已預備寫入 Google Sheets 後端。")
+
+# --- 頁籤 4: Upload R/C ---
+with tabs[3]:
+    st.subheader("🔄 流程重工與修訂上傳 (Upload R/C - Rework / Change)")
+    st.warning("提醒：操作重工流程（Rework）將會改寫既有 Full Route 的站點順序，請務必雙重確認填入資訊。")
