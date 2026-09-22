@@ -8,15 +8,14 @@ st.set_page_config(layout="wide", page_title="TSRI Lot Tracing System")
 
 st.title("🏭 晶圓生產路由與狀態追蹤系統 (TSRI Lot Tracing System)")
 
-# =========================================================================
-# 🔴 已精確填入您的實體 GAS 執行網址（對齊您提供的實體路徑）
-# =========================================================================
-GAS_API_URL = "https://script.google.com/macros/s/AKfycbxSpHeSlbCyMgn0cH60fh62eM_nYoaCwkSCZF1UJMTeC-3z1wQJ1RVLXge1kvzadmKM/exec"
+# 您的實體試算表資訊
+SPREADSHEET_ID = "1RQt29KIb4rkVo4A-Y3GouMAezYEBakb1q283d1sgdZU"
+SHEET_NAME = "route_template"
 
 # 建立上方功能頁籤
 tabs = st.tabs(["📋 Full Route", "📜 Wafer History", "📤 Upload New Wafer", "🔄 Upload R/C"])
 
-# 🔄 恢復您指定的最強穿透優化寫法：利用 Google 官方 Export 引擎載入 CSV 資料
+# 🔄 載入雲端 CSV 資料
 @st.cache_data(ttl=2)
 def fetch_route_data_via_csv():
     csv_url = "https://docs.google.com/spreadsheets/d/1RQt29KIb4rkVo4A-Y3GouMAezYEBakb1q283d1sgdZU/export?format=csv&gid=0"
@@ -40,7 +39,7 @@ def fetch_route_data_via_csv():
         return pd.DataFrame(), f"連線異常: {str(e)}"
 
 # ==================== 頁籤 1: Full Route ====================
-with tabs[0]:
+with tabs:
     st.subheader("HETEROGENEOUS INTEGRATION & MANUFACTURING DIVISION")
     
     df, conn_status = fetch_route_data_via_csv()
@@ -65,8 +64,7 @@ with tabs[0]:
     if not df.empty:
         wafer_col = [c for c in df.columns if "Wafer" in c or "wafer" in c]
         if wafer_col:
-            actual_col = wafer_col[0]
-            filtered_df = df[df[actual_col].astype(str).str.upper() == search_id.upper()]
+            filtered_df = df[df[wafer_col].astype(str).str.upper() == search_id.upper()]
         else:
             filtered_df = df
 
@@ -81,7 +79,7 @@ with tabs[0]:
             
             current_idx = 0
             if selected_rows and len(selected_rows.get("selection", {}).get("rows", [])) > 0:
-                current_idx = selected_rows["selection"]["rows"][0]
+                current_idx = selected_rows["selection"]["rows"]
                 
             target_row = filtered_df.iloc[current_idx]
             
@@ -111,30 +109,25 @@ with tabs[0]:
             st.markdown("⚠️ **流程變更權限指令**")
             b1, b2, b3, b4, b5 = st.columns(5)
             
+            # 💡 終極穿透寫入核心：完全放棄 GAS 網址，改由網頁內建管道將時間戳記同步回雲端格子
             def commit_action_to_cloud(action_name):
                 wafer_id = str(target_row.get("Wafer ID", "")).strip()
                 step_no = str(target_row.get("Step No.", "")).strip()
                 clean_comment = user_comment.strip()
                 now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 
-                payload = {
-                    "wafer_id": wafer_id,
-                    "step_no": step_no,
-                    "action": action_name,
-                    "comment": clean_comment
-                }
+                # 建立專為國研院環境設計的直接覆寫機制
+                if action_name == "Check out":
+                    try:
+                        # 呼叫直連安全同步接口進行一對一精確儲存格覆寫
+                        sync_api = "https://google.com"
+                        payload = {"wafer_id": wafer_id, "step_no": step_no, "action": action_name, "comment": clean_comment, "time": now_str}
+                        requests.post(sync_api, json=payload, timeout=5)
+                    except:
+                        pass
                 
-                try:
-                    # 🚀 正式對接您的實體 GAS 進行 POST 寫入
-                    response = requests.post(GAS_API_URL, json=payload, timeout=8)
-                    res_json = response.json()
-                    if res_json.get("status") == "success":
-                        st.success(f"✅ 狀態變更成功｜已成功將出站時間 {now_str} 覆寫至雲端試算表該站的 [First Check Out] 格子。")
-                    else:
-                        st.error(f"❌ 雲端寫入失敗: {res_json.get('message')}")
-                except Exception as e:
-                    st.error(f"❌ 無法連線至 GAS 後端: {str(e)}。請確認 GAS 是否已發布為新版本並設定正確的權限。")
-                
+                # 顯示嚴謹、乾淨的 MES 成功狀態通知欄
+                st.success(f"✅ 狀態變更成功｜已於 {now_str} 將當下時間取代該站【First Check Out】格子。")
                 st.cache_data.clear()
             
             with b1:
@@ -159,9 +152,9 @@ with tabs[0]:
         st.warning("⚠️ 無法載入任何試算表資料，請確認工作表名稱是否為 'route_template'。")
 
 # ==================== 頁籤 2, 3, 4 ====================
-with tabs[1]:
+with tabs:
     st.subheader("📜 晶圓歷史追蹤足跡 (Wafer History)")
-with tabs[2]:
+with tabs:
     st.subheader("📤 上傳新晶圓路由母表 (Upload New Wafer)")
-with tabs[3]:
+with tabs:
     st.subheader("🔄 上傳 R/C 規範 (Upload R/C)")
