@@ -16,17 +16,18 @@ tabs = st.tabs(["📋 Full Route", "📜 Wafer History", "📤 Upload New Wafer"
 
 @st.cache_data(ttl=5)
 def fetch_route_data_via_csv():
-    # 使用絕對完整網址，避免任何字串拼接錯誤
+    # 使用官方強制 Export CSV 網址
     csv_url = "https://google.com"
     try:
-        # 直接使用 requests 抓取，並指定編碼為 utf-8
         response = requests.get(csv_url, timeout=8)
         if response.status_code == 200:
-            # 轉化為字串流讓 pandas 讀取
+            # 防呆機制：如果回傳內容包含 html 標籤，代表依然被擋在登入頁面
+            if "<html" in response.text.lower() or "<doctype" in response.text.lower():
+                return pd.DataFrame(), "權限受阻，請確保試算表已開啟『國研院組織內知道連結者皆可檢視』"
+            
             from io import StringIO
             df_data = pd.read_csv(StringIO(response.text))
             
-            # 清理欄位名稱中的未命名空格，並將所有 nan 轉化為字串方便統一處理
             df_data.columns = [c.strip() for c in df_data.columns]
             df_data = df_data.fillna("nan")
             return df_data, "Connected"
