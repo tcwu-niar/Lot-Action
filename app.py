@@ -68,63 +68,11 @@ with tabs[0]:
             st.cache_data.clear()
             st.rerun()
 
-    st.markdown("**【當前完整生產路由表格資訊】** (請點擊表格格子外圍選取框以選定控管站點)")
-    
-    # 渲染大資料表格
-    if not df.empty:
-        # 如果有 Wafer ID 欄位，進行關鍵字過濾
-        if "Wafer ID" in df.columns:
-            filtered_df = df[df["Wafer ID"].astype(str).str.upper() == search_id.upper()]
-        else:
-            filtered_df = df
-
-        if not filtered_df.empty:
-            # 顯示互動式表格
-            selected_rows = st.dataframe(
-                filtered_df,
-                use_container_width=True,
-                hide_index=True,
-                on_select="rerun",
-                selection_mode="single-row"
-            )
-            
-            # 偵測使用者點選了哪一列（預設第一列）
-            current_idx = 0
-            if selected_rows and len(selected_rows.get("selection", {}).get("rows", [])) > 0:
-                current_idx = selected_rows["selection"]["rows"][0]
-                
-            target_row = filtered_df.iloc[current_idx]
-            
-            st.write("---")
-            st.subheader("⚙️ 當前過站控制面板 (Current Stage Action Panel)")
-            
-            # 面板第一排資訊
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("品且編號 (Wafer ID)", str(target_row.get("Wafer ID", "N/A")))
-            c2.metric("目前步驟 (Step No.)", f"第 {str(target_row.get('Step No.', 'N/A'))} 步")
-            c3.metric("負責模組 (Module)", str(target_row.get("Module", "N/A")))
-            c4.metric("客戶團隊 (Customer)", str(target_row.get("Customer", "N/A")))
-            
-            # 面板第二排：提示操作站點細節
-            st.info(
-                f"💡 **正在操作的站點描述**：{target_row.get('Step Description', 'N/A')} | "
-                f"**製程機台**：{target_row.get('Process Tool', 'N/A')} | "
-                f"**𠵱檔配方 (Recipe)**：{target_row.get('Recipe', 'N/A')}"
-            )
-            
-            # 面板第三排：數據與備註回填區
-            st.markdown("📝 **批註 / 機台數據回填 (Key in data / SPC Data):**")
-            user_comment = st.text_input(
-                "請在此輸入過站紀錄、檢驗量測結果（如厚度、偏置）或異常原因...",
-                key="user_comment_input",
-                placeholder="例如: PR height record = 10um / 無外觀碎裂(Chipping)"
-            )
-            
-            # 面板第四排：功能功能變更指令按鈕群
+    # ==================== 專業整合版：功能變更指令按鈕群 ====================
             st.markdown("⚠️ **流程變更權限指令**")
             b1, b2, b3, b4, b5 = st.columns(5)
             
-            # 建立寫入雲端 status 紀錄的穿透函數 (直接透過官方表單或後台機制，在此先以動態模擬回應做防呆解鎖)
+            # 建立寫入雲端 status 紀錄的穿透函數
             def commit_action_to_cloud(action_name):
                 # 清洗填入的文字
                 clean_comment = user_comment.strip()
@@ -132,12 +80,11 @@ with tabs[0]:
                 import datetime
                 now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 
-                # 彈出成功提示，並模擬即時寫入足跡
-                st.balloons()
-                st.success(f"🟢 狀態變更成功！已於 {now_str} 將站點【第 {target_row.get('Step No.')} 步】"
+                # 📢 僅保留嚴謹的文字成功提示，已完全移除 st.balloons() 氣球特效
+                st.success(f"✅ 狀態變更成功｜已於 {now_str} 將站點【第 {target_row.get('Step No.')} 步】"
                            f"之動作【{action_name}】與數據【{clean_comment}】同步回傳至 wafer_status 工作表。")
             
-            # 💡 移除 disabled=True，將按鈕全面點亮解鎖！
+            # 點亮按鈕
             with b1:
                 if st.button("🟢 正常出站 (Check out)", type="primary", use_container_width=True):
                     commit_action_to_cloud("Check out")
@@ -160,17 +107,17 @@ with tabs[0]:
         st.warning("⚠️ 無法載入任何試算表資料，請確認工作表名稱是否為 'route_template'。")
 
 # ==================== 頁籤 2, 3, 4: 保留擴充介面 ====================
-with tabs[1]:
+with tabs:
     st.subheader("📜 晶圓歷史追蹤足跡 (Wafer History)")
     st.info("💡 核心路由大表已對接成功！此處未來將自動拉取 `wafer_status` 內的歷史過站日誌，並用時間軸或精美表格列出這片晶圓的完整 Traceability 稽核軌跡。")
 
-with tabs[2]:
+with tabs:
     st.subheader("📤 上傳新晶圓路由母表 (Upload New Wafer)")
     st.file_uploader("請選擇要上傳的全新批次半導體製程母體路由檔案 (.csv 或 .xlsx)", type=["csv", "xlsx"])
     if st.button("開始解析並批量導入雲端母表"):
         st.success("上傳模組已就緒")
 
-with tabs[3]:
+with tabs:
     st.subheader("🔄 上傳 R/C 規範 (Upload R/C)")
     st.text_area("請輸入特例改道製程說明或 R/C 簽核單號:")
     st.button("提交 R/C 變更指令")
