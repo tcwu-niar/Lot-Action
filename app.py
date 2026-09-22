@@ -103,8 +103,8 @@ with tabs[0]:
                         
         else:
             st.warning(f"⚠️ 雲端資料庫中找不到與 '{search_id}' 相符的晶圓編號。")
-    else:
-        st.warning("⚠️ 無法載入任何試算表資料，請確認工作表名稱是否為 'route_template'。")
+        else:
+            st.warning("⚠️ 無法載入任何試算表資料，請確認工作表名稱是否為 'route_template'。")
 
 # ==================== 頁籤 2, 3, 4: 保留擴充介面 ====================
 with tabs:
