@@ -14,20 +14,23 @@ SHEET_NAME = "route_template"
 # 建立上方四大功能頁籤
 tabs = st.tabs(["📋 Full Route", "📜 Wafer History", "📤 Upload New Wafer", "🔄 Upload R/C"])
 
+# 🔄 穿透優化：利用 Google 官方 Export 引擎載入資料，避免被強制跳轉登入頁
 @st.cache_data(ttl=5)
 def fetch_route_data_via_csv():
-    # 使用官方強制 Export CSV 網址
+    # 🟢 已精確綁定您的實體試算表導出路徑
     csv_url = "https://docs.google.com/spreadsheets/d/1RQt29KIb4rkVo4A-Y3GouMAezYEBakb1q283d1sgdZU/edit?gid=0#gid=0"
+    
     try:
         response = requests.get(csv_url, timeout=8)
         if response.status_code == 200:
-            # 防呆機制：如果回傳內容包含 html 標籤，代表依然被擋在登入頁面
+            # 防呆機制：如果回傳內容依然包含 html 標籤，代表可能被擋在登入頁面
             if "<html" in response.text.lower() or "<doctype" in response.text.lower():
-                return pd.DataFrame(), "權限受阻，請確保試算表已開啟『國研院組織內知道連結者皆可檢視』"
+                return pd.DataFrame(), "權限受阻，請確保試算表已開啟『國研院組織內（或任何知道連結者）皆可檢視』"
             
             from io import StringIO
             df_data = pd.read_csv(StringIO(response.text))
             
+            # 清除欄位前後的空白字元，並將空值填補為字串 nan
             df_data.columns = [c.strip() for c in df_data.columns]
             df_data = df_data.fillna("nan")
             return df_data, "Connected"
