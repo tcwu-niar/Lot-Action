@@ -70,7 +70,8 @@ with tabs[0]:
         # 自動識別 Wafer ID 欄位並進行資料過濾
         wafer_col = [c for c in df.columns if "Wafer" in c or "wafer" in c]
         if wafer_col:
-            filtered_df = df[df[wafer_col[0]].astype(str).str.upper() == search_id.upper()]
+            actual_col = wafer_col[0]
+            filtered_df = df[df[actual_col].astype(str).str.upper() == search_id.upper()]
         else:
             filtered_df = df
 
@@ -114,8 +115,8 @@ with tabs[0]:
                 placeholder="例如: PR height record = 10um"
             )
             
-            # ==================== 功能變更指令按鈕群 ====================
-           st.markdown("⚠️ **流程變更權限指令**")
+            # ==================== 實體雲端寫入控制區 ====================
+            st.markdown("⚠️ **流程變更權限指令**")
             b1, b2, b3, b4, b5 = st.columns(5)
             
             def commit_action_to_cloud(action_name):
@@ -125,7 +126,7 @@ with tabs[0]:
                 now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 
                 if action_name == "Check out":
-                    # 🔴 請將下方的網址換成您剛剛在步驟 1 複製的專屬 GAS 網址 🔴
+                    # 🔴 請將下方的網址換成您在上一輪步驟 1 部署得到的專屬 GAS 網址 🔴
                     my_private_gas_url = "https://script.google.com/macros/s/AKfycbxSpHeSlbCyMgn0cH60fh62eM_nYoaCwkSCZF1UJMTeC-3z1wQJ1RVLXge1kvzadmKM/exec"
                     
                     payload = {
@@ -145,7 +146,7 @@ with tabs[0]:
                         else:
                             st.error(f"❌ 雲端寫入失敗: {res_json.get('message')}")
                     except Exception as e:
-                        st.error(f"❌ 無法連線至您的後端通道: {str(e)}。請確認步驟 2 的網址是否正確。")
+                        st.error(f"❌ 無法連線至您的後端通道: {str(e)}。請確認 GAS 網址是否填寫正確。")
                 else:
                     st.success(f"✅ 狀態變更成功｜動作【{action_name}】與備註已記錄。")
                 
