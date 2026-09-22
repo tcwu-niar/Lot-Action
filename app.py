@@ -14,11 +14,10 @@ SHEET_NAME = "route_template"
 # 建立上方四大功能頁籤
 tabs = st.tabs(["📋 Full Route", "📜 Wafer History", "📤 Upload New Wafer", "🔄 Upload R/C"])
 
-# 🔄 全新優化：利用 Google Sheet CSV 導出功能，100% 繞過網頁應用程式權限限制
 @st.cache_data(ttl=5)
 def fetch_route_data_via_csv():
-    # 建立直接導出 CSV 的特殊 Google 連結
-    csv_url = f"https://google.com{SPREADSHEET_ID}/gviz/tq?tqx=out:csv&sheet={SHEET_NAME}"
+    # 使用絕對完整網址，避免任何字串拼接錯誤
+    csv_url = "https://google.com"
     try:
         # 直接使用 requests 抓取，並指定編碼為 utf-8
         response = requests.get(csv_url, timeout=8)
