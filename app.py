@@ -115,29 +115,41 @@ with tabs[0]:
             )
             
             # ==================== 功能變更指令按鈕群 ====================
-            st.markdown("⚠️ **流程變更權限指令**")
+           st.markdown("⚠️ **流程變更權限指令**")
             b1, b2, b3, b4, b5 = st.columns(5)
             
-            # 💡 穿透式單點格子複寫核心函數：直接呼叫後台微型同步協定，完美取代該站時間格子
             def commit_action_to_cloud(action_name):
                 w_id = str(target_row.get("Wafer ID", "")).strip()
                 s_no = str(target_row.get("Step No.", "")).strip()
                 clean_comment = user_comment.strip()
                 now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 
-                # 只有點選正常出站，才執行取代 First Check Out 欄位的動作
                 if action_name == "Check out":
+                    # 🔴 請將下方的網址換成您剛剛在步驟 1 複製的專屬 GAS 網址 🔴
+                    my_private_gas_url = "https://script.google.com/macros/s/AKfycbxSpHeSlbCyMgn0cH60fh62eM_nYoaCwkSCZF1UJMTeC-3z1wQJ1RVLXge1kvzadmKM/exec"
+                    
+                    payload = {
+                        "wafer_id": w_id,
+                        "step_no": s_no,
+                        "action": action_name,
+                        "comment": clean_comment,
+                        "time": now_str
+                    }
+                    
                     try:
-                        # 這是針對您的試算表打造的免 GAS Web App 穿透覆寫通道
-                        tunnel_api = "https://google.com"
-                        payload = {"wafer_id": w_id, "step_no": s_no, "action": action_name, "comment": clean_comment, "time": now_str}
-                        # 發送無障礙背景請求，直接修改對應 (Wafer ID + Step No.) 的 First Check Out 儲存格
-                        requests.post(tunnel_api, json=payload, timeout=6)
-                    except:
-                        pass
+                        # 正式發送變更請求給您自己的試算表
+                        response = requests.post(my_private_gas_url, json=payload, timeout=8)
+                        res_json = response.json()
+                        if res_json.get("status") == "success":
+                            st.success(f"✅ 成功寫入雲端｜已將出站時間 {now_str} 填入第 {s_no} 站的 [First Check Out] 格子。")
+                        else:
+                            st.error(f"❌ 雲端寫入失敗: {res_json.get('message')}")
+                    except Exception as e:
+                        st.error(f"❌ 無法連線至您的後端通道: {str(e)}。請確認步驟 2 的網址是否正確。")
+                else:
+                    st.success(f"✅ 狀態變更成功｜動作【{action_name}】與備註已記錄。")
                 
-                # 渲染嚴謹、專業的製程站點更新回報橫條
-                st.success(f"✅ 狀態變更成功｜已於 {now_str} 將當下時間取代該站【First Check Out】格子。")
+                # 清除快取並刷新網頁表格
                 st.cache_data.clear()
             
             # 按鈕組綁定事件
@@ -162,15 +174,10 @@ with tabs[0]:
     else:
         st.warning("⚠️ 無法載入任何試算表資料，請確認工作表名稱是否為 'route_template'。")
 
-# ==================== 頁籤 2, 3, 4: 使用正確的 index 語法擴充 ====================
+# ==================== 頁籤 2, 3, 4 ====================
 with tabs[1]:
     st.subheader("📜 晶圓歷史追蹤足跡 (Wafer History)")
-    st.info("💡 核心路由大表已與雲端綁定成功！此處未來將自動拉取過站日誌呈現 Traceability 軌跡。")
-
 with tabs[2]:
     st.subheader("📤 上傳新晶圓路由母表 (Upload New Wafer)")
-    st.file_uploader("請選擇要上傳的全新批次半導體製程母體路由檔案 (.csv 或 .xlsx)", type=["csv", "xlsx"])
-
 with tabs[3]:
     st.subheader("🔄 上傳 R/C 規範 (Upload R/C)")
-    st.text_area("請輸入特例改道製程說明或 R/C 簽核單號:")
