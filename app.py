@@ -17,7 +17,7 @@ tabs = st.tabs(["📋 Full Route", "📜 Wafer History", "📤 Upload New Wafer"
 @st.cache_data(ttl=5)
 def fetch_route_data_via_csv():
     # 使用官方強制 Export CSV 網址
-    csv_url = "https://google.com"
+    csv_url = "https://docs.google.com/spreadsheets/d/1RQt29KIb4rkVo4A-Y3GouMAezYEBakb1q283d1sgdZU/edit?gid=0#gid=0"
     try:
         response = requests.get(csv_url, timeout=8)
         if response.status_code == 200:
