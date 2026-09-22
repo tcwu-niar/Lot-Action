@@ -18,7 +18,7 @@ tabs = st.tabs(["📋 Full Route", "📜 Wafer History", "📤 Upload New Wafer"
 @st.cache_data(ttl=5)
 def fetch_route_data_via_csv():
     # ⚠️ 請確保這行網址在您的編輯器裡看起來是完整的，且 ://google.com 後面有接實體 ID
-    csv_url = "https://docs.google.com/spreadsheets/d/1RQt29KIb4rkVo4A-Y3GouMAezYEBakb1q283d1sgdZU/edit?usp=sharing"
+    csv_url = "https://docs.google.com/spreadsheets/d/1RQt29KIb4rkVo4A-Y3GouMAezYEBakb1q283d1sgdZU/export?format=csv&gid=0"
     
     try:
         response = requests.get(csv_url, timeout=8)
