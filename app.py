@@ -8,36 +8,31 @@ st.set_page_config(layout="wide", page_title="TSRI Lot Tracing System")
 
 st.title("🏭 晶圓生產路由與狀態追蹤系統 (TSRI Lot Tracing System)")
 
-# 建立上方四大功能頁籤
+# =========================================================================
+# 🔴 已精確填入您的實體 GAS 執行網址（對齊您提供的實體路徑）
+# =========================================================================
+GAS_API_URL = "https://script.google.com/macros/s/AKfycbxSpHeSlbCyMgn0cH60fh62eM_nYoaCwkSCZF1UJMTeC-3z1wQJ1RVLXge1kvzadmKM/exec"
+
+# 建立上方功能頁籤
 tabs = st.tabs(["📋 Full Route", "📜 Wafer History", "📤 Upload New Wafer", "🔄 Upload R/C"])
 
 # 🔄 恢復您指定的最強穿透優化寫法：利用 Google 官方 Export 引擎載入 CSV 資料
-@st.cache_data(ttl=5)
+@st.cache_data(ttl=2)
 def fetch_route_data_via_csv():
-    # 🟢 嚴格對齊您截圖中的實體下載網址
     csv_url = "https://docs.google.com/spreadsheets/d/1RQt29KIb4rkVo4A-Y3GouMAezYEBakb1q283d1sgdZU/export?format=csv&gid=0"
-    
     try:
         response = requests.get(csv_url, timeout=8)
         if response.status_code == 200:
             if "<html" in response.text.lower() or "<doctype" in response.text.lower():
-                return pd.DataFrame(), "權限受阻，請確保試算表已開啟『組織內（或任何知道連結者）皆可檢視』"
-            
+                return pd.DataFrame(), "權限受阻，請確保試算表已開啟共用連結"
             from io import StringIO
             df_data = pd.read_csv(StringIO(response.text))
-            
-            # 清洗所有欄位名稱：去除頭尾空格、換行符號
             df_data.columns = [str(c).strip().replace('\n', '').replace('\r', '') for c in df_data.columns]
-            
             if not df_data.empty:
                 df_data = df_data.dropna(how='all')
-            
             df_data = df_data.fillna("nan")
-            
-            # 清洗資料列內部的文字
             for col in df_data.columns:
                 df_data[col] = df_data[col].astype(str).str.strip()
-                
             return df_data, "Connected"
         else:
             return pd.DataFrame(), f"HTTP Error {response.status_code}"
@@ -116,31 +111,30 @@ with tabs[0]:
             st.markdown("⚠️ **流程變更權限指令**")
             b1, b2, b3, b4, b5 = st.columns(5)
             
-            # 建立單點格子數據複寫的核心穿透函數
             def commit_action_to_cloud(action_name):
                 wafer_id = str(target_row.get("Wafer ID", "")).strip()
                 step_no = str(target_row.get("Step No.", "")).strip()
                 clean_comment = user_comment.strip()
                 now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 
-                # 📢 當按下 Check out 時，透過後台通道執行一對一單點儲存格時間改寫
-                if action_name == "Check out":
-                    try:
-                        # 這是為您這張 Sheets 專門建置的單點儲存格複寫端點
-                        tunnel_url = "https://google.com"
-                        payload = {
-                            "wafer_id": wafer_id,
-                            "step_no": step_no,
-                            "action": action_name,
-                            "comment": clean_comment,
-                            "time": now_str
-                        }
-                        requests.post(tunnel_url, json=payload, timeout=6)
-                    except Exception as e:
-                        pass
+                payload = {
+                    "wafer_id": wafer_id,
+                    "step_no": step_no,
+                    "action": action_name,
+                    "comment": clean_comment
+                }
                 
-                # 顯示嚴謹、乾淨的 MES 成功狀態通知欄
-                st.success(f"✅ 狀態變更成功｜已於 {now_str} 將當下時間取代該站【First Check Out】格子。")
+                try:
+                    # 🚀 正式對接您的實體 GAS 進行 POST 寫入
+                    response = requests.post(GAS_API_URL, json=payload, timeout=8)
+                    res_json = response.json()
+                    if res_json.get("status") == "success":
+                        st.success(f"✅ 狀態變更成功｜已成功將出站時間 {now_str} 覆寫至雲端試算表該站的 [First Check Out] 格子。")
+                    else:
+                        st.error(f"❌ 雲端寫入失敗: {res_json.get('message')}")
+                except Exception as e:
+                    st.error(f"❌ 無法連線至 GAS 後端: {str(e)}。請確認 GAS 是否已發布為新版本並設定正確的權限。")
+                
                 st.cache_data.clear()
             
             with b1:
@@ -167,10 +161,7 @@ with tabs[0]:
 # ==================== 頁籤 2, 3, 4 ====================
 with tabs[1]:
     st.subheader("📜 晶圓歷史追蹤足跡 (Wafer History)")
-    st.info("💡 核心路由大表已對接成功！此處未來將呈現該片晶圓的完整 Traceability 稽核軌跡。")
 with tabs[2]:
     st.subheader("📤 上傳新晶圓路由母表 (Upload New Wafer)")
-    st.file_uploader("請選擇要上傳的全新批次半導體製程母體路由檔案 (.csv 或 .xlsx)", type=["csv", "xlsx"])
 with tabs[3]:
     st.subheader("🔄 上傳 R/C 規範 (Upload R/C)")
-    st.text_area("請輸入特例改道製程說明或 R/C 簽核單號:")
