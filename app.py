@@ -17,7 +17,7 @@ if "wafer_id_input" not in st.session_state:
 
 # ========================================== 2. 核心API與雲端試算表設定 ==========================================
 # 請將下方的 URL 替換為您部署完 Google Apps Script (GAS) 後產生的網頁應用程式網址 (Web App URL)
-GAS_API_URL = "https://script.google.com/macros/s/xxxxxxxx############xxxxxxxxx/exec"
+GAS_API_URL = "https://script.google.com/macros/s/AKfycbxSpHeSlbCyMgn0cH60fh62eM_nYoaCwkSCZF1UJMTeC-3z1wQJ1RVLXge1kvzadmKM/exec"
 
 # 模擬 PPT 中的原始資料結構
 dummy_data = [
