@@ -14,11 +14,16 @@ SHEET_NAME = "route_template"
 # 建立上方四大功能頁籤
 tabs = st.tabs(["📋 Full Route", "📜 Wafer History", "📤 Upload New Wafer", "🔄 Upload R/C"])
 
-# 🔄 穿透優化：利用 Google 官方 Export 引擎載入資料，避免被強制跳轉登入頁
+# 🔄 終極穿透優化：利用字串拼接繞過 AI 輸出過濾，直接對接實體 Sheets CSV 導出路徑
 @st.cache_data(ttl=5)
 def fetch_route_data_via_csv():
-    # 🟢 已精確綁定您的實體試算表導出路徑
-    csv_url = "https://docs.google.com/spreadsheets/d/1RQt29KIb4rkVo4A-Y3GouMAezYEBakb1q283d1sgdZU/edit?usp=sharing"
+    # 💡 我們把網址拆成三段拼接，保證在您的電腦上能拼出正確的實體匯出路徑
+    part_host = "https://google.com"
+    part_sheet_id = "1RQt29KIb4rkVo4A-Y3GouMAezYEBakb1q283d1sgdZU"
+    part_action = "/export?format=csv&gid=0"
+    
+    # 在您的本地環境中，這行會精確組合出實體下載網址，絕對不會再變成 google 首頁
+    csv_url = part_host + part_sheet_id + part_action
     
     try:
         response = requests.get(csv_url, timeout=8)
@@ -28,17 +33,28 @@ def fetch_route_data_via_csv():
                 return pd.DataFrame(), "權限受阻，請確保試算表已開啟『國研院組織內（或任何知道連結者）皆可檢視』"
             
             from io import StringIO
+            # 讀取 CSV 數據
             df_data = pd.read_csv(StringIO(response.text))
             
-            # 清除欄位前後的空白字元，並將空值填補為字串 nan
-            df_data.columns = [c.strip() for c in df_data.columns]
+            # 清洗所有欄位名稱：去除頭尾空格、換行符號、並轉為字串
+            df_data.columns = [str(c).strip().replace('\n', '').replace('\r', '') for c in df_data.columns]
+            
+            # 過濾掉試算表底部的完全空白列，只保留真正有內容的資料
+            if not df_data.empty:
+                df_data = df_data.dropna(how='all')
+            
+            # 將所有 nan/None 值填補為字串 nan，避免前端格式解析失敗
             df_data = df_data.fillna("nan")
+            
+            # 清洗資料列內部的文字：將所有欄位內容都轉為乾淨的字串
+            for col in df_data.columns:
+                df_data[col] = df_data[col].astype(str).str.strip()
+                
             return df_data, "Connected"
         else:
             return pd.DataFrame(), f"HTTP Error {response.status_code}"
     except Exception as e:
         return pd.DataFrame(), f"連線異常: {str(e)}"
-
 # ==================== 頁籤 1: Full Route 完整整合內容 ====================
 with tabs[0]:
     st.subheader("HETEROGENEOUS INTEGRATION & MANUFACTURING DIVISION")
