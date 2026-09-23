@@ -41,7 +41,7 @@ def fetch_route_data_via_csv(sheet_name="route_template"):
     except Exception as e:
         return pd.DataFrame(), str(e)
 # =========================================================================
-# 📋 頁籤 1: Full Route (完整生產路由與互動編輯面板)
+# 📋 頁籤 1: Full Route (對齊 index 0 - 完整生產路由與互動編輯面板)
 # =========================================================================
 with all_tabs[0]:
     st.subheader("HETEROGENEOUS INTEGRATION & MANUFACTURING DIVISION")
@@ -65,8 +65,13 @@ with all_tabs[0]:
     st.markdown("**【當前生產路由互動式編輯表格】** 🟢 *綠色粗體整列鋪滿代表晶圓目前正停留之在製站點 (Current WIP Stage)*")
     
     if not df.empty:
+        # 🟢 【核心修復】精確將欄位 List 轉化為單一字串名稱，徹底拔除 AttributeError 死穴
         wafer_col_list = [c for c in df.columns if "Wafer" in c or "wafer" in c]
-        filtered_df = df[df[wafer_col_list].astype(str).str.upper() == search_id.upper()].copy() if wafer_col_list else df.copy()
+        if wafer_col_list:
+            actual_string_col = wafer_col_list[0]  # 👈 精確取出 'Wafer ID' 字串
+            filtered_df = df[df[actual_string_col].astype(str).str.upper() == search_id.upper()].copy()
+        else:
+            filtered_df = df.copy()
 
         if not filtered_df.empty:
             # WIP 站點追蹤判定
@@ -81,7 +86,7 @@ with all_tabs[0]:
             new_co_display = [ "INPR" if str(r.get("Step No.", "")).strip() == wip_step_no.strip() else str(r.get("First Check Out", "")).strip() for _, r in display_df.iterrows() ]
             display_df["First Check Out"] = new_co_display
 
-            # 💡 【終極整列鋪滿綠底引擎】透過 CSS !important 強制填滿整列的所有儲存格，告別斷裂
+            # 💡 【終極整列鋪滿綠底引擎】透過 CSS !important 強制填滿整列的所有儲存格
             def highlight_wip_row(row):
                 if str(row["Step No."]).strip() == wip_step_no.strip():
                     return ['background-color: #c3e6cb !important; font-weight: bold; color: #155724 !important;'] * len(row)
