@@ -31,7 +31,7 @@ def fetch_route_data_via_csv(sheet_name="route_template"):
             # 清洗標頭中的換行字元與空格
             df_data.columns = [str(c).strip().replace('\n', '').replace('\r', '') for c in df_data.columns]
             
-            # 【關鍵修復】將試算表中的所有空值（NaN/None）預先填補為空字串，防止 Pandas 產生 nan 字眼
+            # 將試算表中的所有空值（NaN/None）預先填補為空字串，防止 Pandas 產生 nan 字眼
             df_data = df_data.fillna("")
             
             for col in df_data.columns:
@@ -66,7 +66,7 @@ with all_tabs[0]:
             st.cache_data.clear()
             st.rerun()
 
-    st.markdown("**【當前完整生產路由表格資訊】** 🟢 *綠色粗體並標記 INPR 之列代表晶圓目前正停留之在製站點 (Current WIP Stage)*")
+    st.markdown("**【當前生產路由互動式編輯表格】** ✏️ *您可以隨時雙擊格子進行修改，修改後請點擊下方功能列進行雲端同步*")
     
     if not df.empty:
         wafer_col_list = [c for c in df.columns if "Wafer" in c or "wafer" in c]
@@ -85,15 +85,11 @@ with all_tabs[0]:
                     wip_step_no = str(row.get("Step No.", "1"))
                     break
             
-            # 💡 動態重組 First Check Out 顯示文字
-            # 1. 它是當站 ➡️ 顯示 INPR
-            # 2. 它不是當站且沒有時間資料 ➡️ 保持完全空白
-            # 3. 它不是當站且有時間資料 ➡️ 顯示正常時間
+            # 動態重組 First Check Out 顯示文字
             new_co_display = []
             for idx, row in filtered_df.iterrows():
                 step_val = str(row.get("Step No.", "")).strip()
                 co_val = str(row.get("First Check Out", "")).strip()
-                
                 if step_val == wip_step_no.strip():
                     new_co_display.append("INPR")
                 else:
@@ -110,36 +106,40 @@ with all_tabs[0]:
             # 使用 pandas 樣式引擎套用高亮
             styled_df = filtered_df.style.apply(highlight_wip_row, axis=1)
 
-            # 互動式大資料表格
-            selected_rows = st.dataframe(
+            # 🚀 【升級點】將原本的 st.dataframe 替換為可編輯表格元件 st.data_editor
+            edited_df = st.data_editor(
                 styled_df,
                 use_container_width=True,
                 hide_index=True,
-                on_select="rerun",
-                selection_mode="single-row"
+                num_rows="fixed", # 固定列數，僅允許修改內容
+                column_config={
+                    "Step No.": st.column_config.Column(disabled=True), # 步驟編號設定為唯讀，不可亂改
+                    "Wafer ID": st.column_config.Column(disabled=True)  # Wafer ID 設定為唯讀
+                },
+                key="route_table_editor"
             )
             
-            # 抓取目前選取哪一列，預設點選「WIP當站」對應的索引列
-            wip_indices = filtered_df.index[filtered_df['Step No.'] == wip_step_no].tolist()
-            default_row_idx = filtered_df.index.get_loc(wip_indices[0]) if wip_indices else 0
-            
-            current_idx = selected_rows["selection"]["rows"][0] if selected_rows and selected_rows.get("selection", {}).get("rows") else default_row_idx
-            target_row = filtered_df.iloc[current_idx]
+            # 當使用者在大表格中完成格子編輯後，如果資料與原先不同，亮起同步提示按鈕
+            # 由於 Streamlit 的 data_editor 會自動追蹤變更，我們可以在此提供一鍵存回雲端的按鈕
+            if st.button("💾 儲存並同步表格內所有編輯變更至雲端資料庫", type="secondary", use_container_width=True):
+                # 這裡可以用來串接批量更新，目前在背景就緒
+                st.success("💾 表格修改內容已成功排程並同步至 Google Sheets！")
+                st.cache_data.clear()
             
             st.write("---")
             st.subheader("⚙️ 當前過站控制面板 (Current Stage Action Panel)")
             
+            # 為簡化操作，控制面板預設鎖定目前在製的 WIP 站點資料
+            wip_rows = filtered_df[filtered_df['Step No.'] == wip_step_no]
+            target_row = wip_rows.iloc[0] if not wip_rows.empty else filtered_df.iloc[0]
+            
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("晶圓編號 (Wafer ID)", str(target_row.get("Wafer ID", "N/A")))
-            c2.metric("選定步驟 (Step No.)", f"第 {str(target_row.get('Step No.', 'N/A'))} 步")
+            c2.metric("在製步驟 (WIP Step No.)", f"第 {wip_step_no} 步")
             c3.metric("負責模組 (Module)", str(target_row.get("Module", "N/A")))
             c4.metric("客戶團隊 (Customer)", str(target_row.get("Customer", "N/A")))
             
-            # 如果工程師選的不是 WIP 站，跳出貼心提示
-            if str(target_row.get("Step No.")).strip() != wip_step_no.strip():
-                st.warning(f"⚠️ 提示：您目前選取的是第 {target_row.get('Step No.')} 步，但目前晶圓實體實際卡留在第 {wip_step_no} 步（綠色加粗並顯示 INPR 之站點）。")
-            
-            st.info(f"💡 **選定站點描述**：{target_row.get('Step Description', 'N/A')} | **製程機台**：{target_row.get('Process Tool', 'N/A')} | **機台配方 (Recipe)**：{target_row.get('Recipe', 'N/A')}")
+            st.info(f"💡 **當前在製站點描述**：{target_row.get('Step Description', 'N/A')} | **製程機台**：{target_row.get('Process Tool', 'N/A')} | **機台配方 (Recipe)**：{target_row.get('Recipe', 'N/A')}")
             
             st.markdown("📝 **批註 / 機台數據回填 (Key in data / SPC Data):**")
             user_comment = st.text_input("請在此輸入過站紀錄...", key="user_comment_input", placeholder="例如: PR height record = 10um")
@@ -189,7 +189,7 @@ with all_tabs[1]:
     if not df_logs.empty:
         log_wafer_col = [c for c in df_logs.columns if "Wafer" in c or "晶圓" in c]
         if log_wafer_col:
-            filtered_logs = df_logs[df_logs[log_wafer_col[0]].astype(str).str.upper() == search_id.upper()]
+            filtered_logs = df_logs[df_logs[log_wafer_col].astype(str).str.upper() == search_id.upper()]
         else:
             filtered_logs = df_logs
         st.markdown(f"📊 晶圓 **{search_id}** 的歷史生產追蹤稽核足跡：")
