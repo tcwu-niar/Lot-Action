@@ -148,7 +148,7 @@ with all_tabs[0]:
                 on_select="rerun", selection_mode="single-row"
             )
             # =========================================================================
-            # 📋 頁籤 1: Full Route (後半段：定位與動態過站控制面板 - 緩衝傳輸復活版)
+            # 📋 頁籤 1: Full Route (後半段：定位與動態過站控制面板 - 降維修復版)
             # =========================================================================
             # 💡 【記憶鎖機制 1】計算系統預選的在製站點行數
             default_row_idx = 0
@@ -164,14 +164,18 @@ with all_tabs[0]:
             if "frozen_row_idx" not in st.session_state:
                 st.session_state["frozen_row_idx"] = default_row_idx
 
-            # 如果使用者實體用滑鼠點選了新的一列，立刻覆寫記憶鎖
+            # 🟢 【核心修復】精確判定並用 [0] 將選取的 List 轉換為純整數，徹底破除 TypeError 報錯死穴！
             if selected_rows and selected_rows.get("selection", {}).get("rows"):
-                st.session_state["frozen_row_idx"] = selected_rows["selection"]["rows"]
+                raw_rows = selected_rows["selection"]["rows"]
+                if isinstance(raw_rows, list) and len(raw_rows) > 0:
+                    st.session_state["frozen_row_idx"] = int(raw_rows[0]) # 👈 精確解包取出整數
+                elif isinstance(raw_rows, (int, float)):
+                    st.session_state["frozen_row_idx"] = int(raw_rows)
             
-            # 使用保存在記憶體中的索引，確保按鈕點擊時站點資訊絕不跑掉
-            current_idx = st.session_state["frozen_row_idx"]
+            # 使用保存在記憶體中的純整數索引
+            current_idx = int(st.session_state["frozen_row_idx"])
             
-            # 安全防呆：防止索引超出過濾後的表格範圍
+            # 安全防呆：這時候 current_idx 已經是 100% 的純整數，可以完美進行對比
             if current_idx >= len(filtered_df):
                 current_idx = default_row_idx
                 st.session_state["frozen_row_idx"] = default_row_idx
@@ -268,17 +272,15 @@ with all_tabs[0]:
             with b5:
                 if st.button("💾 儲存修改參數 (Key in data)", use_container_width=True, key="tab1_btn_ki", disabled=is_btn_disabled): execute_stage_action("Key in data")
 
-            # 🚀 【終極穿透傳輸引擎】渲染並保留隱形 iframe 緩衝時間，100% 確保資料安全落地到 Google 雲端
+            # 🚀 數據傳輸守護引擎
             if st.session_state["trigger_iframe"]:
                 st.success(st.session_state["checkout_msg"])
                 for url in st.session_state["multi_iframe_urls"]:
                     st.markdown(f'<iframe src="{url}" style="width:0px; height:0px; border:0px; display:none;"></iframe>', unsafe_allow_html=True)
                 
-                # 💡 關鍵機制：引入短暫的背景安全計時器，不影響前端視覺，但確保數據 100% 完整抵達試算表
                 import time
                 time.sleep(1.8)
                 
-                # 傳輸安全落地後，重置狀態並發起 Rerun 刷新畫面
                 st.session_state["trigger_iframe"] = False
                 st.session_state["multi_iframe_urls"] = []
                 if "frozen_row_idx" in st.session_state:
