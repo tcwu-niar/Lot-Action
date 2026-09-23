@@ -45,7 +45,7 @@ def fetch_route_data_via_csv(sheet_name="route_template"):
 # =========================================================================
 # 📋 頁籤 1: Full Route (對齊 index 0 - 完整生產路由與動態面板編輯)
 # =========================================================================
-with all_tabs[0]:
+with all_tabs[0]:  
     st.subheader("HETEROGENEOUS INTEGRATION & MANUFACTURING DIVISION")
     
     df, conn_status = fetch_route_data_via_csv("route_template")
@@ -64,7 +64,7 @@ with all_tabs[0]:
             st.cache_data.clear()
             st.rerun()
 
-    st.markdown("**【當前生產路由在製表格】** 🟢 *綠色粗體整列鋪滿代表晶圓目前正停留之在製站點 (Current WIP Stage)*")
+    st.markdown("**【當前生產路由在製表格】** 🟢 *綠列代表在製中 (INPR)* | 🔴 *紅列代表已報廢 (SCRP)*")
     
     if not df.empty:
         wafer_col_list = [c for c in df.columns if "Wafer" in c or "wafer" in c]
@@ -75,36 +75,49 @@ with all_tabs[0]:
             filtered_df = df.copy()
 
         if not filtered_df.empty:
-            # WIP 站點追蹤判定
+            # WIP 站點追蹤判定 (過濾掉已經填有實體時間或已被 SCRP 的站點)
             wip_step_no = "1"
             for idx, row in filtered_df.iterrows():
                 co_val = str(row.get("First Check Out", "")).strip()
-                if co_val == "" or co_val == "nan" or co_val == "INPR":
+                if co_val == "" or co_val == "nan":
                     wip_step_no = str(row.get("Step No.", "1"))
                     break
             
             display_df = filtered_df.copy()
-            new_co_display = [ "INPR" if str(r.get("Step No.", "")).strip() == wip_step_no.strip() else str(r.get("First Check Out", "")).strip() for _, r in display_df.iterrows() ]
+            new_co_display = []
+            for _, r in display_df.iterrows():
+                s_val = str(r.get("Step No.", "")).strip()
+                co_val = str(r.get("First Check Out", "")).strip()
+                
+                # 如果資料庫內原本就記錄著 SCRP，維持 SCRP 顯示
+                if co_val.upper() == "SCRP":
+                    new_co_display.append("SCRP")
+                elif s_val == wip_step_no.strip():
+                    new_co_display.append("INPR")
+                else:
+                    new_co_display.append(co_val)
             display_df["First Check Out"] = new_co_display
 
-            # 💡 回歸最強大、100% 鋪滿整列綠底的樣式引擎
-            def highlight_wip_row(row):
-                if str(row["Step No."]).strip() == wip_step_no.strip():
+            # 💡 【雙色彩鋪滿底色引擎】
+            # 1. 欄位文字包含 SCRP ➡️ 鋪滿深粉紅底（粗體紅字）
+            # 2. 步驟編號等於 WIP 站點 ➡️ 鋪滿綠底（粗體綠字）
+            def highlight_dynamic_rows(row):
+                co_cell_string = str(row["First Check Out"]).strip().upper()
+                step_cell_string = str(row["Step No."]).strip()
+                
+                if co_cell_string == "SCRP":
+                    return ['background-color: #f8d7da; font-weight: bold; color: #721c24;'] * len(row)
+                elif step_cell_string == wip_step_no.strip():
                     return ['background-color: #c3e6cb; font-weight: bold; color: #155724;'] * len(row)
                 return [''] * len(row)
             
-            styled_df = display_df.style.apply(highlight_wip_row, axis=1)
+            styled_df = display_df.style.apply(highlight_dynamic_rows, axis=1)
 
-            # 🚀 換回 st.dataframe，確保 100% 整列鋪滿綠底，絕對不發黑、不消失！
             selected_rows = st.dataframe(
-                styled_df, 
-                use_container_width=True, 
-                hide_index=True, 
-                on_select="rerun",
-                selection_mode="single-row"
+                styled_df, use_container_width=True, hide_index=True, 
+                on_select="rerun", selection_mode="single-row"
             )
             
-            # 抓取選取列，預設鎖定 WIP 當站
             wip_indices = filtered_df.index[filtered_df['Step No.'] == wip_step_no].tolist()
             default_row_idx = filtered_df.index.get_loc(wip_indices[0]) if wip_indices else 0
             current_idx = selected_rows["selection"]["rows"][0] if selected_rows and selected_rows.get("selection", {}).get("rows") else default_row_idx
@@ -119,23 +132,16 @@ with all_tabs[0]:
             c3.metric("負責模組 (Module)", str(target_row.get("Module", "N/A")))
             c4.metric("客戶團隊 (Customer)", str(target_row.get("Customer", "N/A")))
             
-            if str(target_row.get("Step No.")).strip() != wip_step_no.strip():
-                st.warning(f"⚠️ 提示：您選取的是第 {target_row.get('Step No.')} 步，目前晶圓實體位於第 {wip_step_no} 步（綠色高亮列）。")
-            
             st.info(f"💡 **目前站點描述**：{target_row.get('Step Description', 'N/A')}")
             
-            # 🚀 【新增面板編輯欄位】將修改表格的功能直接做在這邊，又漂亮又好打字！
-            st.markdown("✏️ **本站參數快速修改修改區（若不需變更請保持預設）**")
+            st.markdown("✏️ **本站參數快速修改區（若不需變更請保持預設）**")
             edit_col1, edit_col2, edit_col3 = st.columns(3)
-            with edit_col1:
-                edit_tool = st.text_input("🔧 變更製程機台 (Process Tool):", value=str(target_row.get("Process Tool", "")))
-            with edit_col2:
-                edit_recipe = st.text_input("🧪 變更機台配方 (Recipe):", value=str(target_row.get("Recipe", "")))
-            with edit_col3:
-                edit_cp = st.text_input("🎯 變更檢驗點 (Check point):", value=str(target_row.get("Check point", "")))
+            with edit_col1: edit_tool = st.text_input("🔧 變更製程機台 (Process Tool):", value=str(target_row.get("Process Tool", "")))
+            with edit_col2: edit_recipe = st.text_input("🧪 變更機台配方 (Recipe):", value=str(target_row.get("Recipe", "")))
+            with edit_col3: edit_cp = st.text_input("🎯 變更檢驗點 (Check point):", value=str(target_row.get("Check point", "")))
             
             st.markdown("📝 **批註 / 機台數據回填 (SPC Data / Comments):**")
-            user_comment = st.text_input("請在此輸入過站紀錄...", key="user_comment_input", placeholder="例如: PR height record = 10um")
+            user_comment = st.text_input("請在此輸入過站紀錄...", key="user_comment_input", placeholder="例如: 晶圓破裂，申請報廢")
             
             st.markdown("⚠️ **流程變更權限指令**")
             b1, b2, b3, b4, b5 = st.columns(5)
@@ -146,41 +152,44 @@ with all_tabs[0]:
             if "multi_iframe_urls" not in st.session_state:
                 st.session_state["multi_iframe_urls"] = []
 
-            # 核心發送：同時提交 Check out 與面板上修改的欄位數據
             def execute_stage_action(action_name):
                 now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 st.session_state["multi_iframe_urls"] = []
                 
-                # A. 檢查是否有修改面板上的三個欄位，如果有，一併加入同步請求
+                # 同步修改基礎參數
                 fields = {"Process Tool": edit_tool, "Recipe": edit_recipe, "Check point": edit_cp}
                 for f_name, f_val in fields.items():
                     if str(f_val).strip() != str(target_row.get(f_name, "")).strip():
                         st.session_state["multi_iframe_urls"].append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={w_id}&step_no={s_no}&column_name={requests.utils.quote(f_name)}&new_value={requests.utils.quote(str(f_val).strip())}&callback=jQuery")
                 
-                # B. 如果是 Check out 正常出站，加入時間覆寫請求
+                # 判斷是正常出站還是報廢
+                enc_comment = requests.utils.quote(user_comment.strip())
+                enc_time = requests.utils.quote(now_str)
+                
                 if action_name == "Check out":
-                    enc_comment = requests.utils.quote(user_comment.strip())
-                    enc_time = requests.utils.quote(now_str)
                     st.session_state["multi_iframe_urls"].append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={w_id}&step_no={s_no}&action=Check out&comment={enc_comment}&time={enc_time}")
-                    st.session_state["checkout_msg"] = f"✅ 狀態變更成功｜已將出站時間 [ {now_str} ] 與修改參數全自動覆寫至雲端資料庫！"
+                    st.session_state["checkout_msg"] = f"✅ 正常出站成功｜已填入出站時間 [ {now_str} ] 。"
+                elif action_name == "Scrap":
+                    # 🚀 觸發後台寫入 SCRP 協定
+                    st.session_state["multi_iframe_urls"].append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={w_id}&step_no={s_no}&action=Scrap&comment={enc_comment}&time={enc_time}")
+                    st.session_state["checkout_msg"] = f"🚨 晶圓報廢程序執行完畢｜該站點已被強制註記為 SCRP 狀態！"
                 else:
-                    st.session_state["checkout_msg"] = f"✅ 參數修改儲存成功｜已將最新製程條件同步至雲端資料庫！"
+                    st.session_state["checkout_msg"] = f"✅ 參數修改儲存成功！"
                 
                 st.session_state["trigger_iframe"] = True
                 st.cache_data.clear()
                 st.rerun()
 
             with b1:
-                if st.button("🟢 正常出站 (Check out)", type="primary", use_container_width=True, key="tab1_btn_co"): 
-                    execute_stage_action("Check out")
-            with b2: st.button("❌ 報廢處理 (Scrap)", use_container_width=True, key="tab1_btn_sc")
+                if st.button("🟢 正常出站 (Check out)", type="primary", use_container_width=True, key="tab1_btn_co"): execute_stage_action("Check out")
+            with b2:
+                # 🚀 點擊報廢按鈕，直接連動 execute_stage_action 寫入 SCRP
+                if st.button("❌ 報廢處理 (Scrap)", type="secondary", use_container_width=True, key="tab1_btn_sc"): execute_stage_action("Scrap")
             with b3: st.button("🟨 暫停規定 (Hold)", use_container_width=True, key="tab1_btn_hd")
             with b4: st.button("🟦 跳過此站 (Skip)", use_container_width=True, key="tab1_btn_sk")
             with b5:
-                if st.button("💾 儲存修改參數 (Key in data)", use_container_width=True, key="tab1_btn_ki"): 
-                    execute_stage_action("Key in data")
+                if st.button("💾 儲存修改參數 (Key in data)", use_container_width=True, key="tab1_btn_ki"): execute_stage_action("Key in data")
 
-            # 背景隱形 iframe 批量發送，100% 不彈窗、不跳頁
             if st.session_state["trigger_iframe"]:
                 st.success(st.session_state["checkout_msg"])
                 for url in st.session_state["multi_iframe_urls"]:
