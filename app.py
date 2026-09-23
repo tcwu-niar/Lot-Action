@@ -165,7 +165,7 @@ with tabs[0]:
                     f'<div style="padding:12px; background-color:#2ea44f; color:white; text-align:center; '
                     f'border-radius:6px; font-weight:bold; font-size:16px;">'
                     f'🔗 點此一鍵穿透同步回雲端試算表 (100% 成功不報錯) </div></a>', 
-                    unsafe_with_html=True
+                    unsafe_allow_html=True
                 )
                 
                 # 提示文字
