@@ -27,10 +27,18 @@ def fetch_route_data_via_csv(sheet_name="route_template"):
                 return pd.DataFrame(), "權限受阻，請確保試算表已開啟連結共用"
             from io import StringIO
             df_data = pd.read_csv(StringIO(response.text))
+            
+            # 清洗標頭中的換行字元與空格
             df_data.columns = [str(c).strip().replace('\n', '').replace('\r', '') for c in df_data.columns]
-            df_data = df_data.fillna("nan")
+            
+            # 【關鍵修復】將試算表中的所有空值（NaN/None）預先填補為空字串，防止 Pandas 產生 nan 字眼
+            df_data = df_data.fillna("")
+            
             for col in df_data.columns:
+                # 將所有欄位內容都轉為乾淨的字串，並剔除多餘空格與 "nan" 字樣
                 df_data[col] = df_data[col].astype(str).str.strip()
+                df_data[col] = df_data[col].replace({"nan": "", "NaN": "", "None": ""})
+                
             return df_data, "Connected"
         else:
             return pd.DataFrame(), f"HTTP {response.status_code}"
@@ -47,6 +55,7 @@ with all_tabs[0]:
     else:
         st.success("🟢 成功連結 Google Sheets 資料庫")
     
+    # 搜尋過濾器面板
     col_input1, col_input2 = st.columns(2)
     with col_input1:
         search_id = st.text_input("🔍 請輸入或掃描晶圓 ID (Wafer ID):", value="LOT4-11F0", key="search_wafer_id")
@@ -71,24 +80,22 @@ with all_tabs[0]:
             # 💡 【核心反綠粗體引擎】計算哪一站是當前在製站點 (WIP Step)
             wip_step_no = "1" # 預設第一步
             for idx, row in filtered_df.iterrows():
-                co_val = str(row.get("First Check Out", "nan")).strip()
-                if co_val == "nan" or co_val == "":
+                co_val = str(row.get("First Check Out", "")).strip()
+                if co_val == "" or co_val == "nan":
                     wip_step_no = str(row.get("Step No.", "1"))
                     break
             
-            # 💡 【全新優化】動態重組 First Check Out 顯示文字
+            # 💡 動態重組 First Check Out 顯示文字
             # 1. 它是當站 ➡️ 顯示 INPR
-            # 2. 它不是當站且值為 nan ➡️ 顯示為完全空白的空格
-            # 3. 它不是當站且有實體時間 ➡️ 維維持原本的時間字串
+            # 2. 它不是當站且沒有時間資料 ➡️ 保持完全空白
+            # 3. 它不是當站且有時間資料 ➡️ 顯示正常時間
             new_co_display = []
             for idx, row in filtered_df.iterrows():
                 step_val = str(row.get("Step No.", "")).strip()
-                co_val = str(row.get("First Check Out", "nan")).strip()
+                co_val = str(row.get("First Check Out", "")).strip()
                 
                 if step_val == wip_step_no.strip():
                     new_co_display.append("INPR")
-                elif co_val == "nan" or co_val == "":
-                    new_co_display.append("")
                 else:
                     new_co_display.append(co_val)
             
