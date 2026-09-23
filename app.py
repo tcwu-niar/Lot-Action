@@ -67,16 +67,15 @@ with all_tabs[0]:
     st.markdown("🟢 *綠列代表在製中 (INPR)* | 🟨 *紅底藍字代表暫停管制 (HOLD)* | 🔴 *紅底紅字代表已報廢 (SCRP)* | ⚪ *灰列代表流程中斷*")
     
     if not df.empty:
-        # 🟢 【終極核心修復】加上 [0]，精確將欄位 List 降維提取為單一字串名稱，徹底擊碎第 73 行的 AttributeError 死穴！
         wafer_col_list = [c for c in df.columns if "Wafer" in c or "wafer" in c]
         if wafer_col_list:
-            actual_string_col = wafer_col_list[0]  # 👈 【最關鍵修復點：加上 [0]】確保為純字串 'Wafer ID'
+            actual_string_col = wafer_col_list[0]  # 🟢 精確取出純字串，根除 AttributeError
             filtered_df = df[df[actual_string_col].astype(str).str.upper() == search_id.upper()].copy()
         else:
             filtered_df = df.copy()
 
         if not filtered_df.empty:
-            # 💡 【安全防呆】精確鎖定 Scrap 與 Hold 的位置狀態
+            # 💡 安全鎖定 Scrap 與 Hold 的位置狀態
             has_scrap_occurred = False
             scrap_step_index = 9999
             
@@ -124,7 +123,7 @@ with all_tabs[0]:
                     new_co_display.append(co_val)
             display_df["First Check Out"] = new_co_display
 
-            # 💡 【色彩高亮引擎】紅 / 綠 / 灰 / 藍 完全隔離
+            # 💡 【雙色彩鋪滿底色引擎】已將 && 完美修正為 Python 的 and
             def highlight_dynamic_rows(row):
                 row_idx = row.name
                 co_cell_string = str(row["First Check Out"]).strip().upper()
@@ -136,7 +135,7 @@ with all_tabs[0]:
                     return ['background-color: #f8d7da; font-weight: bold; color: #004085;'] * len(row)
                 elif row_idx > scrap_step_index:
                     return ['background-color: #e2e3e5; font-weight: normal; color: #6c757d;'] * len(row)
-                elif not has_scrap_occurred && has_hold_occurred and row_idx > hold_step_idx:
+                elif not has_scrap_occurred and has_hold_occurred and row_idx > hold_step_idx:
                     return ['background-color: #f8f9fa; font-weight: normal; color: #adb5bd;'] * len(row)
                 elif step_cell_string == wip_step_no.strip():
                     return ['background-color: #c3e6cb; font-weight: bold; color: #155724;'] * len(row)
