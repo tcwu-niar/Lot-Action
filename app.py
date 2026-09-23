@@ -67,19 +67,19 @@ with all_tabs[0]:
     st.markdown("**【當前生產路由在製表格】** 🟢 *綠列代表在製中 (INPR)* | 🔴 *紅列代表已報廢 (SCRP)*")
     
     if not df.empty:
+        # 🟢 【核心修復】加上 [0]，精確將 List 轉換為單一字串，徹底拔除第 73 行的 AttributeError 死穴！
         wafer_col_list = [c for c in df.columns if "Wafer" in c or "wafer" in c]
         if wafer_col_list:
-            actual_string_col = wafer_col_list
+            actual_string_col = wafer_col_list[0]  # 👈 【最關鍵修復】精確取出 'Wafer ID' 純字串，不再是 List
             filtered_df = df[df[actual_string_col].astype(str).str.upper() == search_id.upper()].copy()
         else:
             filtered_df = df.copy()
 
         if not filtered_df.empty:
-            # 💡 【關鍵邏輯修復】判定在製站 (WIP) 時，必須嚴格排除已經註記為 SCRP 的站點！
+            # WIP 站點追蹤判定 (排除已經註記為 SCRP 的站點)
             wip_step_no = "1"
             for idx, row in filtered_df.iterrows():
                 co_val = str(row.get("First Check Out", "")).strip().upper()
-                # 如果這站已經報廢了，就跳過它，繼續往下尋找真正沒過站的空位
                 if co_val == "SCRP":
                     continue
                 if co_val == "" or co_val == "NAN" or co_val == "INPR":
@@ -92,20 +92,15 @@ with all_tabs[0]:
                 s_val = str(r.get("Step No.", "")).strip()
                 co_val = str(r.get("First Check Out", "")).strip()
                 
-                # 優先權 1：如果雲端資料本來就是 SCRP，維持 SCRP
                 if co_val.upper() == "SCRP":
                     new_co_display.append("SCRP")
-                # 優先權 2：如果符合我們剛剛算出來的 WIP 站點，顯示 INPR
                 elif s_val == wip_step_no.strip():
                     new_co_display.append("INPR")
-                # 優先權 3：其餘情況維持原樣（有時間秀時間，沒時間秀空白）
                 else:
                     new_co_display.append(co_val)
             display_df["First Check Out"] = new_co_display
 
             # 💡 【雙色彩鋪滿底色引擎】
-            # 1. 欄位文字包含 SCRP ➡️ 鋪滿深粉紅底（粗體紅字）
-            # 2. 步驟編號等於 WIP 站點 ➡️ 鋪滿綠底（粗體綠字）
             def highlight_dynamic_rows(row):
                 co_cell_string = str(row["First Check Out"]).strip().upper()
                 step_cell_string = str(row["Step No."]).strip()
