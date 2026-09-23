@@ -69,18 +69,18 @@ with all_tabs[0]:
     if not df.empty:
         wafer_col_list = [c for c in df.columns if "Wafer" in c or "wafer" in c]
         if wafer_col_list:
-            actual_string_col = wafer_col_list[0]
+            actual_string_col = wafer_col_list
             filtered_df = df[df[actual_string_col].astype(str).str.upper() == search_id.upper()].copy()
         else:
             filtered_df = df.copy()
 
         if not filtered_df.empty:
-            # 💡 【安全對齊校正】全面綁定為 hold_step_idx 變數名稱
+            # 💡 【安全防呆】精確鎖定 Scrap 與 Hold 的位置狀態
             has_scrap_occurred = False
             scrap_step_index = 9999
             
             has_hold_occurred = False
-            hold_step_idx = 9999  # 👈 這裡精確命名為 hold_step_idx
+            hold_step_idx = 9999
             
             for idx, row in filtered_df.reset_index(drop=True).iterrows():
                 co_val = str(row.get("First Check Out", "")).strip().upper()
@@ -90,7 +90,7 @@ with all_tabs[0]:
                     break
                 elif co_val == "HOLD":
                     has_hold_occurred = True
-                    hold_step_idx = idx  # 👈 這裡精確記下索引位置
+                    hold_step_idx = idx
                     break
             
             # 計算在製站點 (WIP Step)
@@ -123,7 +123,7 @@ with all_tabs[0]:
                     new_co_display.append(co_val)
             display_df["First Check Out"] = new_co_display
 
-            # 💡 【雙色彩鋪滿底色引擎】
+            # 💡 【色彩高亮引擎】紅 / 綠 / 灰 / 藍 完全隔離
             def highlight_dynamic_rows(row):
                 row_idx = row.name
                 co_cell_string = str(row["First Check Out"]).strip().upper()
@@ -148,7 +148,7 @@ with all_tabs[0]:
                 on_select="rerun", selection_mode="single-row"
             )
             # =========================================================================
-            # 📋 頁籤 1: Full Route (後半段：定位與動態過站控制面板 - 修正版)
+            # 📋 頁籤 1: Full Route (後半段：定位與動態過站控制面板 - 整合解HOLD按鈕)
             # =========================================================================
             default_row_idx = 0
             step_list = [str(x).strip() for x in filtered_df['Step No.'].tolist()]
@@ -157,9 +157,9 @@ with all_tabs[0]:
             elif has_scrap_occurred:
                 default_row_idx = scrap_step_index
             elif has_hold_occurred:
-                default_row_idx = hold_step_idx  # 🟢 【校正對齊】精確呼叫 hold_step_idx
+                default_row_idx = hold_step_idx
             
-            current_idx = selected_rows["selection"]["rows"][0] if selected_rows and selected_rows.get("selection", {}).get("rows") else default_row_idx
+            current_idx = selected_rows["selection"]["rows"] if selected_rows and selected_rows.get("selection", {}).get("rows") else default_row_idx
             target_row = filtered_df.iloc[current_idx]
             
             st.write("---")
@@ -171,11 +171,11 @@ with all_tabs[0]:
             c3.metric("負責模組 (Module)", str(target_row.get("Module", "N/A")))
             c4.metric("客戶團隊 (Customer)", str(target_row.get("Customer", "N/A")))
             
-            # 🟢 【校正對齊】控制面板防呆紅色/黃色警告條邏輯
+            # 控制面板狀態警告條
             if has_scrap_occurred and current_idx > scrap_step_index:
                 st.error(f"🚫 流程已中斷：該晶圓已於第 {filtered_df.iloc[scrap_step_index].get('Step No.')} 步報廢 (SCRP)。")
             elif not has_scrap_occurred and has_hold_occurred and current_idx >= hold_step_idx:
-                st.warning(f"🟨 暫停管制中：該晶圓目前於第 {filtered_df.iloc[hold_step_idx].get('Step No.')} 步被執行 HOLD 鎖定，解除管制前無法執行出站作業。")
+                st.warning(f"🟨 暫停管制中：該晶圓目前於第 {filtered_df.iloc[hold_step_idx].get('Step No.')} 步被執行 HOLD 鎖定，解除管制前無法執行正常出站。")
             
             st.info(f"💡 **目前站點描述**：{target_row.get('Step Description', 'N/A')}")
             
@@ -186,9 +186,15 @@ with all_tabs[0]:
             with edit_col3: edit_cp = st.text_input("🎯 變更檢驗點 (Check point):", value=str(target_row.get("Check point", "")))
             
             st.markdown("📝 **批註 / 機台數據回填 (SPC Data / Comments):**")
-            user_comment = st.text_input("請在此輸入過站紀錄...", key="user_comment_input", placeholder="例如: 數據異常，暫停管制")
+            user_comment = st.text_input("請在此輸入過站紀錄...", key="user_comment_input", placeholder="例如: 異常已排除，申請解除 Hold 管制")
             
             st.markdown("⚠️ **流程變更權限指令**")
+            
+            # 💡 【動態按鈕切換防呆】
+            # 如果目前這片晶圓正處於 HOLD 管制狀態，且工程師滑鼠剛好選在被 HOLD 的這一站
+            # 我們將面板下方的「正常出站」按鈕，直接動態重組抽換成「🔓 解除暫停 (Release Hold)」！
+            is_currently_at_hold_cell = True if (not has_scrap_occurred and has_hold_occurred and current_idx == hold_step_idx) else False
+            
             b1, b2, b3, b4, b5 = st.columns(5)
             w_id, s_no = str(target_row.get("Wafer ID", "")).strip(), str(target_row.get("Step No.", "")).strip()
             
@@ -218,6 +224,10 @@ with all_tabs[0]:
                 elif action_name == "Hold":
                     st.session_state["multi_iframe_urls"].append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={w_id}&step_no={s_no}&action=Hold&comment={enc_comment}&time={enc_time}")
                     st.session_state["checkout_msg"] = f"🟨 暫停管制程序執行完畢｜該站點已被強制註記為 HOLD 狀態！"
+                elif action_name == "Release Hold":
+                    # 🚀 觸發後台一秒清除 HOLD 儲存格機制
+                    st.session_state["multi_iframe_urls"].append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={w_id}&step_no={s_no}&action=Release Hold&comment={enc_comment}&time={enc_time}")
+                    st.session_state["checkout_msg"] = f"🔓 暫停管制已成功解除！該步驟已全自動回復為 INPR 在製狀態。"
                 else:
                     st.session_state["checkout_msg"] = f"✅ 參數修改儲存成功！"
                 
@@ -225,17 +235,26 @@ with all_tabs[0]:
                 st.cache_data.clear()
                 st.rerun()
 
-            # 🟢 【校正對齊】自動化防呆按鈕禁用控制邏輯
+            # 按鈕禁用邏輯控制
             is_btn_disabled = True if has_scrap_occurred and current_idx > scrap_step_index else False
             is_checkout_disabled = True if (has_hold_occurred and current_idx >= hold_step_idx) or is_btn_disabled else False
 
             with b1:
-                if st.button("🟢 正常出站 (Check out)", type="primary", use_container_width=True, key="tab1_btn_co", disabled=is_checkout_disabled): execute_stage_action("Check out")
+                if is_currently_at_hold_cell:
+                    # 🎯 核心亮點：如果當前站點是被 HOLD 的，第一個按鈕全自動變成「🔓 解除暫停 (Release Hold)」供點擊解鎖！
+                    if st.button("🔓 解除暫停 (Release Hold)", type="primary", use_container_width=True, key="tab1_btn_rel"):
+                        execute_stage_action("Release Hold")
+                else:
+                    if st.button("🟢 正常出站 (Check out)", type="primary", use_container_width=True, key="tab1_btn_co", disabled=is_checkout_disabled): 
+                        execute_stage_action("Check out")
+                        
             with b2:
                 if st.button("❌ 報廢處理 (Scrap)", type="secondary", use_container_width=True, key="tab1_btn_sc", disabled=is_btn_disabled): execute_stage_action("Scrap")
             with b3: 
-                if st.button("🟨 暫停規定 (Hold)", type="secondary", use_container_width=True, key="tab1_btn_hd", disabled=is_btn_disabled): execute_stage_action("Hold")
-            with b4: st.button("🟦 跳過此站 (Skip)", use_container_width=True, key="tab1_btn_sk", disabled=is_btn_disabled)
+                # 如果已經是 HOLD 狀態，就隱藏或禁用重複 Hold 的動作
+                if st.button("🟨 暫停規定 (Hold)", type="secondary", use_container_width=True, key="tab1_btn_hd", disabled=(is_btn_disabled or has_hold_occurred)): 
+                    execute_stage_action("Hold")
+            with b4: st.button("🟦 跳過此站 (Skip)", use_container_width=True, key="tab1_btn_sk", disabled=is_checkout_disabled)
             with b5:
                 if st.button("💾 儲存修改參數 (Key in data)", use_container_width=True, key="tab1_btn_ki", disabled=is_btn_disabled): execute_stage_action("Key in data")
 
