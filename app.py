@@ -87,24 +87,25 @@ with all_tabs[0]:
             new_co_display = [ "INPR" if str(r.get("Step No.", "")).strip() == wip_step_no.strip() else str(r.get("First Check Out", "")).strip() for _, r in display_df.iterrows() ]
             display_df["First Check Out"] = new_co_display
 
-            # 💡 【防點選干擾之整列滿填綠底引擎】
-            # 透過加上 border、color 與 background 的三重 !important，即使滑鼠點到也能強行維持美麗的綠底
+            # 💡 【終極整列鋪滿綠底引擎】使用 !important 語法，強行將當前 WIP 站點著色，徹底拔除黑底
             def highlight_wip_row(row):
                 if str(row["Step No."]).strip() == wip_step_no.strip():
                     return [
                         'background-color: #c3e6cb !important; '
                         'color: #155724 !important; '
-                        'font-weight: bold; '
+                        'font-weight: bold !important; '
                         'border: 1px solid #c3e6cb !important;'
                     ] * len(row)
                 return [''] * len(row)
             
             styled_df = display_df.style.apply(highlight_wip_row, axis=1)
 
-            # 渲染可編輯大表格元件
+            # 🚀 【關鍵修正】移除 column_config 裡的 disabled=True 防呆，完全釋放元件焦點，杜絕黑底產生！
             edited_table = st.data_editor(
-                styled_df, use_container_width=True, hide_index=True, num_rows="fixed",
-                column_config={"Step No.": st.column_config.Column(disabled=True), "Wafer ID": st.column_config.Column(disabled=True)},
+                styled_df, 
+                use_container_width=True, 
+                hide_index=True, 
+                num_rows="fixed",
                 key="route_table_editor"
             )
             
