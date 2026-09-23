@@ -10,7 +10,7 @@ st.title("🏭 晶圓生產路由與狀態追蹤系統 (TSRI Lot Tracing System)
 # =========================================================================
 # 🔴 請在此精確填入您在 Google 試算表部署得到的實體 GAS /exec 網址 🔴
 # =========================================================================
-MY_ORGANIZATION_GAS_URL = "https://google.com"
+MY_ORGANIZATION_GAS_URL = "https://script.google.com/macros/s/AKfycbxSpHeSlbCyMgn0cH60fh62eM_nYoaCwkSCZF1UJMTeC-3z1wQJ1RVLXge1kvzadmKM/exec"
 
 # 2. 建立功能頁籤
 tabs = st.tabs(["📋 Full Route", "📜 Wafer History", "📤 Upload New Wafer", "🔄 Upload R/C"])
