@@ -155,7 +155,7 @@ with all_tabs[0]:
                 on_select="rerun", selection_mode="single-row"
             )
             # =========================================================================
-            # 📋 頁籤 1: Full Route (後半段：定位與動態過站控制面板)
+            # 📋 頁籤 1: Full Route (後半段：定位與動態過站控制面板 - 修正版)
             # =========================================================================
             default_row_idx = 0
             step_list = [str(x).strip() for x in filtered_df['Step No.'].tolist()]
@@ -164,7 +164,7 @@ with all_tabs[0]:
             elif has_scrap_occurred:
                 default_row_idx = scrap_step_index
             elif has_hold_occurred:
-                default_row_idx = hold_step_index # 預選鎖定在被 HOLD 的異常站點
+                default_row_idx = hold_step_index  # 🟢 【最關鍵修復】精確對齊前半段的變數名稱 hold_step_index
             
             current_idx = selected_rows["selection"]["rows"] if selected_rows and selected_rows.get("selection", {}).get("rows") else default_row_idx
             target_row = filtered_df.iloc[current_idx]
@@ -178,7 +178,7 @@ with all_tabs[0]:
             c3.metric("負責模組 (Module)", str(target_row.get("Module", "N/A")))
             c4.metric("客戶團隊 (Customer)", str(target_row.get("Customer", "N/A")))
             
-            # 控制面板的防呆狀態提示
+            # 🟢 【變數完全對齊校正】控制面板防呆紅色/黃色警告條邏輯
             if has_scrap_occurred and current_idx > scrap_step_index:
                 st.error(f"🚫 流程已中斷：該晶圓已於第 {filtered_df.iloc[scrap_step_index].get('Step No.')} 步報廢 (SCRP)。")
             elif not has_scrap_occurred and has_hold_occurred and current_idx >= hold_step_index:
@@ -223,7 +223,6 @@ with all_tabs[0]:
                     st.session_state["multi_iframe_urls"].append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={w_id}&step_no={s_no}&action=Scrap&comment={enc_comment}&time={enc_time}")
                     st.session_state["checkout_msg"] = f"🚨 晶圓報廢程序執行完畢｜該站點已被強制註記為 SCRP 狀態！"
                 elif action_name == "Hold":
-                    # 🚀 建立傳輸指令
                     st.session_state["multi_iframe_urls"].append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={w_id}&step_no={s_no}&action=Hold&comment={enc_comment}&time={enc_time}")
                     st.session_state["checkout_msg"] = f"🟨 暫停管制程序執行完畢｜該站點已被強制註記為 HOLD 狀態！"
                 else:
@@ -233,7 +232,7 @@ with all_tabs[0]:
                 st.cache_data.clear()
                 st.rerun()
 
-            # 按鈕啟用防呆控制邏輯
+            # 🟢 【變數完全對齊校正】自動化防呆按鈕禁用控制邏輯
             is_btn_disabled = True if has_scrap_occurred and current_idx > scrap_step_index else False
             is_checkout_disabled = True if (has_hold_occurred and current_idx >= hold_step_index) or is_btn_disabled else False
 
@@ -242,7 +241,6 @@ with all_tabs[0]:
             with b2:
                 if st.button("❌ 報廢處理 (Scrap)", type="secondary", use_container_width=True, key="tab1_btn_sc", disabled=is_btn_disabled): execute_stage_action("Scrap")
             with b3: 
-                # 🚀 點擊 Hold 按鈕，直接連動 execute_stage_action 寫入 HOLD
                 if st.button("🟨 暫停規定 (Hold)", type="secondary", use_container_width=True, key="tab1_btn_hd", disabled=is_btn_disabled): execute_stage_action("Hold")
             with b4: st.button("🟦 跳過此站 (Skip)", use_container_width=True, key="tab1_btn_sk", disabled=is_btn_disabled)
             with b5:
