@@ -87,10 +87,16 @@ with all_tabs[0]:
             new_co_display = [ "INPR" if str(r.get("Step No.", "")).strip() == wip_step_no.strip() else str(r.get("First Check Out", "")).strip() for _, r in display_df.iterrows() ]
             display_df["First Check Out"] = new_co_display
 
-            # 💡 【終極整列鋪滿綠底引擎】透過 CSS !important 強制填滿整列的所有儲存格
+            # 💡 【防點選干擾之整列滿填綠底引擎】
+            # 透過加上 border、color 與 background 的三重 !important，即使滑鼠點到也能強行維持美麗的綠底
             def highlight_wip_row(row):
                 if str(row["Step No."]).strip() == wip_step_no.strip():
-                    return ['background-color: #c3e6cb !important; font-weight: bold; color: #155724 !important;'] * len(row)
+                    return [
+                        'background-color: #c3e6cb !important; '
+                        'color: #155724 !important; '
+                        'font-weight: bold; '
+                        'border: 1px solid #c3e6cb !important;'
+                    ] * len(row)
                 return [''] * len(row)
             
             styled_df = display_df.style.apply(highlight_wip_row, axis=1)
