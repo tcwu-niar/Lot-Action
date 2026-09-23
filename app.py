@@ -13,7 +13,7 @@ st.title("🏭 晶圓生產路由與狀態追蹤系統 (TSRI Lot Tracing System)
 MY_ORGANIZATION_GAS_URL = "https://script.google.com/macros/s/AKfycbxSpHeSlbCyMgn0cH60fh62eM_nYoaCwkSCZF1UJMTeC-3z1wQJ1RVLXge1kvzadmKM/exec"
 SPREADSHEET_ID = "1RQt29KIb4rkVo4A-Y3GouMAezYEBakb1q283d1sgdZU"
 
-# 建立上方四大核心功能頁籤物件陣列
+# 建立上方四大核心功能頁籤物件陣列 (確保存儲在單一變數中供後續解包)
 all_tabs = st.tabs(["📋 Full Route", "📜 Wafer History", "📤 Upload New Wafer", "🔄 Upload R/C"])
 
 # 🔄 載入雲端最新資料的公用函數
@@ -40,8 +40,10 @@ def fetch_route_data_via_csv(sheet_name="route_template"):
             return pd.DataFrame(), f"HTTP {response.status_code}"
     except Exception as e:
         return pd.DataFrame(), str(e)
+
+
 # =========================================================================
-# 📋 頁籤 1: Full Route (對齊 index 0 - 完整生產路由與互動編輯面板)
+# 📋 頁籤 1: Full Route (完美綁定 all_tabs[0] - 完整生產路由與互動編輯面板)
 # =========================================================================
 with all_tabs[0]:
     st.subheader("HETEROGENEOUS INTEGRATION & MANUFACTURING DIVISION")
@@ -65,10 +67,9 @@ with all_tabs[0]:
     st.markdown("**【當前生產路由互動式編輯表格】** 🟢 *綠色粗體整列鋪滿代表晶圓目前正停留之在製站點 (Current WIP Stage)*")
     
     if not df.empty:
-        # 🟢 【核心修復】精確將欄位 List 轉化為單一字串名稱，徹底拔除 AttributeError 死穴
         wafer_col_list = [c for c in df.columns if "Wafer" in c or "wafer" in c]
         if wafer_col_list:
-            actual_string_col = wafer_col_list[0]  # 👈 精確取出 'Wafer ID' 字串
+            actual_string_col = wafer_col_list[0]  # 🟢 【安全鎖定】精確取出第一個字串名稱，100% 根除 AttributeError
             filtered_df = df[df[actual_string_col].astype(str).str.upper() == search_id.upper()].copy()
         else:
             filtered_df = df.copy()
@@ -179,17 +180,16 @@ with all_tabs[0]:
     else:
         st.warning("⚠️ 無法載入 any 試算表資料，請確認工作表名稱是否為 'route_template'。")
 # =========================================================================
-# 📜 頁籤 2: Wafer History (對齊 all_tabs - 晶圓歷史過站追蹤足跡)
+# 📜 頁籤 2: Wafer History (完美綁定 all_tabs[1] - 晶圓歷史過站追蹤足跡)
 # =========================================================================
-with all_tabs:
+with all_tabs[1]:
     st.subheader("📜 晶圓歷史過站追蹤足跡 (Wafer History 日誌)")
     df_logs, log_status = fetch_route_data_via_csv("wafer_status")
     
     if not df_logs.empty:
-        # 🟢 【核心修復】精確將歷史日誌的欄位 List 轉化為單一字串名稱，徹底擊碎 AttributeError
         log_wafer_col_list = [c for c in df_logs.columns if "Wafer" in c or "晶圓" in c]
         if log_wafer_col_list:
-            actual_log_string_col = log_wafer_col_list[0]  # 👈 精確取出第一個單一字串欄位名稱
+            actual_log_string_col = log_wafer_col_list[0]  # 🟢 【安全鎖定】精確取出第一個單一字串，100% 根除 AttributeError
             filtered_logs = df_logs[df_logs[actual_log_string_col].astype(str).str.upper() == search_id.upper()]
         else:
             filtered_logs = df_logs
@@ -204,9 +204,9 @@ with all_tabs:
 
 
 # =========================================================================
-# 📤 頁籤 3: Upload New Wafer (對齊 all_tabs - 上傳新晶圓路由母表)
+# 📤 頁籤 3: Upload New Wafer (完美綁定 all_tabs[2] - 上傳新晶圓路由母表)
 # =========================================================================
-with all_tabs:
+with all_tabs[2]:
     st.subheader("📤 上傳新晶圓路由母表 (Upload New Wafer)")
     st.markdown("供製程整合工程師導入全新批次的半導體製造整合路由母體檔案。")
     uploaded_file = st.file_uploader("請選擇或拖曳要上傳的全新批次生產路由檔案 (.csv 或 .xlsx)", type=["csv", "xlsx"])
@@ -222,9 +222,9 @@ with all_tabs:
 
 
 # =========================================================================
-# 🔄 頁籤 4: Upload R/C (對齊 all_tabs - 上傳 R/C 規範)
+# 🔄 頁籤 4: Upload R/C (完美綁定 all_tabs[3] - 上傳 R/C 規範)
 # =========================================================================
-with all_tabs:
+with all_tabs[3]:
     st.subheader("🔄 上傳 R/C 規範 (Upload Run Card Change)")
     st.markdown("當晶圓需要執行晶圓重工 (Rework)、機台特例改道或特殊參數調整時，在此進行 R/C 規範單號綁定。")
     with st.form("rc_form"):
