@@ -45,7 +45,7 @@ def fetch_route_data_via_csv(sheet_name="route_template"):
 # =========================================================================
 # 📋 頁籤 1: Full Route (對齊 index 0 - 完整生產路由與動態面板編輯)
 # =========================================================================
-with all_tabs[0]:  
+with all_tabs:  
     st.subheader("HETEROGENEOUS INTEGRATION & MANUFACTURING DIVISION")
     
     df, conn_status = fetch_route_data_via_csv("route_template")
@@ -67,10 +67,9 @@ with all_tabs[0]:
     st.markdown("**【當前生產路由在製表格】** 🟢 *綠列代表在製中 (INPR)* | 🔴 *紅列代表已報廢 (SCRP)*")
     
     if not df.empty:
-        # 🟢 【核心修復】加上 [0]，精確將 List 轉換為單一字串，徹底拔除第 73 行的 AttributeError 死穴！
         wafer_col_list = [c for c in df.columns if "Wafer" in c or "wafer" in c]
         if wafer_col_list:
-            actual_string_col = wafer_col_list[0]  # 👈 【最關鍵修復】精確取出 'Wafer ID' 純字串，不再是 List
+            actual_string_col = wafer_col_list[0]  
             filtered_df = df[df[actual_string_col].astype(str).str.upper() == search_id.upper()].copy()
         else:
             filtered_df = df.copy()
@@ -118,9 +117,13 @@ with all_tabs[0]:
                 on_select="rerun", selection_mode="single-row"
             )
             
-            wip_indices = filtered_df.index[filtered_df['Step No.'] == wip_step_no].tolist()
-            default_row_idx = filtered_df.index.get_loc(wip_indices) if wip_indices else 0
-            current_idx = selected_rows["selection"]["rows"] if selected_rows and selected_rows.get("selection", {}).get("rows") else default_row_idx
+            # 🟢 【核心修復】改用純 Python 清單比對，100% 避免 InvalidIndexError
+            default_row_idx = 0
+            step_list = [str(x).strip() for x in filtered_df['Step No.'].tolist()]
+            if wip_step_no.strip() in step_list:
+                default_row_idx = step_list.index(wip_step_no.strip())
+            
+            current_idx = selected_rows["selection"]["rows"][0] if selected_rows and selected_rows.get("selection", {}).get("rows") else default_row_idx
             target_row = filtered_df.iloc[current_idx]
             
             st.write("---")
@@ -134,7 +137,7 @@ with all_tabs[0]:
             
             st.info(f"💡 **目前站點描述**：{target_row.get('Step Description', 'N/A')}")
             
-            st.markdown("✏️ **本站參數快速修改區（若不需變更請保持預設）**")
+            st.markdown("✏️ **本站 parameters 快速修改區（若不需變更請保持預設）**")
             edit_col1, edit_col2, edit_col3 = st.columns(3)
             with edit_col1: edit_tool = st.text_input("🔧 變更製程機台 (Process Tool):", value=str(target_row.get("Process Tool", "")))
             with edit_col2: edit_recipe = st.text_input("🧪 變更機台配方 (Recipe):", value=str(target_row.get("Recipe", "")))
