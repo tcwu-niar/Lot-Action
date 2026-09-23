@@ -43,9 +43,9 @@ def fetch_route_data_via_csv(sheet_name="route_template"):
 
 
 # =========================================================================
-# 📋 頁籤 1: Full Route (完美綁定 all_tabs[0] - 完整生產路由與互動編輯面板)
+# 📋 頁籤 1: Full Route (對齊 index 0 - 完整生產路由與動態面板編輯)
 # =========================================================================
-with all_tabs[0]:
+with all_tabs:
     st.subheader("HETEROGENEOUS INTEGRATION & MANUFACTURING DIVISION")
     
     df, conn_status = fetch_route_data_via_csv("route_template")
@@ -64,12 +64,12 @@ with all_tabs[0]:
             st.cache_data.clear()
             st.rerun()
 
-    st.markdown("**【當前生產路由互動式編輯表格】** 🟢 *綠色粗體整列鋪滿代表晶圓目前正停留之在製站點 (Current WIP Stage)*")
+    st.markdown("**【當前生產路由在製表格】** 🟢 *綠色粗體整列鋪滿代表晶圓目前正停留之在製站點 (Current WIP Stage)*")
     
     if not df.empty:
         wafer_col_list = [c for c in df.columns if "Wafer" in c or "wafer" in c]
         if wafer_col_list:
-            actual_string_col = wafer_col_list[0]  # 🟢 【安全鎖定】精確取出第一個字串名稱，100% 根除 AttributeError
+            actual_string_col = wafer_col_list[0]
             filtered_df = df[df[actual_string_col].astype(str).str.upper() == search_id.upper()].copy()
         else:
             filtered_df = df.copy()
@@ -87,69 +87,54 @@ with all_tabs[0]:
             new_co_display = [ "INPR" if str(r.get("Step No.", "")).strip() == wip_step_no.strip() else str(r.get("First Check Out", "")).strip() for _, r in display_df.iterrows() ]
             display_df["First Check Out"] = new_co_display
 
-            # 💡 【終極整列鋪滿綠底引擎】使用 !important 語法，強行將當前 WIP 站點著色，徹底拔除黑底
+            # 💡 回歸最強大、100% 鋪滿整列綠底的樣式引擎
             def highlight_wip_row(row):
                 if str(row["Step No."]).strip() == wip_step_no.strip():
-                    return [
-                        'background-color: #c3e6cb !important; '
-                        'color: #155724 !important; '
-                        'font-weight: bold !important; '
-                        'border: 1px solid #c3e6cb !important;'
-                    ] * len(row)
+                    return ['background-color: #c3e6cb; font-weight: bold; color: #155724;'] * len(row)
                 return [''] * len(row)
             
             styled_df = display_df.style.apply(highlight_wip_row, axis=1)
 
-            # 🚀 【關鍵修正】移除 column_config 裡的 disabled=True 防呆，完全釋放元件焦點，杜絕黑底產生！
-            edited_table = st.data_editor(
+            # 🚀 換回 st.dataframe，確保 100% 整列鋪滿綠底，絕對不發黑、不消失！
+            selected_rows = st.dataframe(
                 styled_df, 
                 use_container_width=True, 
                 hide_index=True, 
-                num_rows="fixed",
-                key="route_table_editor"
+                on_select="rerun",
+                selection_mode="single-row"
             )
             
-            if "multi_iframe_urls" not in st.session_state:
-                st.session_state["multi_iframe_urls"] = []
-                st.session_state["show_save_success"] = False
-
-            if st.button("💾 儲存並同步表格內所有編輯變更至雲端資料庫", type="secondary", use_container_width=True, key="tab1_save_grid"):
-                st.session_state["multi_iframe_urls"] = []
-                base_df = filtered_df.reset_index(drop=True)
-                user_df = pd.DataFrame(edited_table).reset_index(drop=True)
-                
-                for r_idx in range(len(base_df)):
-                    w_id, s_no = base_df.loc[r_idx, "Wafer ID"], base_df.loc[r_idx, "Step No."]
-                    for col in base_df.columns:
-                        if col == "First Check Out": continue
-                        if str(base_df.loc[r_idx, col]).strip() != str(user_df.loc[r_idx, col]).strip():
-                            enc_new_val = requests.utils.quote(str(user_df.loc[r_idx, col]).strip())
-                            enc_col_name = requests.utils.quote(col)
-                            st.session_state["multi_iframe_urls"].append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={w_id}&step_no={s_no}&column_name={enc_col_name}&new_value={enc_new_val}&callback=jQuery")
-                st.session_state["show_save_success"] = True
-                st.cache_data.clear()
-                st.rerun()
-
-            if st.session_state["show_save_success"]:
-                if st.session_state["multi_iframe_urls"]:
-                    st.success(f"💾 偵測到表格變更！背景自動同步處理 {len(st.session_state['multi_iframe_urls'])} 筆儲存格...")
-                    for url in st.session_state["multi_iframe_urls"]:
-                        st.markdown(f'<iframe src="{url}" style="width:0px; height:0px; border:0px; display:none;"></iframe>', unsafe_allow_html=True)
-                else:
-                    st.info("ℹ️ 資料未變動，無需同步。")
-                st.session_state["show_save_success"], st.session_state["multi_iframe_urls"] = False, []
-
+            # 抓取選取列，預設鎖定 WIP 當站
+            wip_indices = filtered_df.index[filtered_df['Step No.'] == wip_step_no].tolist()
+            default_row_idx = filtered_df.index.get_loc(wip_indices[0]) if wip_indices else 0
+            current_idx = selected_rows["selection"]["rows"][0] if selected_rows and selected_rows.get("selection", {}).get("rows") else default_row_idx
+            target_row = filtered_df.iloc[current_idx]
+            
             st.write("---")
-            st.subheader("⚙️ 當前過站控制面板 (Current Stage Action Panel)")
-            wip_rows = filtered_df[filtered_df['Step No.'] == wip_step_no]
-            target_row = wip_rows.iloc[0] if not wip_rows.empty else filtered_df.iloc[0]
+            st.subheader("⚙️ 當前過站與動態編輯面板 (Current Stage Action Panel)")
             
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("晶圓編號 (Wafer ID)", str(target_row.get("Wafer ID", "N/A")))
-            c2.metric("在製步驟 (WIP Step No.)", f"第 {wip_step_no} 步")
+            c2.metric("選定步驟 (Step No.)", f"第 {target_row.get('Step No.', 'N/A')} 步")
             c3.metric("負責模組 (Module)", str(target_row.get("Module", "N/A")))
             c4.metric("客戶團隊 (Customer)", str(target_row.get("Customer", "N/A")))
             
+            if str(target_row.get("Step No.")).strip() != wip_step_no.strip():
+                st.warning(f"⚠️ 提示：您選取的是第 {target_row.get('Step No.')} 步，目前晶圓實體位於第 {wip_step_no} 步（綠色高亮列）。")
+            
+            st.info(f"💡 **目前站點描述**：{target_row.get('Step Description', 'N/A')}")
+            
+            # 🚀 【新增面板編輯欄位】將修改表格的功能直接做在這邊，又漂亮又好打字！
+            st.markdown("✏️ **本站參數快速修改修改區（若不需變更請保持預設）**")
+            edit_col1, edit_col2, edit_col3 = st.columns(3)
+            with edit_col1:
+                edit_tool = st.text_input("🔧 變更製程機台 (Process Tool):", value=str(target_row.get("Process Tool", "")))
+            with edit_col2:
+                edit_recipe = st.text_input("🧪 變更機台配方 (Recipe):", value=str(target_row.get("Recipe", "")))
+            with edit_col3:
+                edit_cp = st.text_input("🎯 變更檢驗點 (Check point):", value=str(target_row.get("Check point", "")))
+            
+            st.markdown("📝 **批註 / 機台數據回填 (SPC Data / Comments):**")
             user_comment = st.text_input("請在此輸入過站紀錄...", key="user_comment_input", placeholder="例如: PR height record = 10um")
             
             st.markdown("⚠️ **流程變更權限指令**")
@@ -158,30 +143,50 @@ with all_tabs[0]:
             
             if "trigger_iframe" not in st.session_state:
                 st.session_state["trigger_iframe"], st.session_state["iframe_url"] = False, ""
+            if "multi_iframe_urls" not in st.session_state:
+                st.session_state["multi_iframe_urls"] = []
 
-            def send_action_to_iframe(action_name):
+            # 核心發送：同時提交 Check out 與面板上修改的欄位數據
+            def execute_stage_action(action_name):
                 now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                st.session_state["iframe_url"] = f"{MY_ORGANIZATION_GAS_URL}?wafer_id={w_id}&step_no={s_no}&action={action_name}&comment={requests.utils.quote(user_comment.strip())}&time={requests.utils.quote(now_str)}"
+                st.session_state["multi_iframe_urls"] = []
+                
+                # A. 檢查是否有修改面板上的三個欄位，如果有，一併加入同步請求
+                fields = {"Process Tool": edit_tool, "Recipe": edit_recipe, "Check point": edit_cp}
+                for f_name, f_val in fields.items():
+                    if str(f_val).strip() != str(target_row.get(f_name, "")).strip():
+                        st.session_state["multi_iframe_urls"].append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={w_id}&step_no={s_no}&column_name={requests.utils.quote(f_name)}&new_value={requests.utils.quote(str(f_val).strip())}&callback=jQuery")
+                
+                # B. 如果是 Check out 正常出站，加入時間覆寫請求
+                if action_name == "Check out":
+                    enc_comment = requests.utils.quote(user_comment.strip())
+                    enc_time = requests.utils.quote(now_str)
+                    st.session_state["multi_iframe_urls"].append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={w_id}&step_no={s_no}&action=Check out&comment={enc_comment}&time={enc_time}")
+                    st.session_state["checkout_msg"] = f"✅ 狀態變更成功｜已將出站時間 [ {now_str} ] 與修改參數全自動覆寫至雲端資料庫！"
+                else:
+                    st.session_state["checkout_msg"] = f"✅ 參數修改儲存成功｜已將最新製程條件同步至雲端資料庫！"
+                
                 st.session_state["trigger_iframe"] = True
-                st.session_state["checkout_msg"] = f"✅ 狀態變更成功｜已將出站時間 [ {now_str} ] 覆寫至雲端！"
                 st.cache_data.clear()
                 st.rerun()
 
             with b1:
-                if st.button("🟢 正常出站 (Check out)", type="primary", use_container_width=True, key="tab1_btn_co"): send_action_to_iframe("Check out")
-            with b2:
-                if st.button("❌ 報廢處理 (Scrap)", use_container_width=True, key="tab1_btn_sc"): send_action_to_iframe("Scrap")
-            with b3:
-                if st.button("🟨 暫停規定 (Hold)", use_container_width=True, key="tab1_btn_hd"): send_action_to_iframe("Hold")
-            with b4:
-                if st.button("🟦 跳過此站 (Skip)", use_container_width=True, key="tab1_btn_sk"): send_action_to_iframe("Skip")
+                if st.button("🟢 正常出站 (Check out)", type="primary", use_container_width=True, key="tab1_btn_co"): 
+                    execute_stage_action("Check out")
+            with b2: st.button("❌ 報廢處理 (Scrap)", use_container_width=True, key="tab1_btn_sc")
+            with b3: st.button("🟨 暫停規定 (Hold)", use_container_width=True, key="tab1_btn_hd")
+            with b4: st.button("🟦 跳過此站 (Skip)", use_container_width=True, key="tab1_btn_sk")
             with b5:
-                if st.button("💾 僅儲存資料 (Key in data)", use_container_width=True, key="tab1_btn_ki"): send_action_to_iframe("Key in data")
+                if st.button("💾 儲存修改參數 (Key in data)", use_container_width=True, key="tab1_btn_ki"): 
+                    execute_stage_action("Key in data")
 
+            # 背景隱形 iframe 批量發送，100% 不彈窗、不跳頁
             if st.session_state["trigger_iframe"]:
                 st.success(st.session_state["checkout_msg"])
-                st.markdown(f'<iframe src="{st.session_state["iframe_url"]}" style="width:0px; height:0px; border:0px; display:none;"></iframe>', unsafe_allow_html=True)
+                for url in st.session_state["multi_iframe_urls"]:
+                    st.markdown(f'<iframe src="{url}" style="width:0px; height:0px; border:0px; display:none;"></iframe>', unsafe_allow_html=True)
                 st.session_state["trigger_iframe"] = False
+                st.session_state["multi_iframe_urls"] = []
         else:
             st.warning(f"⚠️ 雲端資料庫中找不到與 '{search_id}' 相符的晶圓編號。")
     else:
