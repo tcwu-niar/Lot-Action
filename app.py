@@ -45,7 +45,7 @@ def fetch_route_data_via_csv(sheet_name="route_template"):
 # =========================================================================
 # 📋 頁籤 1: Full Route (對齊 index 0 - 完整生產路由與動態面板編輯)
 # =========================================================================
-with all_tabs:
+with all_tabs[0]:
     st.subheader("HETEROGENEOUS INTEGRATION & MANUFACTURING DIVISION")
     
     df, conn_status = fetch_route_data_via_csv("route_template")
