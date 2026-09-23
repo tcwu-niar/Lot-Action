@@ -12,8 +12,8 @@ st.title("🏭 晶圓生產路由與狀態追蹤系統 (TSRI Lot Tracing System)
 # =========================================================================
 MY_ORGANIZATION_GAS_URL = "https://script.google.com/macros/s/AKfycbxSpHeSlbCyMgn0cH60fh62eM_nYoaCwkSCZF1UJMTeC-3z1wQJ1RVLXge1kvzadmKM/exec"
 
-# 2. 建立功能頁籤
-tabs = st.tabs(["📋 Full Route", "📜 Wafer History", "📤 Upload New Wafer", "🔄 Upload R/C"])
+# 2. 建立功能頁籤物件陣列
+all_tabs = st.tabs(["📋 Full Route", "📜 Wafer History", "📤 Upload New Wafer", "🔄 Upload R/C"])
 SPREADSHEET_ID = "1RQt29KIb4rkVo4A-Y3GouMAezYEBakb1q283d1sgdZU"
 
 # 🔄 載入雲端最新製程母表資料的函數
@@ -37,8 +37,8 @@ def fetch_route_data_via_csv(sheet_name="route_template"):
     except Exception as e:
         return pd.DataFrame(), str(e)
 
-# ==================== 頁籤 1: Full Route ====================
-with tabs:
+# ==================== 頁籤 1: Full Route (對齊索引 0) ====================
+with all_tabs[0]:
     st.subheader("HETEROGENEOUS INTEGRATION & MANUFACTURING DIVISION")
     df, conn_status = fetch_route_data_via_csv("route_template")
     
@@ -57,12 +57,12 @@ with tabs:
             st.cache_data.clear()
             st.rerun()
 
-    st.markdown("**【當前完整生產路由表格資訊】** 🟢 *綠色粗體列代表晶圓目前正停留之在製站點 (Current WIP Stage)*")
+    st.markdown("**【當前完整生產路由表格資訊】** 🟢 *綠色粗體並標記 INPR 之列代表晶圓目前正停留之在製站點 (Current WIP Stage)*")
     
     if not df.empty:
         wafer_col_list = [c for c in df.columns if "Wafer" in c or "wafer" in c]
         if wafer_col_list:
-            actual_col_name = wafer_col_list
+            actual_col_name = wafer_col_list[0]
             filtered_df = df[df[actual_col_name].astype(str).str.upper() == search_id.upper()].copy()
         else:
             filtered_df = df.copy()
@@ -76,10 +76,10 @@ with tabs:
                     wip_step_no = str(row.get("Step No.", "1"))
                     break
             
-            # 💡 【全新需求優化】動態重組 First Check Out 顯示文字
+            # 💡 【全新優化】動態重組 First Check Out 顯示文字
             # 1. 它是當站 ➡️ 顯示 INPR
             # 2. 它不是當站且值為 nan ➡️ 顯示為完全空白的空格
-            # 3. 它不是當站且有實體時間 ➡️ 維持原本的時間字串
+            # 3. 它不是當站且有實體時間 ➡️ 維維持原本的時間字串
             new_co_display = []
             for idx, row in filtered_df.iterrows():
                 step_val = str(row.get("Step No.", "")).strip()
@@ -114,9 +114,9 @@ with tabs:
             
             # 抓取目前選取哪一列，預設點選「WIP當站」對應的索引列
             wip_indices = filtered_df.index[filtered_df['Step No.'] == wip_step_no].tolist()
-            default_row_idx = filtered_df.index.get_loc(wip_indices) if wip_indices else 0
+            default_row_idx = filtered_df.index.get_loc(wip_indices[0]) if wip_indices else 0
             
-            current_idx = selected_rows["selection"]["rows"] if selected_rows and selected_rows.get("selection", {}).get("rows") else default_row_idx
+            current_idx = selected_rows["selection"]["rows"][0] if selected_rows and selected_rows.get("selection", {}).get("rows") else default_row_idx
             target_row = filtered_df.iloc[current_idx]
             
             st.write("---")
@@ -172,21 +172,26 @@ with tabs:
         else:
             st.warning(f"⚠️ 雲端資料庫中找不到與 '{search_id}' 相符的晶圓編號。")
     else:
-        st.warning("⚠️ 無法載入任何試算表資料，請確認工作表名稱是否為 'route_template'。")
+        st.warning("⚠️ 無法載入 any 試算表資料，請確認工作表名稱是否為 'route_template'。")
 
-# ==================== 頁籤 2: Wafer History ====================
-with tabs:
+# ==================== 頁籤 2: Wafer History (對齊索引 1) ====================
+with all_tabs[1]:
     st.subheader("📜 晶圓歷史過站追蹤足跡 (Wafer History 日誌)")
     df_logs, log_status = fetch_route_data_via_csv("wafer_status")
     
     if not df_logs.empty:
         log_wafer_col = [c for c in df_logs.columns if "Wafer" in c or "晶圓" in c]
-        filtered_logs = df_logs[df_logs[log_wafer_col].astype(str).str.upper() == search_id.upper()] if log_wafer_col else df_logs
+        if log_wafer_col:
+            filtered_logs = df_logs[df_logs[log_wafer_col[0]].astype(str).str.upper() == search_id.upper()]
+        else:
+            filtered_logs = df_logs
         st.markdown(f"📊 晶圓 **{search_id}** 的歷史生產追蹤稽核足跡：")
         st.dataframe(filtered_logs, use_container_width=True, hide_index=True)
     else:
         st.info("💡 目前該晶圓尚無任何過站歷史變更紀錄，當您點擊 Check out 正常出站後，此處將自動列出詳細日誌。")
 
-# ==================== 頁籤 3 & 4 ====================
-with tabs: st.subheader("📤 上傳新晶圓路由母表 (Upload New Wafer)")
-with tabs: st.subheader("🔄 上傳 R/C 規範 (Upload R/C)")
+# ==================== 頁籤 3 & 4 (對齊索引 2 & 3) ====================
+with all_tabs[2]: 
+    st.subheader("📤 上傳新晶圓路由母表 (Upload New Wafer)")
+with all_tabs[3]: 
+    st.subheader("🔄 上傳 R/C 規範 (Upload R/C)")
