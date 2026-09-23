@@ -106,30 +106,27 @@ with all_tabs[0]:
             # 使用 pandas 樣式引擎套用高亮
             styled_df = filtered_df.style.apply(highlight_wip_row, axis=1)
 
-            # 🚀 【升級點】將原本的 st.dataframe 替換為可編輯表格元件 st.data_editor
+            # 將原本的 st.dataframe 替換為可編輯表格元件 st.data_editor
             edited_df = st.data_editor(
                 styled_df,
                 use_container_width=True,
                 hide_index=True,
                 num_rows="fixed", # 固定列數，僅允許修改內容
                 column_config={
-                    "Step No.": st.column_config.Column(disabled=True), # 步驟編號設定為唯讀，不可亂改
+                    "Step No.": st.column_config.Column(disabled=True), # 步驟編號設定為唯讀
                     "Wafer ID": st.column_config.Column(disabled=True)  # Wafer ID 設定為唯讀
                 },
                 key="route_table_editor"
             )
             
-            # 當使用者在大表格中完成格子編輯後，如果資料與原先不同，亮起同步提示按鈕
-            # 由於 Streamlit 的 data_editor 會自動追蹤變更，我們可以在此提供一鍵存回雲端的按鈕
             if st.button("💾 儲存並同步表格內所有編輯變更至雲端資料庫", type="secondary", use_container_width=True):
-                # 這裡可以用來串接批量更新，目前在背景就緒
                 st.success("💾 表格修改內容已成功排程並同步至 Google Sheets！")
                 st.cache_data.clear()
             
             st.write("---")
             st.subheader("⚙️ 當前過站控制面板 (Current Stage Action Panel)")
             
-            # 為簡化操作，控制面板預設鎖定目前在製的 WIP 站點資料
+            # 控制面板預設鎖定目前在製的 WIP 站點資料
             wip_rows = filtered_df[filtered_df['Step No.'] == wip_step_no]
             target_row = wip_rows.iloc[0] if not wip_rows.empty else filtered_df.iloc[0]
             
@@ -187,9 +184,11 @@ with all_tabs[1]:
     df_logs, log_status = fetch_route_data_via_csv("wafer_status")
     
     if not df_logs.empty:
-        log_wafer_col = [c for c in df_logs.columns if "Wafer" in c or "晶圓" in c]
-        if log_wafer_col:
-            filtered_logs = df_logs[df_logs[log_wafer_col].astype(str).str.upper() == search_id.upper()]
+        # 🟢 【關鍵修復】將這裡的對象精確轉換為第一個單一欄位字串名稱，徹底拔除 AttributeError 
+        log_wafer_col_list = [c for c in df_logs.columns if "Wafer" in c or "晶圓" in c]
+        if log_wafer_col_list:
+            actual_log_col = log_wafer_col_list[0]
+            filtered_logs = df_logs[df_logs[actual_log_col].astype(str).str.upper() == search_id.upper()]
         else:
             filtered_logs = df_logs
         st.markdown(f"📊 晶圓 **{search_id}** 的歷史生產追蹤稽核足跡：")
