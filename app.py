@@ -69,17 +69,20 @@ with all_tabs[0]:
     if not df.empty:
         wafer_col_list = [c for c in df.columns if "Wafer" in c or "wafer" in c]
         if wafer_col_list:
-            actual_string_col = wafer_col_list[0]
+            actual_string_col = wafer_col_list
             filtered_df = df[df[actual_string_col].astype(str).str.upper() == search_id.upper()].copy()
         else:
             filtered_df = df.copy()
 
         if not filtered_df.empty:
-            # WIP 站點追蹤判定 (過濾掉已經填有實體時間或已被 SCRP 的站點)
+            # 💡 【關鍵邏輯修復】判定在製站 (WIP) 時，必須嚴格排除已經註記為 SCRP 的站點！
             wip_step_no = "1"
             for idx, row in filtered_df.iterrows():
-                co_val = str(row.get("First Check Out", "")).strip()
-                if co_val == "" or co_val == "nan":
+                co_val = str(row.get("First Check Out", "")).strip().upper()
+                # 如果這站已經報廢了，就跳過它，繼續往下尋找真正沒過站的空位
+                if co_val == "SCRP":
+                    continue
+                if co_val == "" or co_val == "NAN" or co_val == "INPR":
                     wip_step_no = str(row.get("Step No.", "1"))
                     break
             
@@ -89,11 +92,13 @@ with all_tabs[0]:
                 s_val = str(r.get("Step No.", "")).strip()
                 co_val = str(r.get("First Check Out", "")).strip()
                 
-                # 如果資料庫內原本就記錄著 SCRP，維持 SCRP 顯示
+                # 優先權 1：如果雲端資料本來就是 SCRP，維持 SCRP
                 if co_val.upper() == "SCRP":
                     new_co_display.append("SCRP")
+                # 優先權 2：如果符合我們剛剛算出來的 WIP 站點，顯示 INPR
                 elif s_val == wip_step_no.strip():
                     new_co_display.append("INPR")
+                # 優先權 3：其餘情況維持原樣（有時間秀時間，沒時間秀空白）
                 else:
                     new_co_display.append(co_val)
             display_df["First Check Out"] = new_co_display
@@ -119,8 +124,8 @@ with all_tabs[0]:
             )
             
             wip_indices = filtered_df.index[filtered_df['Step No.'] == wip_step_no].tolist()
-            default_row_idx = filtered_df.index.get_loc(wip_indices[0]) if wip_indices else 0
-            current_idx = selected_rows["selection"]["rows"][0] if selected_rows and selected_rows.get("selection", {}).get("rows") else default_row_idx
+            default_row_idx = filtered_df.index.get_loc(wip_indices) if wip_indices else 0
+            current_idx = selected_rows["selection"]["rows"] if selected_rows and selected_rows.get("selection", {}).get("rows") else default_row_idx
             target_row = filtered_df.iloc[current_idx]
             
             st.write("---")
@@ -156,13 +161,11 @@ with all_tabs[0]:
                 now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 st.session_state["multi_iframe_urls"] = []
                 
-                # 同步修改基礎參數
                 fields = {"Process Tool": edit_tool, "Recipe": edit_recipe, "Check point": edit_cp}
                 for f_name, f_val in fields.items():
                     if str(f_val).strip() != str(target_row.get(f_name, "")).strip():
                         st.session_state["multi_iframe_urls"].append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={w_id}&step_no={s_no}&column_name={requests.utils.quote(f_name)}&new_value={requests.utils.quote(str(f_val).strip())}&callback=jQuery")
                 
-                # 判斷是正常出站還是報廢
                 enc_comment = requests.utils.quote(user_comment.strip())
                 enc_time = requests.utils.quote(now_str)
                 
@@ -170,7 +173,6 @@ with all_tabs[0]:
                     st.session_state["multi_iframe_urls"].append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={w_id}&step_no={s_no}&action=Check out&comment={enc_comment}&time={enc_time}")
                     st.session_state["checkout_msg"] = f"✅ 正常出站成功｜已填入出站時間 [ {now_str} ] 。"
                 elif action_name == "Scrap":
-                    # 🚀 觸發後台寫入 SCRP 協定
                     st.session_state["multi_iframe_urls"].append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={w_id}&step_no={s_no}&action=Scrap&comment={enc_comment}&time={enc_time}")
                     st.session_state["checkout_msg"] = f"🚨 晶圓報廢程序執行完畢｜該站點已被強制註記為 SCRP 狀態！"
                 else:
@@ -183,7 +185,6 @@ with all_tabs[0]:
             with b1:
                 if st.button("🟢 正常出站 (Check out)", type="primary", use_container_width=True, key="tab1_btn_co"): execute_stage_action("Check out")
             with b2:
-                # 🚀 點擊報廢按鈕，直接連動 execute_stage_action 寫入 SCRP
                 if st.button("❌ 報廢處理 (Scrap)", type="secondary", use_container_width=True, key="tab1_btn_sc"): execute_stage_action("Scrap")
             with b3: st.button("🟨 暫停規定 (Hold)", use_container_width=True, key="tab1_btn_hd")
             with b4: st.button("🟦 跳過此站 (Skip)", use_container_width=True, key="tab1_btn_sk")
