@@ -8,7 +8,7 @@ st.set_page_config(layout="wide", page_title="TSRI Lot Tracing System")
 st.title("🏭 晶圓生產路由與狀態追蹤系統 (TSRI Lot Tracing System)")
 
 # =========================================================================
-# 🔴 請在此精確填入您在 Google 試算表部署得到的實體 GAS /exec 網址 🔴
+# 🔴 這是您部署成功的實體國研院內部 GAS API 執行網址
 # =========================================================================
 MY_ORGANIZATION_GAS_URL = "https://script.google.com/macros/s/AKfycbxSpHeSlbCyMgn0cH60fh62eM_nYoaCwkSCZF1UJMTeC-3z1wQJ1RVLXge1kvzadmKM/exec"
 
@@ -57,7 +57,7 @@ with tabs[0]:
             st.cache_data.clear()
             st.rerun()
 
-    st.markdown("**【當前完整生產路由表格資訊】** (請點擊表格最左側選取框以選定目前操作站點)")
+    st.markdown("**【當前完整生產路由表格資訊】** 🟢 *綠色粗體列代表晶圓目前正停留之在製站點 (Current WIP Stage)*")
     
     if not df.empty:
         wafer_col_list = [c for c in df.columns if "Wafer" in c or "wafer" in c]
@@ -68,8 +68,38 @@ with tabs[0]:
             filtered_df = df
 
         if not filtered_df.empty:
-            selected_rows = st.dataframe(filtered_df, use_container_width=True, hide_index=True, on_select="rerun", selection_mode="single-row")
-            current_idx = selected_rows["selection"]["rows"][0] if selected_rows and selected_rows.get("selection", {}).get("rows") else 0
+            # 💡 【核心反綠粗體引擎】計算哪一站是當前在製站點 (WIP Step)
+            # 尋找第一筆 First Check Out 欄位為 'nan' 或空值的步驟
+            wip_step_no = "1" # 預設第一步
+            for idx, row in filtered_df.iterrows():
+                co_val = str(row.get("First Check Out", "nan")).strip()
+                if co_val == "nan" or co_val == "":
+                    wip_step_no = str(row.get("Step No.", "1"))
+                    break
+            
+            # 定義高亮函式：如果是 WIP 當站就染綠並加粗
+            def highlight_wip_row(row):
+                if str(row["Step No."]).strip() == wip_step_no.strip():
+                    return ['background-color: #d4edda; font-weight: bold; color: #155724;'] * len(row)
+                return [''] * len(row)
+            
+            # 使用 pandas 樣式引擎套用高亮
+            styled_df = filtered_df.style.apply(highlight_wip_row, axis=1)
+
+            # 互動式大資料表格（將渲染對象換成帶有高亮樣式的 styled_df）
+            selected_rows = st.dataframe(
+                styled_df,
+                use_container_width=True,
+                hide_index=True,
+                on_select="rerun",
+                selection_mode="single-row"
+            )
+            
+            # 抓取目前選取哪一列，預設點選「WIP當站」對應的索引列
+            wip_indices = filtered_df.index[filtered_df['Step No.'] == wip_step_no].tolist()
+            default_row_idx = filtered_df.index.get_loc(wip_indices[0]) if wip_indices else 0
+            
+            current_idx = selected_rows["selection"]["rows"][0] if selected_rows and selected_rows.get("selection", {}).get("rows") else default_row_idx
             target_row = filtered_df.iloc[current_idx]
             
             st.write("---")
@@ -77,11 +107,15 @@ with tabs[0]:
             
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("晶圓編號 (Wafer ID)", str(target_row.get("Wafer ID", "N/A")))
-            c2.metric("目前步驟 (Step No.)", f"第 {str(target_row.get('Step No.', 'N/A'))} 步")
+            c2.metric("選定步驟 (Step No.)", f"第 {str(target_row.get('Step No.', 'N/A'))} 步")
             c3.metric("負責模組 (Module)", str(target_row.get("Module", "N/A")))
             c4.metric("客戶團隊 (Customer)", str(target_row.get("Customer", "N/A")))
             
-            st.info(f"💡 **正在操作的站點描述**：{target_row.get('Step Description', 'N/A')} | **製程機台**：{target_row.get('Process Tool', 'N/A')} | **機台配方 (Recipe)**：{target_row.get('Recipe', 'N/A')}")
+            # 如果工程師選的不是 WIP 站，跳出貼心提示
+            if str(target_row.get("Step No.")).strip() != wip_step_no.strip():
+                st.warning(f"⚠️ 提示：您目前選取的是第 {target_row.get('Step No.')} 步，但目前晶圓實體實際卡留在第 {wip_step_no} 步（綠色加粗列）。")
+            
+            st.info(f"💡 **選定站點描述**：{target_row.get('Step Description', 'N/A')} | **製程機台**：{target_row.get('Process Tool', 'N/A')} | **機台配方 (Recipe)**：{target_row.get('Recipe', 'N/A')}")
             
             st.markdown("📝 **批註 / 機台數據回填 (Key in data / SPC Data):**")
             user_comment = st.text_input("請在此輸入過站紀錄...", key="user_comment_input", placeholder="例如: PR height record = 10um")
@@ -92,7 +126,6 @@ with tabs[0]:
             w_id = str(target_row.get("Wafer ID", "")).strip()
             s_no = str(target_row.get("Step No.", "")).strip()
             
-            # 初始化 session state 避免按鍵失效
             if "trigger_iframe" not in st.session_state:
                 st.session_state["trigger_iframe"] = False
                 st.session_state["iframe_url"] = ""
@@ -100,29 +133,22 @@ with tabs[0]:
             with b1:
                 if st.button("🟢 正常出站 (Check out)", type="primary", use_container_width=True):
                     now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    # 拼裝穿透網址參數
                     enc_comment = requests.utils.quote(user_comment.strip())
                     enc_time = requests.utils.quote(now_str)
                     
-                    # 💡 核心亮點：建立專屬的組織內部穿透請求 URL
                     st.session_state["iframe_url"] = f"{MY_ORGANIZATION_GAS_URL}?wafer_id={w_id}&step_no={s_no}&action=Check out&comment={enc_comment}&time={enc_time}"
                     st.session_state["trigger_iframe"] = True
-                    st.session_state["checkout_msg"] = f"✅ 狀態變更成功｜已於 {now_str} 全自動將當下時間覆寫至雲端 [First Check Out] 格子中！"
+                    st.session_state["checkout_msg"] = f"✅ 狀態變更成功｜已將出站時間 [ {now_str} ] 成功覆寫至雲端 [First Check Out] 格子中！"
 
             with b2: st.button("❌ 報廢處理 (Scrap)", use_container_width=True)
             with b3: st.button("🟨 暫停規定 (Hold)", use_container_width=True)
             with b4: st.button("🟦 跳過此站 (Skip)", use_container_width=True)
             with b5: st.button("💾 僅儲存資料 (Key in data)", use_container_width=True)
 
-            # 🚀 【終極穿透引擎核心】當按下按鈕時，利用隱形 iframe 借用使用者權限偷偷改寫，絕不跳出任何新視窗
             if st.session_state["trigger_iframe"]:
                 st.success(st.session_state["checkout_msg"])
-                
-                # 嵌入一個 0 像素、完全隱形的 HTML 框架，在背景穿透國研院防火牆
                 iframe_html = f'<iframe src="{st.session_state["iframe_url"]}" style="width:0px; height:0px; border:0px; display:none;"></iframe>'
                 st.markdown(iframe_html, unsafe_allow_html=True)
-                
-                # 重設觸發狀態，並清理資料快取
                 st.session_state["trigger_iframe"] = False
                 st.cache_data.clear()
                         
@@ -138,7 +164,7 @@ with tabs[1]:
     
     if not df_logs.empty:
         log_wafer_col = [c for c in df_logs.columns if "Wafer" in c or "晶圓" in c]
-        filtered_logs = df_logs[df_logs[log_wafer_col[0]].astype(str).str.upper() == search_id.upper()] if log_wafer_col else df_logs
+        filtered_logs = df_logs[df_logs[log_wafer_col].astype(str).str.upper() == search_id.upper()] if log_wafer_col else df_logs
         st.markdown(f"📊 晶圓 **{search_id}** 的歷史生產追蹤稽核足跡：")
         st.dataframe(filtered_logs, use_container_width=True, hide_index=True)
     else:
