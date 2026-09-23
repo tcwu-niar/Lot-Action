@@ -38,7 +38,7 @@ def fetch_route_data_via_csv(sheet_name="route_template"):
         return pd.DataFrame(), str(e)
 
 # ==================== 頁籤 1: Full Route ====================
-with tabs[0]:
+with tabs:
     st.subheader("HETEROGENEOUS INTEGRATION & MANUFACTURING DIVISION")
     df, conn_status = fetch_route_data_via_csv("route_template")
     
@@ -62,14 +62,13 @@ with tabs[0]:
     if not df.empty:
         wafer_col_list = [c for c in df.columns if "Wafer" in c or "wafer" in c]
         if wafer_col_list:
-            actual_col_name = wafer_col_list[0]
-            filtered_df = df[df[actual_col_name].astype(str).str.upper() == search_id.upper()]
+            actual_col_name = wafer_col_list
+            filtered_df = df[df[actual_col_name].astype(str).str.upper() == search_id.upper()].copy()
         else:
-            filtered_df = df
+            filtered_df = df.copy()
 
         if not filtered_df.empty:
             # 💡 【核心反綠粗體引擎】計算哪一站是當前在製站點 (WIP Step)
-            # 尋找第一筆 First Check Out 欄位為 'nan' 或空值的步驟
             wip_step_no = "1" # 預設第一步
             for idx, row in filtered_df.iterrows():
                 co_val = str(row.get("First Check Out", "nan")).strip()
@@ -77,6 +76,24 @@ with tabs[0]:
                     wip_step_no = str(row.get("Step No.", "1"))
                     break
             
+            # 💡 【全新需求優化】動態重組 First Check Out 顯示文字
+            # 1. 它是當站 ➡️ 顯示 INPR
+            # 2. 它不是當站且值為 nan ➡️ 顯示為完全空白的空格
+            # 3. 它不是當站且有實體時間 ➡️ 維持原本的時間字串
+            new_co_display = []
+            for idx, row in filtered_df.iterrows():
+                step_val = str(row.get("Step No.", "")).strip()
+                co_val = str(row.get("First Check Out", "nan")).strip()
+                
+                if step_val == wip_step_no.strip():
+                    new_co_display.append("INPR")
+                elif co_val == "nan" or co_val == "":
+                    new_co_display.append("")
+                else:
+                    new_co_display.append(co_val)
+            
+            filtered_df["First Check Out"] = new_co_display
+
             # 定義高亮函式：如果是 WIP 當站就染綠並加粗
             def highlight_wip_row(row):
                 if str(row["Step No."]).strip() == wip_step_no.strip():
@@ -86,7 +103,7 @@ with tabs[0]:
             # 使用 pandas 樣式引擎套用高亮
             styled_df = filtered_df.style.apply(highlight_wip_row, axis=1)
 
-            # 互動式大資料表格（將渲染對象換成帶有高亮樣式的 styled_df）
+            # 互動式大資料表格
             selected_rows = st.dataframe(
                 styled_df,
                 use_container_width=True,
@@ -97,9 +114,9 @@ with tabs[0]:
             
             # 抓取目前選取哪一列，預設點選「WIP當站」對應的索引列
             wip_indices = filtered_df.index[filtered_df['Step No.'] == wip_step_no].tolist()
-            default_row_idx = filtered_df.index.get_loc(wip_indices[0]) if wip_indices else 0
+            default_row_idx = filtered_df.index.get_loc(wip_indices) if wip_indices else 0
             
-            current_idx = selected_rows["selection"]["rows"][0] if selected_rows and selected_rows.get("selection", {}).get("rows") else default_row_idx
+            current_idx = selected_rows["selection"]["rows"] if selected_rows and selected_rows.get("selection", {}).get("rows") else default_row_idx
             target_row = filtered_df.iloc[current_idx]
             
             st.write("---")
@@ -113,7 +130,7 @@ with tabs[0]:
             
             # 如果工程師選的不是 WIP 站，跳出貼心提示
             if str(target_row.get("Step No.")).strip() != wip_step_no.strip():
-                st.warning(f"⚠️ 提示：您目前選取的是第 {target_row.get('Step No.')} 步，但目前晶圓實體實際卡留在第 {wip_step_no} 步（綠色加粗列）。")
+                st.warning(f"⚠️ 提示：您目前選取的是第 {target_row.get('Step No.')} 步，但目前晶圓實體實際卡留在第 {wip_step_no} 步（綠色加粗並顯示 INPR 之站點）。")
             
             st.info(f"💡 **選定站點描述**：{target_row.get('Step Description', 'N/A')} | **製程機台**：{target_row.get('Process Tool', 'N/A')} | **機台配方 (Recipe)**：{target_row.get('Recipe', 'N/A')}")
             
@@ -158,7 +175,7 @@ with tabs[0]:
         st.warning("⚠️ 無法載入任何試算表資料，請確認工作表名稱是否為 'route_template'。")
 
 # ==================== 頁籤 2: Wafer History ====================
-with tabs[1]:
+with tabs:
     st.subheader("📜 晶圓歷史過站追蹤足跡 (Wafer History 日誌)")
     df_logs, log_status = fetch_route_data_via_csv("wafer_status")
     
@@ -171,5 +188,5 @@ with tabs[1]:
         st.info("💡 目前該晶圓尚無任何過站歷史變更紀錄，當您點擊 Check out 正常出站後，此處將自動列出詳細日誌。")
 
 # ==================== 頁籤 3 & 4 ====================
-with tabs[2]: st.subheader("📤 上傳新晶圓路由母表 (Upload New Wafer)")
-with tabs[3]: st.subheader("🔄 上傳 R/C 規範 (Upload R/C)")
+with tabs: st.subheader("📤 上傳新晶圓路由母表 (Upload New Wafer)")
+with tabs: st.subheader("🔄 上傳 R/C 規範 (Upload R/C)")
