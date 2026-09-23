@@ -43,7 +43,7 @@ def fetch_route_data_via_csv(sheet_name="route_template"):
 # =========================================================================
 # 📋 頁籤 1: Full Route (完整生產路由與互動編輯面板)
 # =========================================================================
-with all_tabs[0]:
+with all_tabs:
     st.subheader("HETEROGENEOUS INTEGRATION & MANUFACTURING DIVISION")
     
     df, conn_status = fetch_route_data_via_csv("route_template")
@@ -62,11 +62,11 @@ with all_tabs[0]:
             st.cache_data.clear()
             st.rerun()
 
-    st.markdown("**【當前生產路由互動式編輯表格】** ✏️ *您可以隨時雙擊格子進行修改，修改後請點擊下方按鈕進行雲端同步*")
+    st.markdown("**【當前生產路由互動式編輯表格】** 🟢 *綠色粗體整列代表晶圓目前正停留之在製站點 (Current WIP Stage)*")
     
     if not df.empty:
         wafer_col_list = [c for c in df.columns if "Wafer" in c or "wafer" in c]
-        filtered_df = df[df[wafer_col_list[0]].astype(str).str.upper() == search_id.upper()].copy() if wafer_col_list else df.copy()
+        filtered_df = df[df[wafer_col_list].astype(str).str.upper() == search_id.upper()].copy() if wafer_col_list else df.copy()
 
         if not filtered_df.empty:
             # WIP 站點追蹤判定
@@ -81,9 +81,10 @@ with all_tabs[0]:
             new_co_display = [ "INPR" if str(r.get("Step No.", "")).strip() == wip_step_no.strip() else str(r.get("First Check Out", "")).strip() for _, r in display_df.iterrows() ]
             display_df["First Check Out"] = new_co_display
 
+            # 💡 【終極整列鋪滿綠底引擎】透過 Axis=1 確保 pandas 一口氣將底色塗滿整列的所有 Cell
             def highlight_wip_row(row):
                 if str(row["Step No."]).strip() == wip_step_no.strip():
-                    return ['background-color: #d4edda; font-weight: bold; color: #155724;'] * len(row)
+                    return ['background-color: #c3e6cb !important; font-weight: bold; color: #155724 !important;'] * len(row)
                 return [''] * len(row)
             
             styled_df = display_df.style.apply(highlight_wip_row, axis=1)
@@ -127,7 +128,7 @@ with all_tabs[0]:
             st.write("---")
             st.subheader("⚙️ 當前過站控制面板 (Current Stage Action Panel)")
             wip_rows = filtered_df[filtered_df['Step No.'] == wip_step_no]
-            target_row = wip_rows.iloc[0] if not wip_rows.empty else filtered_df.iloc[0]
+            target_row = wip_rows.iloc if not wip_rows.empty else filtered_df.iloc
             
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("晶圓編號 (Wafer ID)", str(target_row.get("Wafer ID", "N/A")))
@@ -154,10 +155,14 @@ with all_tabs[0]:
 
             with b1:
                 if st.button("🟢 正常出站 (Check out)", type="primary", use_container_width=True, key="tab1_btn_co"): send_action_to_iframe("Check out")
-            with b2: st.button("❌ 報廢處理 (Scrap)", use_container_width=True, key="tab1_btn_sc")
-            with b3: st.button("🟨 暫停規定 (Hold)", use_container_width=True, key="tab1_btn_hd")
-            with b4: st.button("🟦 跳過此站 (Skip)", use_container_width=True, key="tab1_btn_sk")
-            with b5: st.button("💾 僅儲存資料 (Key in data)", use_container_width=True, key="tab1_btn_ki")
+            with b2:
+                if st.button("❌ 報廢處理 (Scrap)", use_container_width=True, key="tab1_btn_sc"): send_action_to_iframe("Scrap")
+            with b3:
+                if st.button("🟨 暫停規定 (Hold)", use_container_width=True, key="tab1_btn_hd"): send_action_to_iframe("Hold")
+            with b4:
+                if st.button("🟦 跳過此站 (Skip)", use_container_width=True, key="tab1_btn_sk"): send_action_to_iframe("Skip")
+            with b5:
+                if st.button("💾 僅儲存資料 (Key in data)", use_container_width=True, key="tab1_btn_ki"): send_action_to_iframe("Key in data")
 
             if st.session_state["trigger_iframe"]:
                 st.success(st.session_state["checkout_msg"])
