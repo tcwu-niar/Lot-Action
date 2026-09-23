@@ -181,13 +181,19 @@ with all_tabs[0]:
 # =========================================================================
 # 📜 頁籤 2: Wafer History (對齊 all_tabs - 晶圓歷史過站追蹤足跡)
 # =========================================================================
-with all_tabs[1]:
+with all_tabs:
     st.subheader("📜 晶圓歷史過站追蹤足跡 (Wafer History 日誌)")
     df_logs, log_status = fetch_route_data_via_csv("wafer_status")
     
     if not df_logs.empty:
+        # 🟢 【核心修復】精確將歷史日誌的欄位 List 轉化為單一字串名稱，徹底擊碎 AttributeError
         log_wafer_col_list = [c for c in df_logs.columns if "Wafer" in c or "晶圓" in c]
-        filtered_logs = df_logs[df_logs[log_wafer_col_list].astype(str).str.upper() == search_id.upper()] if log_wafer_col_list else df_logs
+        if log_wafer_col_list:
+            actual_log_string_col = log_wafer_col_list[0]  # 👈 精確取出第一個單一字串欄位名稱
+            filtered_logs = df_logs[df_logs[actual_log_string_col].astype(str).str.upper() == search_id.upper()]
+        else:
+            filtered_logs = df_logs
+            
         if not filtered_logs.empty:
             st.markdown(f"📊 晶圓 **{search_id}** 的歷史生產追蹤稽核足跡：")
             st.dataframe(filtered_logs, use_container_width=True, hide_index=True)
@@ -200,7 +206,7 @@ with all_tabs[1]:
 # =========================================================================
 # 📤 頁籤 3: Upload New Wafer (對齊 all_tabs - 上傳新晶圓路由母表)
 # =========================================================================
-with all_tabs[2]:
+with all_tabs:
     st.subheader("📤 上傳新晶圓路由母表 (Upload New Wafer)")
     st.markdown("供製程整合工程師導入全新批次的半導體製造整合路由母體檔案。")
     uploaded_file = st.file_uploader("請選擇或拖曳要上傳的全新批次生產路由檔案 (.csv 或 .xlsx)", type=["csv", "xlsx"])
@@ -218,7 +224,7 @@ with all_tabs[2]:
 # =========================================================================
 # 🔄 頁籤 4: Upload R/C (對齊 all_tabs - 上傳 R/C 規範)
 # =========================================================================
-with all_tabs[3]:
+with all_tabs:
     st.subheader("🔄 上傳 R/C 規範 (Upload Run Card Change)")
     st.markdown("當晶圓需要執行晶圓重工 (Rework)、機台特例改道或特殊參數調整時，在此進行 R/C 規範單號綁定。")
     with st.form("rc_form"):
