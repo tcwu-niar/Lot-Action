@@ -75,12 +75,12 @@ with all_tabs[0]:
             filtered_df = df.copy()
 
         if not filtered_df.empty:
-            # 💡 【熔斷與攔截機制】先掃描是否有任何一站已經被標記為 SCRP 或 HOLD
+            # 💡 【安全對齊校正】全面綁定為 hold_step_idx 變數名稱
             has_scrap_occurred = False
             scrap_step_index = 9999
             
             has_hold_occurred = False
-            hold_step_index = 9999
+            hold_step_idx = 9999  # 👈 這裡精確命名為 hold_step_idx
             
             for idx, row in filtered_df.reset_index(drop=True).iterrows():
                 co_val = str(row.get("First Check Out", "")).strip().upper()
@@ -90,11 +90,10 @@ with all_tabs[0]:
                     break
                 elif co_val == "HOLD":
                     has_hold_occurred = True
-                    hold_step_index = idx
-                    # 注意：WIP 站點會卡留在被 HOLD 的這一站，且不往下推移
+                    hold_step_idx = idx  # 👈 這裡精確記下索引位置
                     break
             
-            # 計算在製站點 (WIP Step) 
+            # 計算在製站點 (WIP Step)
             wip_step_no = "9999"
             if not has_scrap_occurred and not has_hold_occurred:
                 for idx, row in filtered_df.iterrows():
@@ -115,20 +114,16 @@ with all_tabs[0]:
                 elif co_val.upper() == "HOLD":
                     new_co_display.append("HOLD")
                 elif idx > scrap_step_index:
-                    new_co_display.append("") # 報廢後方步驟強制清空
-                elif not has_scrap_occurred and has_hold_occurred and idx > hold_step_index:
-                    new_co_display.append("") # HOLD 後方步驟在未解鎖前同樣清空
+                    new_co_display.append("")
+                elif not has_scrap_occurred and has_hold_occurred and idx > hold_step_idx:
+                    new_co_display.append("")
                 elif s_val == wip_step_no.strip():
                     new_co_display.append("INPR")
                 else:
                     new_co_display.append(co_val)
             display_df["First Check Out"] = new_co_display
 
-            # 💡 【終極多色彩鋪滿底色引擎】
-            # 1. 欄位文字為 SCRP ➡️ 紅底粗體紅字
-            # 2. 欄位文字為 HOLD ➡️ 🎯 【核心需求】紅底粗體藍字
-            # 3. 順序在 SCRP 之後 ➡️ 灰底深灰字
-            # 4. 步驟等於 WIP 當站 ➡️ 綠底粗體綠字
+            # 💡 【雙色彩鋪滿底色引擎】
             def highlight_dynamic_rows(row):
                 row_idx = row.name
                 co_cell_string = str(row["First Check Out"]).strip().upper()
@@ -137,12 +132,10 @@ with all_tabs[0]:
                 if co_cell_string == "SCRP":
                     return ['background-color: #f8d7da; font-weight: bold; color: #721c24;'] * len(row)
                 elif co_cell_string == "HOLD":
-                    # 🎯 滿填紅底 + 粗體藍字
                     return ['background-color: #f8d7da; font-weight: bold; color: #004085;'] * len(row)
                 elif row_idx > scrap_step_index:
                     return ['background-color: #e2e3e5; font-weight: normal; color: #6c757d;'] * len(row)
-                elif not has_scrap_occurred and has_hold_occurred and row_idx > hold_step_index:
-                    # 被 HOLD 站點之後的剩餘常規製程，同樣顯示灰修鎖定
+                elif not has_scrap_occurred and has_hold_occurred and row_idx > hold_step_idx:
                     return ['background-color: #f8f9fa; font-weight: normal; color: #adb5bd;'] * len(row)
                 elif step_cell_string == wip_step_no.strip():
                     return ['background-color: #c3e6cb; font-weight: bold; color: #155724;'] * len(row)
@@ -164,9 +157,9 @@ with all_tabs[0]:
             elif has_scrap_occurred:
                 default_row_idx = scrap_step_index
             elif has_hold_occurred:
-                default_row_idx = hold_step_index  # 🟢 【最關鍵修復】精確對齊前半段的變數名稱 hold_step_index
+                default_row_idx = hold_step_idx  # 🟢 【校正對齊】精確呼叫 hold_step_idx
             
-            current_idx = selected_rows["selection"]["rows"] if selected_rows and selected_rows.get("selection", {}).get("rows") else default_row_idx
+            current_idx = selected_rows["selection"]["rows"][0] if selected_rows and selected_rows.get("selection", {}).get("rows") else default_row_idx
             target_row = filtered_df.iloc[current_idx]
             
             st.write("---")
@@ -174,15 +167,15 @@ with all_tabs[0]:
             
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("晶圓編號 (Wafer ID)", str(target_row.get("Wafer ID", "N/A")))
-            c2.metric("選定步驟 (Step No.)", f"第 {target_row.get('Step No.', 'N/A')} 步")
+            c2.metric("選定步驟 (Step No.)", f"第 {str(target_row.get('Step No.', 'N/A'))} 步")
             c3.metric("負責模組 (Module)", str(target_row.get("Module", "N/A")))
             c4.metric("客戶團隊 (Customer)", str(target_row.get("Customer", "N/A")))
             
-            # 🟢 【變數完全對齊校正】控制面板防呆紅色/黃色警告條邏輯
+            # 🟢 【校正對齊】控制面板防呆紅色/黃色警告條邏輯
             if has_scrap_occurred and current_idx > scrap_step_index:
                 st.error(f"🚫 流程已中斷：該晶圓已於第 {filtered_df.iloc[scrap_step_index].get('Step No.')} 步報廢 (SCRP)。")
-            elif not has_scrap_occurred and has_hold_occurred and current_idx >= hold_step_index:
-                st.warning(f"🟨 暫停管制中：該晶圓目前於第 {filtered_df.iloc[hold_step_index].get('Step No.')} 步被執行 HOLD 鎖定，解除管制前無法執行出站作業。")
+            elif not has_scrap_occurred and has_hold_occurred and current_idx >= hold_step_idx:
+                st.warning(f"🟨 暫停管制中：該晶圓目前於第 {filtered_df.iloc[hold_step_idx].get('Step No.')} 步被執行 HOLD 鎖定，解除管制前無法執行出站作業。")
             
             st.info(f"💡 **目前站點描述**：{target_row.get('Step Description', 'N/A')}")
             
@@ -232,9 +225,9 @@ with all_tabs[0]:
                 st.cache_data.clear()
                 st.rerun()
 
-            # 🟢 【變數完全對齊校正】自動化防呆按鈕禁用控制邏輯
+            # 🟢 【校正對齊】自動化防呆按鈕禁用控制邏輯
             is_btn_disabled = True if has_scrap_occurred and current_idx > scrap_step_index else False
-            is_checkout_disabled = True if (has_hold_occurred and current_idx >= hold_step_index) or is_btn_disabled else False
+            is_checkout_disabled = True if (has_hold_occurred and current_idx >= hold_step_idx) or is_btn_disabled else False
 
             with b1:
                 if st.button("🟢 正常出站 (Check out)", type="primary", use_container_width=True, key="tab1_btn_co", disabled=is_checkout_disabled): execute_stage_action("Check out")
