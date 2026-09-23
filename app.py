@@ -43,7 +43,7 @@ def fetch_route_data_via_csv(sheet_name="route_template"):
 # =========================================================================
 # 📋 頁籤 1: Full Route (完整生產路由與互動編輯面板)
 # =========================================================================
-with all_tabs:
+with all_tabs[0]:
     st.subheader("HETEROGENEOUS INTEGRATION & MANUFACTURING DIVISION")
     
     df, conn_status = fetch_route_data_via_csv("route_template")
@@ -62,7 +62,7 @@ with all_tabs:
             st.cache_data.clear()
             st.rerun()
 
-    st.markdown("**【當前生產路由互動式編輯表格】** 🟢 *綠色粗體整列代表晶圓目前正停留之在製站點 (Current WIP Stage)*")
+    st.markdown("**【當前生產路由互動式編輯表格】** 🟢 *綠色粗體整列鋪滿代表晶圓目前正停留之在製站點 (Current WIP Stage)*")
     
     if not df.empty:
         wafer_col_list = [c for c in df.columns if "Wafer" in c or "wafer" in c]
@@ -81,7 +81,7 @@ with all_tabs:
             new_co_display = [ "INPR" if str(r.get("Step No.", "")).strip() == wip_step_no.strip() else str(r.get("First Check Out", "")).strip() for _, r in display_df.iterrows() ]
             display_df["First Check Out"] = new_co_display
 
-            # 💡 【終極整列鋪滿綠底引擎】透過 Axis=1 確保 pandas 一口氣將底色塗滿整列的所有 Cell
+            # 💡 【終極整列鋪滿綠底引擎】透過 CSS !important 強制填滿整列的所有儲存格，告別斷裂
             def highlight_wip_row(row):
                 if str(row["Step No."]).strip() == wip_step_no.strip():
                     return ['background-color: #c3e6cb !important; font-weight: bold; color: #155724 !important;'] * len(row)
@@ -89,6 +89,7 @@ with all_tabs:
             
             styled_df = display_df.style.apply(highlight_wip_row, axis=1)
 
+            # 渲染可編輯大表格元件
             edited_table = st.data_editor(
                 styled_df, use_container_width=True, hide_index=True, num_rows="fixed",
                 column_config={"Step No.": st.column_config.Column(disabled=True), "Wafer ID": st.column_config.Column(disabled=True)},
@@ -128,7 +129,7 @@ with all_tabs:
             st.write("---")
             st.subheader("⚙️ 當前過站控制面板 (Current Stage Action Panel)")
             wip_rows = filtered_df[filtered_df['Step No.'] == wip_step_no]
-            target_row = wip_rows.iloc if not wip_rows.empty else filtered_df.iloc
+            target_row = wip_rows.iloc[0] if not wip_rows.empty else filtered_df.iloc[0]
             
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("晶圓編號 (Wafer ID)", str(target_row.get("Wafer ID", "N/A")))
@@ -170,8 +171,10 @@ with all_tabs:
                 st.session_state["trigger_iframe"] = False
         else:
             st.warning(f"⚠️ 雲端資料庫中找不到與 '{search_id}' 相符的晶圓編號。")
+    else:
+        st.warning("⚠️ 無法載入 any 試算表資料，請確認工作表名稱是否為 'route_template'。")
 # =========================================================================
-# 📜 頁籤 2: Wafer History (晶圓歷史過站追蹤足跡)
+# 📜 頁籤 2: Wafer History (對齊 all_tabs - 晶圓歷史過站追蹤足跡)
 # =========================================================================
 with all_tabs[1]:
     st.subheader("📜 晶圓歷史過站追蹤足跡 (Wafer History 日誌)")
@@ -179,7 +182,7 @@ with all_tabs[1]:
     
     if not df_logs.empty:
         log_wafer_col_list = [c for c in df_logs.columns if "Wafer" in c or "晶圓" in c]
-        filtered_logs = df_logs[df_logs[log_wafer_col_list[0]].astype(str).str.upper() == search_id.upper()] if log_wafer_col_list else df_logs
+        filtered_logs = df_logs[df_logs[log_wafer_col_list].astype(str).str.upper() == search_id.upper()] if log_wafer_col_list else df_logs
         if not filtered_logs.empty:
             st.markdown(f"📊 晶圓 **{search_id}** 的歷史生產追蹤稽核足跡：")
             st.dataframe(filtered_logs, use_container_width=True, hide_index=True)
@@ -188,8 +191,9 @@ with all_tabs[1]:
     else:
         st.info("💡 目前雲端資料庫尚無紀錄。當您點擊 Check out 出站後，詳細日誌將在此呈現。")
 
+
 # =========================================================================
-# 📤 頁籤 3: Upload New Wafer (上傳新晶圓路由母表)
+# 📤 頁籤 3: Upload New Wafer (對齊 all_tabs - 上傳新晶圓路由母表)
 # =========================================================================
 with all_tabs[2]:
     st.subheader("📤 上傳新晶圓路由母表 (Upload New Wafer)")
@@ -205,8 +209,9 @@ with all_tabs[2]:
         except Exception as e:
             st.error(f"❌ 檔案解析失敗: {str(e)}")
 
+
 # =========================================================================
-# 🔄 頁籤 4: Upload R/C (上傳 R/C 規範)
+# 🔄 頁籤 4: Upload R/C (對齊 all_tabs - 上傳 R/C 規範)
 # =========================================================================
 with all_tabs[3]:
     st.subheader("🔄 上傳 R/C 規範 (Upload Run Card Change)")
