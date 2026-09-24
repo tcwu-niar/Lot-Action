@@ -134,7 +134,7 @@ with all_tabs[0]:
                 styled_df, use_container_width=True, hide_index=True, 
                 on_select="rerun", selection_mode="single-row"
             )
-# =========================================================================
+           # =========================================================================
             # 📋 頁籤 1: Full Route (後半段：定位與動態過站控制面板)
             # =========================================================================
             # 純 Python 清單安全定位，100% 繞過 InvalidIndexError
@@ -145,7 +145,7 @@ with all_tabs[0]:
             elif has_scrap_occurred:
                 default_row_idx = scrap_step_index
             
-            current_idx = selected_rows["selection"]["rows"] if selected_rows and selected_rows.get("selection", {}).get("rows") else default_row_idx
+            current_idx = selected_rows["selection"]["rows"][0] if selected_rows and selected_rows.get("selection", {}).get("rows") else default_row_idx
             target_row = filtered_df.iloc[current_idx]
             
             st.write("---")
@@ -219,7 +219,7 @@ with all_tabs[0]:
                     st.session_state["checkout_msg"] = f"🟨 晶圓已成功設定為 HOLD 狀態！"
                 elif action_name == "Unhold":
                     st.session_state["multi_iframe_urls"].append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={w_id}&step_no={s_no}&action=Unhold&comment={enc_comment}&time={enc_time}")
-                    st.session_state["checkout_msg"] = f"🟦 晶圓已成功解除 HOLD 狀態（恢復正常在製）！"
+                    st.session_state["checkout_msg"] = f"🟦 晶圓已成功解除 HOLD 狀態（欄位將恢復為 INPR）！若上方表格未即時更新，請點擊上方「🔄 刷新雲端資料」按鈕。"
                 else:
                     st.session_state["checkout_msg"] = f"✅ 參數修改儲存成功！"
                 
@@ -228,7 +228,7 @@ with all_tabs[0]:
                 st.rerun()
 
             # 🎯 建立彈出對話框物件函數
-            @st.dialog("📋 輸入 Hold Note (暫停原因原因)")
+            @st.dialog("📋 輸入 Hold Note (暫停原因)")
             def show_hold_dialog():
                 st.write(f"正在針對 晶圓編號 `{w_id}` 的 **第 {s_no} 步** 執行暫停指令。")
                 hold_reason = st.text_input("請輸入 Hold Note (暫停原因)：", placeholder="例如: 機台異常溫度過高、等待客戶回覆確認...")
@@ -240,13 +240,11 @@ with all_tabs[0]:
                         if hold_reason.strip() == "":
                             st.error("請填寫原因再點擊確認！")
                         else:
-                            # 執行 Hold 動作，並把輸入的 Hold 原因傳過去當作 comment 批註
                             execute_stage_action("Hold", custom_comment=f"[HOLD] {hold_reason.strip()}")
                 with c_cancel:
-                    if st.button("❌ 取消", use_container_width=True):
+                    if r_btn := st.button("❌ 取消", use_container_width=True):
                         st.rerun()
-
-            # 自動化流程中斷按鈕禁用防呆鎖定
+                        # 自動化流程中斷按鈕禁用防呆鎖定
             is_btn_disabled = True if has_scrap_occurred and current_idx > scrap_step_index else False
             is_wip_locked = True if is_currently_held else is_btn_disabled
 
@@ -260,7 +258,6 @@ with all_tabs[0]:
                     if st.button("🟦 解除暫停 (Release Hold)", type="primary", use_container_width=True, key="tab1_btn_unhd", disabled=is_btn_disabled):
                         execute_stage_action("Unhold", custom_comment="[UNHOLD] 已恢復生產")
                 else:
-                    # 🎯 當尚未 Hold 時，點下按鈕不直接執行，而是觸發上面寫好的 show_hold_dialog() 彈出小視窗
                     if st.button("🟨 設定暫停 (Hold)", use_container_width=True, key="tab1_btn_hd", disabled=is_btn_disabled):
                         show_hold_dialog()
             with b4: 
@@ -280,15 +277,7 @@ with all_tabs[0]:
         st.warning("⚠️ 無法載入 any 試算表資料，請確認工作表名稱是否為 'route_template'。")
 
 # =========================================================================
-# 📜 頁籤 2: Wafer History (完美綁定 all_tabs - 晶圓歷史過站追蹤足跡)
-# =========================================================================
-with all_tabs:
-    st.subheader("📜 晶圓歷史過站追蹤足跡 (Wafer History 日誌)")
-    df_logs, log_status = fetch_route_data_via_csv("wafer_status")
-    # ...（後面頁籤二、三、四的程式碼完全相同，故此處省略）
-
-# =========================================================================
-# 📜 頁籤 2: Wafer History (完美綁定 all_tabs[1] - 晶圓歷史過站追蹤足跡)
+# 📜 頁籤 2: Wafer History (🎯 完美對齊原本宣告的 all_tabs[1])
 # =========================================================================
 with all_tabs[1]:
     st.subheader("📜 晶圓歷史過站追蹤足跡 (Wafer History 日誌)")
@@ -306,12 +295,12 @@ with all_tabs[1]:
             st.markdown(f"📊 晶圓 **{search_id}** 的歷史生產追蹤稽核足跡：")
             st.dataframe(filtered_logs, use_container_width=True, hide_index=True)
         else:
-            st.info(f"ℹ️ 品且編號 {search_id} 目前在 wafer_status 中尚無紀錄。")
+            st.info(f"ℹ️ 晶圓編號 {search_id} 目前在 wafer_status 中尚無紀錄。")
     else:
         st.info("💡 目前雲端資料庫尚無紀錄。當您點擊 Check out 出站後，詳細日誌將在此呈現。")
 
 # =========================================================================
-# 📤 頁籤 3: Upload New Wafer (完美綁定 all_tabs[2] - 上傳新晶圓路由母表)
+# 📤 頁籤 3: Upload New Wafer (🎯 完美對齊原本宣告的 all_tabs[2])
 # =========================================================================
 with all_tabs[2]:
     st.subheader("📤 上傳新晶圓路由母表 (Upload New Wafer)")
@@ -326,18 +315,17 @@ with all_tabs[2]:
                 st.info("正在連線至國研院專案母表... 批量解析寫入模組初始化完成！")
         except Exception as e:
             st.error(f"❌ 檔案解析失敗: {str(e)}")
+
 # =========================================================================
-# 🔄 頁籤 4: Upload R/C (完美綁定 all_tabs[3] - 上傳 R/C 規範)
+# 🔄 頁籤 4: Upload R/C (🎯 完美對齊原本宣告的 all_tabs[3])
 # =========================================================================
 with all_tabs[3]:
     st.subheader("🔄 上傳 R/C 規範 (Upload Run Card Change)")
     st.markdown("當晶圓需要執行晶圓重工 (Rework)、機台特例改道或特殊參數調整時，在此進行 R/C 規範單號綁定。")
-    
     with st.form("rc_form"):
         rc_no = st.text_input("📋 Run Card 簽核單號 (R/C Number):", placeholder="例如: RC-2026-001")
         rc_step = st.text_input("📍 影響之起迄製程步驟 (Affected Steps):", placeholder="例如: Step 4 - Step 9")
         rc_reason = st.text_area("📝 改道製程說明與特別配方參數註記 (R/C Instruction):")
-        
         submitted = st.form_submit_button(label="提交 R/C 變更指令至雲端母表", use_container_width=True)
         if submitted:
             if rc_no and rc_reason:
