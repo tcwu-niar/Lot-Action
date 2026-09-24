@@ -69,13 +69,13 @@ with all_tabs[0]:
     if not df.empty:
         wafer_col_list = [c for c in df.columns if "Wafer" in c or "wafer" in c]
         if wafer_col_list:
-            actual_string_col = wafer_col_list[0]  # 🟢 精確取出純字串，根除 AttributeError
+            actual_string_col = wafer_col_list[0]
             filtered_df = df[df[actual_string_col].astype(str).str.upper() == search_id.upper()].copy()
         else:
             filtered_df = df.copy()
 
         if not filtered_df.empty:
-            # 💡 安全鎖定 Scrap 與 Hold 的位置狀態
+            # 💡 安全防呆：精確鎖定 Scrap 與 Hold 的位置狀態
             has_scrap_occurred = False
             scrap_step_index = 9999
             
@@ -123,7 +123,7 @@ with all_tabs[0]:
                     new_co_display.append(co_val)
             display_df["First Check Out"] = new_co_display
 
-            # 💡 【雙色彩鋪滿底色引擎】已將 && 完美修正為 Python 的 and
+            # 💡 【色彩高亮引擎】紅 / 綠 / 灰 / 藍 完全隔離
             def highlight_dynamic_rows(row):
                 row_idx = row.name
                 co_cell_string = str(row["First Check Out"]).strip().upper()
@@ -147,10 +147,10 @@ with all_tabs[0]:
                 styled_df, use_container_width=True, hide_index=True, 
                 on_select="rerun", selection_mode="single-row"
             )
+           # =========================================================================
+            # 📋 頁籤 1: Full Route (後半段：定位與純 Python 背景直連引擎)
             # =========================================================================
-            # 📋 頁籤 1: Full Route (後半段：定位與動態過站控制面板 - 降維修復版)
-            # =========================================================================
-            # 💡 【記憶鎖機制 1】計算系統預選的在製站點行數
+            # 記憶鎖機制
             default_row_idx = 0
             step_list = [str(x).strip() for x in filtered_df['Step No.'].tolist()]
             if wip_step_no.strip() in step_list:
@@ -160,22 +160,17 @@ with all_tabs[0]:
             elif has_hold_occurred:
                 default_row_idx = hold_step_idx
             
-            # 💡 【記憶鎖機制 2】動態追蹤與鎖定使用者用滑鼠點選的列數，防止點按鈕時被清空
             if "frozen_row_idx" not in st.session_state:
                 st.session_state["frozen_row_idx"] = default_row_idx
 
-            # 🟢 【核心修復】精確判定並用 [0] 將選取的 List 轉換為純整數，徹底破除 TypeError 報錯死穴！
             if selected_rows and selected_rows.get("selection", {}).get("rows"):
                 raw_rows = selected_rows["selection"]["rows"]
                 if isinstance(raw_rows, list) and len(raw_rows) > 0:
-                    st.session_state["frozen_row_idx"] = int(raw_rows[0]) # 👈 精確解包取出整數
+                    st.session_state["frozen_row_idx"] = int(raw_rows[0])
                 elif isinstance(raw_rows, (int, float)):
                     st.session_state["frozen_row_idx"] = int(raw_rows)
             
-            # 使用保存在記憶體中的純整數索引
             current_idx = int(st.session_state["frozen_row_idx"])
-            
-            # 安全防呆：這時候 current_idx 已經是 100% 的純整數，可以完美進行對比
             if current_idx >= len(filtered_df):
                 current_idx = default_row_idx
                 st.session_state["frozen_row_idx"] = default_row_idx
@@ -191,11 +186,10 @@ with all_tabs[0]:
             c3.metric("負責模組 (Module)", str(target_row.get("Module", "N/A")))
             c4.metric("客戶團隊 (Customer)", str(target_row.get("Customer", "N/A")))
             
-            # 控制面板防呆狀態警告條
             if has_scrap_occurred and current_idx > scrap_step_index:
                 st.error(f"🚫 流程已中斷：該晶圓已於第 {filtered_df.iloc[scrap_step_index].get('Step No.')} 步報廢 (SCRP)。")
             elif not has_scrap_occurred and has_hold_occurred and current_idx >= hold_step_idx:
-                st.warning(f"🟨 暫停管制中：該晶圓目前於第 {filtered_df.iloc[hold_step_idx].get('Step No.')} 步被執行 HOLD 鎖定，解除管制前無法執行出站作業。")
+                st.warning(f"🟨 暫停管制中：該晶圓目前於第 {filtered_df.iloc[hold_step_idx].get('Step No.')} 步被執行 HOLD 鎖定。")
             
             st.info(f"💡 **目前站點描述**：{target_row.get('Step Description', 'N/A')}")
             
@@ -206,86 +200,60 @@ with all_tabs[0]:
             with edit_col3: edit_cp = st.text_input("🎯 變更檢驗點 (Check point):", value=str(target_row.get("Check point", "")))
             
             st.markdown("📝 **批註 / 機台數據回填 (SPC Data / Comments):**")
-            user_comment = st.text_input("請在此輸入過站紀錄...", key="user_comment_input", placeholder="例如: 異常已排除，申請解除 Hold 管制")
+            user_comment = st.text_input("請在此輸入過站紀錄...", key="user_comment_input", placeholder="例如: 異常已排除")
             
             st.markdown("⚠️ **流程變更權限指令**")
-            
-            # 動態按鈕切換防呆
             is_currently_at_hold_cell = True if (not has_scrap_occurred and has_hold_occurred and current_idx == hold_step_idx) else False
             
             b1, b2, b3, b4, b5 = st.columns(5)
             w_id, s_no = str(target_row.get("Wafer ID", "")).strip(), str(target_row.get("Step No.", "")).strip()
-            
-            if "trigger_iframe" not in st.session_state:
-                st.session_state["trigger_iframe"], st.session_state["iframe_url"] = False, ""
-            if "multi_iframe_urls" not in st.session_state:
-                st.session_state["multi_iframe_urls"] = []
 
-            def execute_stage_action(action_name):
+            # 🚀 【終極 Python 背景直連引擎】
+            def execute_stage_action_via_python(action_name):
                 now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                st.session_state["multi_iframe_urls"] = []
-                
                 fields = {"Process Tool": edit_tool, "Recipe": edit_recipe, "Check point": edit_cp}
-                for f_name, f_val in fields.items():
-                    if str(f_val).strip() != str(target_row.get(f_name, "")).strip():
-                        st.session_state["multi_iframe_urls"].append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={w_id}&step_no={s_no}&column_name={requests.utils.quote(f_name)}&new_value={requests.utils.quote(str(f_val).strip())}&callback=jQuery")
                 
-                enc_comment = requests.utils.quote(user_comment.strip())
-                enc_time = requests.utils.quote(now_str)
-                
-                if action_name == "Check out":
-                    st.session_state["multi_iframe_urls"].append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={w_id}&step_no={s_no}&action=Check out&comment={enc_comment}&time={enc_time}")
-                    st.session_state["checkout_msg"] = f"✅ 正常出站成功｜已填入出站時間 [ {now_str} ] 。"
-                elif action_name == "Scrap":
-                    st.session_state["multi_iframe_urls"].append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={w_id}&step_no={s_no}&action=Scrap&comment={enc_comment}&time={enc_time}")
-                    st.session_state["checkout_msg"] = f"🚨 晶圓報廢程序執行完畢｜該站點已被強制註記為 SCRP 狀態！"
-                elif action_name == "Hold":
-                    st.session_state["multi_iframe_urls"].append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={w_id}&step_no={s_no}&action=Hold&comment={enc_comment}&time={enc_time}")
-                    st.session_state["checkout_msg"] = f"🟨 暫停管制程序執行完畢｜該站點已被強制註記為 HOLD 狀態！"
-                elif action_name == "Release Hold":
-                    st.session_state["multi_iframe_urls"].append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={w_id}&step_no={s_no}&action=Release Hold&comment={enc_comment}&time={enc_time}")
-                    st.session_state["checkout_msg"] = f"🔓 暫停管制已成功解除！該步驟已全自動回復為 INPR 在製狀態。"
-                else:
-                    st.session_state["checkout_msg"] = f"✅ 參數修改儲存成功！"
-                
-                st.session_state["trigger_iframe"] = True
-                st.cache_data.clear()
+                with st.spinner("🔄 正在強效穿透國研院防火牆並同步至 Google Sheets 雲端..."):
+                    for f_name, f_val in fields.items():
+                        if str(f_val).strip() != str(target_row.get(f_name, "")).strip():
+                            p_url = f"{MY_ORGANIZATION_GAS_URL}?wafer_id={w_id}&step_no={s_no}&column_name={requests.utils.quote(f_name)}&new_value={requests.utils.quote(str(f_val).strip())}"
+                            try: requests.get(p_url, timeout=6)
+                            except: pass
+                    
+                    enc_comment = requests.utils.quote(user_comment.strip())
+                    enc_time = requests.utils.quote(now_str)
+                    main_url = f"{MY_ORGANIZATION_GAS_URL}?wafer_id={w_id}&step_no={s_no}&action={action_name}&comment={enc_comment}&time={enc_time}"
+                    
+                    try:
+                        response = requests.get(main_url, timeout=8)
+                        if response.status_code == 200:
+                            st.cache_data.clear()
+                            if "frozen_row_idx" in st.session_state:
+                                del st.session_state["frozen_row_idx"]
+                            st.success(f"✅ 雲端連線完全開通！動作【{action_name}】已成功更新回試算表！")
+                            import time
+                            time.sleep(1.2)
+                            st.rerun()
+                        else:
+                            st.error(f"❌ Google Sheets 拒絕連線，代碼: {response.status_code}")
+                    except Exception as e:
+                        st.error(f"❌ 傳輸通道被組織網路封鎖，原因: {str(e)}")
 
-            # 按鈕禁用控制邏輯
             is_btn_disabled = True if has_scrap_occurred and current_idx > scrap_step_index else False
             is_checkout_disabled = True if (has_hold_occurred and current_idx >= hold_step_idx) or is_btn_disabled else False
 
             with b1:
                 if is_currently_at_hold_cell:
-                    if st.button("🔓 解除暫停 (Release Hold)", type="primary", use_container_width=True, key="tab1_btn_rel"):
-                        execute_stage_action("Release Hold")
+                    if st.button("🔓 解除暫停 (Release Hold)", type="primary", use_container_width=True, key="tab1_btn_rel"): execute_stage_action_via_python("Release Hold")
                 else:
-                    if st.button("🟢 正常出站 (Check out)", type="primary", use_container_width=True, key="tab1_btn_co", disabled=is_checkout_disabled): 
-                        execute_stage_action("Check out")
-                        
+                    if st.button("🟢 正常出站 (Check out)", type="primary", use_container_width=True, key="tab1_btn_co", disabled=is_checkout_disabled): execute_stage_action_via_python("Check out")
             with b2:
-                if st.button("❌ 報廢處理 (Scrap)", type="secondary", use_container_width=True, key="tab1_btn_sc", disabled=is_btn_disabled): execute_stage_action("Scrap")
+                if st.button("❌ 報廢處理 (Scrap)", type="secondary", use_container_width=True, key="tab1_btn_sc", disabled=is_btn_disabled): execute_stage_action_via_python("Scrap")
             with b3: 
-                if st.button("🟨 暫停規定 (Hold)", type="secondary", use_container_width=True, key="tab1_btn_hd", disabled=(is_btn_disabled or has_hold_occurred)): 
-                    execute_stage_action("Hold")
+                if st.button("🟨 暫停規定 (Hold)", type="secondary", use_container_width=True, key="tab1_btn_hd", disabled=(is_btn_disabled or has_hold_occurred)): execute_stage_action_via_python("Hold")
             with b4: st.button("🟦 跳過此站 (Skip)", use_container_width=True, key="tab1_btn_sk", disabled=is_checkout_disabled)
             with b5:
-                if st.button("💾 儲存修改參數 (Key in data)", use_container_width=True, key="tab1_btn_ki", disabled=is_btn_disabled): execute_stage_action("Key in data")
-
-            # 🚀 數據傳輸守護引擎
-            if st.session_state["trigger_iframe"]:
-                st.success(st.session_state["checkout_msg"])
-                for url in st.session_state["multi_iframe_urls"]:
-                    st.markdown(f'<iframe src="{url}" style="width:0px; height:0px; border:0px; display:none;"></iframe>', unsafe_allow_html=True)
-                
-                import time
-                time.sleep(1.8)
-                
-                st.session_state["trigger_iframe"] = False
-                st.session_state["multi_iframe_urls"] = []
-                if "frozen_row_idx" in st.session_state:
-                    del st.session_state["frozen_row_idx"]
-                st.rerun()
+                if st.button("💾 儲存修改參數 (Key in data)", use_container_width=True, key="tab1_btn_ki", disabled=is_btn_disabled): execute_stage_action_via_python("Key in data")
 # =========================================================================
 # 📜 頁籤 2: Wafer History (完美綁定 all_tabs[1] - 晶圓歷史過站追蹤足跡)
 # =========================================================================
