@@ -211,8 +211,9 @@ with all_tabs[0]:
                     st.session_state["multi_iframe_urls"].append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={w_id}&step_no={s_no}&action=Hold&comment={enc_comment}&time={enc_time}")
                     st.session_state["checkout_msg"] = f"🟨 晶圓已成功設定為 HOLD 狀態！"
                 elif action_name == "Unhold":
+                    # 🎯 前端同步發送 Unhold 請求給 GAS
                     st.session_state["multi_iframe_urls"].append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={w_id}&step_no={s_no}&action=Unhold&comment={enc_comment}&time={enc_time}")
-                    st.session_state["checkout_msg"] = f"🟦 晶圓已成功解除 HOLD 狀態（恢復正常在製）！"
+                    st.session_state["checkout_msg"] = f"🟦 晶圓已成功發送解除 HOLD 指令（欄位將恢復為 INPR）！若上方表格未即時更新，請點擊上方「🔄 刷新雲端資料」按鈕。"
                 else:
                     st.session_state["checkout_msg"] = f"✅ 參數修改儲存成功！"
                 
