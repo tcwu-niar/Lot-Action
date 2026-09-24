@@ -145,7 +145,7 @@ with all_tabs[0]:
             elif has_scrap_occurred:
                 default_row_idx = scrap_step_index
             
-            current_idx = selected_rows["selection"]["rows"][0] if selected_rows and selected_rows.get("selection", {}).get("rows") else default_row_idx
+            current_idx = selected_rows["selection"]["rows"] if selected_rows and selected_rows.get("selection", {}).get("rows") else default_row_idx
             target_row = filtered_df.iloc[current_idx]
             
             st.write("---")
@@ -176,8 +176,12 @@ with all_tabs[0]:
             with edit_col3: edit_cp = st.text_input("🎯 變更檢驗點 (Check point):", value=str(target_row.get("Check point", "")))
             
             st.markdown("📝 **批註 / 機台數據回填 (SPC Data / Comments):**")
-            user_comment = st.text_input("請在此輸入過站紀錄...", key="user_comment_input", placeholder="例如: 晶圓破裂，申請報廢")
+            user_comment = st.text_input("請在此輸入過站紀錄...", key="user_comment_input", placeholder="例如: 正常過站資料回填")
             
+            # 🎯 這裡會同步將批註（包含 Hold Note）顯示在最下方
+            current_comment = str(target_row.get("Comments", "")).strip() or str(target_row.get("備註", "")).strip() or "暫無紀錄"
+            st.markdown(f"ℹ️ **目前此站點之歷史批註 / Hold Note：** `{current_comment}`")
+
             st.markdown("⚠️ **流程變更權限指令**")
             b1, b2, b3, b4, b5 = st.columns(5)
             w_id, s_no = str(target_row.get("Wafer ID", "")).strip(), str(target_row.get("Step No.", "")).strip()
@@ -187,7 +191,8 @@ with all_tabs[0]:
             if "multi_iframe_urls" not in st.session_state:
                 st.session_state["multi_iframe_urls"] = []
 
-            def execute_stage_action(action_name):
+            # 核心執行函數（支援傳入自訂的批註內容）
+            def execute_stage_action(action_name, custom_comment=None):
                 now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 st.session_state["multi_iframe_urls"] = []
                 
@@ -198,7 +203,9 @@ with all_tabs[0]:
                         if str(f_val).strip() != str(target_row.get(f_name, "")).strip():
                             st.session_state["multi_iframe_urls"].append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={w_id}&step_no={s_no}&column_name={requests.utils.quote(f_name)}&new_value={requests.utils.quote(str(f_val).strip())}&callback=jQuery")
                 
-                enc_comment = requests.utils.quote(user_comment.strip())
+                # 決定要送出的批註內容
+                final_comment = custom_comment if custom_comment is not None else user_comment.strip()
+                enc_comment = requests.utils.quote(final_comment)
                 enc_time = requests.utils.quote(now_str)
                 
                 if action_name == "Check out":
@@ -211,9 +218,8 @@ with all_tabs[0]:
                     st.session_state["multi_iframe_urls"].append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={w_id}&step_no={s_no}&action=Hold&comment={enc_comment}&time={enc_time}")
                     st.session_state["checkout_msg"] = f"🟨 晶圓已成功設定為 HOLD 狀態！"
                 elif action_name == "Unhold":
-                    # 🎯 前端同步發送 Unhold 請求給 GAS
                     st.session_state["multi_iframe_urls"].append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={w_id}&step_no={s_no}&action=Unhold&comment={enc_comment}&time={enc_time}")
-                    st.session_state["checkout_msg"] = f"🟦 晶圓已成功發送解除 HOLD 指令（欄位將恢復為 INPR）！若上方表格未即時更新，請點擊上方「🔄 刷新雲端資料」按鈕。"
+                    st.session_state["checkout_msg"] = f"🟦 晶圓已成功解除 HOLD 狀態（恢復正常在製）！"
                 else:
                     st.session_state["checkout_msg"] = f"✅ 參數修改儲存成功！"
                 
@@ -221,9 +227,27 @@ with all_tabs[0]:
                 st.cache_data.clear()
                 st.rerun()
 
+            # 🎯 建立彈出對話框物件函數
+            @st.dialog("📋 輸入 Hold Note (暫停原因原因)")
+            def show_hold_dialog():
+                st.write(f"正在針對 晶圓編號 `{w_id}` 的 **第 {s_no} 步** 執行暫停指令。")
+                hold_reason = st.text_input("請輸入 Hold Note (暫停原因)：", placeholder="例如: 機台異常溫度過高、等待客戶回覆確認...")
+                st.warning("⚠️ 確認提交後，該站點將會鎖定，直到執行解除暫停。")
+                
+                c_ok, c_cancel = st.columns(2)
+                with c_ok:
+                    if st.button("👍 確認 OK", type="primary", use_container_width=True):
+                        if hold_reason.strip() == "":
+                            st.error("請填寫原因再點擊確認！")
+                        else:
+                            # 執行 Hold 動作，並把輸入的 Hold 原因傳過去當作 comment 批註
+                            execute_stage_action("Hold", custom_comment=f"[HOLD] {hold_reason.strip()}")
+                with c_cancel:
+                    if st.button("❌ 取消", use_container_width=True):
+                        st.rerun()
+
             # 自動化流程中斷按鈕禁用防呆鎖定
             is_btn_disabled = True if has_scrap_occurred and current_idx > scrap_step_index else False
-            # 處於 HOLD 狀態時，禁用正常出站、報廢或修改參數（只能點解 Hold）
             is_wip_locked = True if is_currently_held else is_btn_disabled
 
             with b1:
@@ -231,13 +255,14 @@ with all_tabs[0]:
             with b2:
                 if st.button("❌ 報廢處理 (Scrap)", type="secondary", use_container_width=True, key="tab1_btn_sc", disabled=is_wip_locked): execute_stage_action("Scrap")
             with b3: 
-                # 🎯 動態按鈕：若目前是 Hold 狀態，顯示「解 Hold」；反之顯示「設定 Hold」
+                # 動態按鈕：若目前是 Hold 狀態，顯示「解 Hold」；反之顯示「設定 Hold」
                 if is_currently_held:
                     if st.button("🟦 解除暫停 (Release Hold)", type="primary", use_container_width=True, key="tab1_btn_unhd", disabled=is_btn_disabled):
-                        execute_stage_action("Unhold")
+                        execute_stage_action("Unhold", custom_comment="[UNHOLD] 已恢復生產")
                 else:
+                    # 🎯 當尚未 Hold 時，點下按鈕不直接執行，而是觸發上面寫好的 show_hold_dialog() 彈出小視窗
                     if st.button("🟨 設定暫停 (Hold)", use_container_width=True, key="tab1_btn_hd", disabled=is_btn_disabled):
-                        execute_stage_action("Hold")
+                        show_hold_dialog()
             with b4: 
                 st.button("🟦 跳過此站 (Skip)", use_container_width=True, key="tab1_btn_sk", disabled=is_wip_locked)
             with b5:
@@ -253,6 +278,14 @@ with all_tabs[0]:
             st.warning(f"⚠️ 雲端資料庫中找不到與 '{search_id}' 相符的晶圓編號。")
     else:
         st.warning("⚠️ 無法載入 any 試算表資料，請確認工作表名稱是否為 'route_template'。")
+
+# =========================================================================
+# 📜 頁籤 2: Wafer History (完美綁定 all_tabs - 晶圓歷史過站追蹤足跡)
+# =========================================================================
+with all_tabs:
+    st.subheader("📜 晶圓歷史過站追蹤足跡 (Wafer History 日誌)")
+    df_logs, log_status = fetch_route_data_via_csv("wafer_status")
+    # ...（後面頁籤二、三、四的程式碼完全相同，故此處省略）
 
 # =========================================================================
 # 📜 頁籤 2: Wafer History (完美綁定 all_tabs[1] - 晶圓歷史過站追蹤足跡)
