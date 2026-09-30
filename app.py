@@ -287,81 +287,97 @@ with all_tabs[0]:
         st.warning("⚠️ 無法載入 any 試算表資料，請確認工作表名稱是否為 'route_template'。")
 
 # =========================================================================
-# 📜 頁籤 2: Wafer History (🎯 完美對齊原本宣告的 all_tabs[1])
+# 📜 頁籤 2: Wafer History (主表顯示母表，點選後顯示該站點完整歷史紀錄)
 # =========================================================================
 with all_tabs[1]:
     st.subheader("📜 晶圓歷史過站追蹤足跡 (Wafer History 日誌)")
+    
+    # 同時載入「母表 (route_template)」與「歷史紀錄表 (wafer_status)」
+    df_route, route_status = fetch_route_data_via_csv("route_template")
     df_logs, log_status = fetch_route_data_via_csv("wafer_status")
     
-    if not df_logs.empty:
-        log_wafer_col_list = [c for c in df_logs.columns if "Wafer" in c or "晶圓" in c]
-        if log_wafer_col_list:
-            actual_log_string_col = log_wafer_col_list[0]
-            filtered_logs = df_logs[df_logs[actual_log_string_col].astype(str).str.upper() == search_id.upper()]
+    if not df_route.empty and not df_logs.empty:
+        # --- 1. 處理並顯示上半部的母表 ---
+        wafer_col_list = [c for c in df_route.columns if "Wafer" in c or "wafer" in c]
+        if wafer_col_list:
+            actual_string_col = wafer_col_list[0]
+            filtered_route = df_route[df_route[actual_string_col].astype(str).str.upper() == search_id.upper()]
         else:
-            filtered_logs = df_logs
+            filtered_route = df_route
             
-        if not filtered_logs.empty:
-            st.markdown(f"📊 晶圓 **{search_id}** 的歷史生產追蹤稽核足跡：")
-            
-            # 🎯 1. 重設 index 確保 st.dataframe 回傳的 row 索引可以精確對應
-            display_logs = filtered_logs.copy().reset_index(drop=True)
+        if not filtered_route.empty:
+            st.markdown(f"📊 晶圓 **{search_id}** 的母表生產路由全貌：")
+            display_route = filtered_route.copy().reset_index(drop=True)
 
-            # 🎯 2. 開啟單列選取功能 (on_select="rerun")
-            selected_log_rows = st.dataframe(
-                display_logs, 
+            # 顯示母表並開啟單列選取功能
+            selected_route_row = st.dataframe(
+                display_route, 
                 use_container_width=True, 
                 hide_index=True,
                 on_select="rerun", 
                 selection_mode="single-row",
-                key="wafer_history_table"  # 👈 新增這行專屬識別碼
+                key="history_route_table"
             )
             
-            # 🎯 3. 判斷使用者是否有點選表格中的某一個站點 (Row)
-            if selected_log_rows and selected_log_rows.get("selection", {}).get("rows"):
-                selected_idx = selected_log_rows["selection"]["rows"][0]
-                target_log_row = display_logs.iloc[selected_idx]
+            # --- 2. 當點擊特定站點時，從歷史紀錄表中撈出該站點的「所有完整紀錄」 ---
+            if selected_route_row and selected_route_row.get("selection", {}).get("rows"):
+                selected_idx = selected_route_row["selection"]["rows"][0]
+                target_step_no = str(display_route.iloc[selected_idx].get("Step No.", "")).strip()
                 
-                # 取得該站點的 Hold Note
-                hold_note_val = str(target_log_row.get("Hold Note", "")).strip()
+                st.markdown("---")
+                st.markdown(f"### 🛑 第 {target_step_no} 步 - 歷史動作完整紀錄 (Action History)")
                 
-                # 檢查該站點是否有 Hold Note 紀錄
-                if hold_note_val and hold_note_val.lower() not in ["nan", "none", ""]:
-                    step_no_val = str(target_log_row.get("Step No.", "N/A"))
-                    
-                    # 抓取時間欄位：若有專屬的 Time 欄位則優先使用，若無則抓取 First Check Out
-                    time_val = str(target_log_row.get("Time", "")).strip()
-                    if not time_val or time_val.lower() in ["nan", "none"]:
-                        time_val = str(target_log_row.get("First Check Out", "無時間紀錄")).strip()
-                        
-                    st.markdown("---")
-                    st.markdown("### 🛑 該站點暫停紀錄詳細資訊 (Hold Information)")
-                    
-                    # 🎯 4. 使用 HTML 語法呈現 12pt 字體的整齊表格
+                # 過濾出符合該晶圓且符合該步驟的所有歷史紀錄
+                log_wafer_col = [c for c in df_logs.columns if "Wafer" in c or "晶圓" in c][0]
+                step_logs = df_logs[
+                    (df_logs[log_wafer_col].astype(str).str.upper() == search_id.upper()) & 
+                    (df_logs["Step No."].astype(str).str.strip() == target_step_no)
+                ]
+                
+                if not step_logs.empty:
+                    # 建立 12pt 字體的 HTML 表格標題
                     html_table = f"""
                     <div style="font-size: 12pt;">
                         <table style="width: 100%; border-collapse: collapse; border: 1px solid #ddd;">
-                            <tr style="background-color: #fff3cd; color: #856404;">
-                                <th style="padding: 10px; border: 1px solid #ddd; text-align: center; width: 15%;">站點 (Step No.)</th>
-                                <th style="padding: 10px; border: 1px solid #ddd; text-align: center; width: 25%;">Hold 日期與時間</th>
-                                <th style="padding: 10px; border: 1px solid #ddd; text-align: left; width: 60%;">Hold Note (暫停原因)</th>
+                            <tr style="background-color: #f8f9fa; color: #333;">
+                                <th style="padding: 10px; border: 1px solid #ddd; text-align: center; width: 15%;">動作 (Action)</th>
+                                <th style="padding: 10px; border: 1px solid #ddd; text-align: center; width: 25%;">日期與時間</th>
+                                <th style="padding: 10px; border: 1px solid #ddd; text-align: left; width: 30%;">Hold Note (暫停原因)</th>
+                                <th style="padding: 10px; border: 1px solid #ddd; text-align: left; width: 30%;">SPC data (過站備註)</th>
                             </tr>
-                            <tr>
-                                <td style="padding: 10px; border: 1px solid #ddd; text-align: center; font-weight: bold;">{step_no_val}</td>
+                    """
+                    
+                    # 依序把該站點的「每一次」紀錄疊加進表格中
+                    for _, log_row in step_logs.iterrows():
+                        action_val = str(log_row.get("Action", "")).strip()
+                        time_val = str(log_row.get("First Check Out", "")).strip()
+                        hold_note_val = str(log_row.get("Hold Note", "")).strip()
+                        spc_val = str(log_row.get("SPC data", "")).strip()
+                        
+                        # 針對 HOLD 動作給予黃底紅字，其他動作白底黑字
+                        bg_color = "#fff3cd" if action_val.upper() == "HOLD" else "#ffffff"
+                        text_color = "#d9534f" if action_val.upper() == "HOLD" else "#000000"
+                        
+                        html_table += f"""
+                            <tr style="background-color: {bg_color};">
+                                <td style="padding: 10px; border: 1px solid #ddd; text-align: center; font-weight: bold;">{action_val}</td>
                                 <td style="padding: 10px; border: 1px solid #ddd; text-align: center;">{time_val}</td>
-                                <td style="padding: 10px; border: 1px solid #ddd; text-align: left; color: #d9534f; font-weight: bold;">{hold_note_val}</td>
+                                <td style="padding: 10px; border: 1px solid #ddd; text-align: left; color: {text_color}; font-weight: bold;">{hold_note_val}</td>
+                                <td style="padding: 10px; border: 1px solid #ddd; text-align: left;">{spc_val}</td>
                             </tr>
+                        """
+                        
+                    html_table += """
                         </table>
                     </div>
                     """
                     st.markdown(html_table, unsafe_allow_html=True)
                 else:
-                    st.markdown("---")
-                    st.info("✅ 此站點無 Hold (暫停) 紀錄。")
+                    st.info(f"✅ 該晶圓的第 {target_step_no} 步目前無任何歷史紀錄。")
         else:
-            st.info(f"ℹ️ 晶圓編號 {search_id} 目前在 wafer_status 中尚無紀錄。")
+            st.warning(f"⚠️ 找不到與 '{search_id}' 相符的晶圓資料。")
     else:
-        st.info("💡 目前雲端資料庫尚無紀錄。當您點擊 Check out 出站後，詳細日誌將在此呈現。")
+        st.error("💡 無法載入母表或歷史紀錄資料，請確認連線或工作表名稱。")
 
 # =========================================================================
 # 📤 頁籤 3: Upload New Wafer (🎯 完美對齊原本宣告的 all_tabs[2])
