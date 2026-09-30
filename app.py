@@ -212,28 +212,23 @@ with all_tabs[0]:
                         if str(f_val).strip() != str(target_row.get(f_name, "")).strip():
                             st.session_state["multi_iframe_urls"].append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={w_id}&step_no={s_no}&column_name={requests.utils.quote(f_name)}&new_value={requests.utils.quote(str(f_val).strip())}&callback=jQuery")
                 
-                # 決定要送出的批註內容
                 final_comment = custom_comment if custom_comment is not None else user_comment.strip()
                 enc_comment = requests.utils.quote(final_comment)
                 enc_time = requests.utils.quote(now_str)
                 
+                # 🛑 乾淨的狀態發送邏輯：不再發送多餘的 column_name URL，全部交給 GAS 的 Action 處理
                 if action_name == "Check out":
                     st.session_state["multi_iframe_urls"].append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={w_id}&step_no={s_no}&action=Check out&comment={enc_comment}&time={enc_time}")
-                    st.session_state["checkout_msg"] = f"✅ 正常出站成功｜已填入出站時間 [ {now_str} ] 。"
+                    st.session_state["checkout_msg"] = f"✅ 正常出站成功！"
                 elif action_name == "Scrap":
                     st.session_state["multi_iframe_urls"].append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={w_id}&step_no={s_no}&action=Scrap&comment={enc_comment}&time={enc_time}")
-                    st.session_state["checkout_msg"] = f"🚨 晶圓報廢程序執行完畢｜該站點已被強制註記為 SCRP 狀態！"
+                    st.session_state["checkout_msg"] = f"🚨 晶圓報廢程序執行完畢！"
                 elif action_name == "Hold":
                     st.session_state["multi_iframe_urls"].append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={w_id}&step_no={s_no}&action=Hold&comment={enc_comment}&time={enc_time}")
-                    # ✅ 寫入專屬的 Hold Note 欄位
-                    if hold_note:
-                        st.session_state["multi_iframe_urls"].append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={w_id}&step_no={s_no}&column_name=Hold Note&new_value={requests.utils.quote(hold_note)}&callback=jQuery")
-                    st.session_state["checkout_msg"] = f"🟨 晶圓已成功設定為 HOLD 狀態！"
+                    st.session_state["checkout_msg"] = f"🟨 晶圓已成功設定為 HOLD 狀態！（資料寫入中，請稍候 3 秒點擊上方刷新）"
                 elif action_name == "Unhold":
                     st.session_state["multi_iframe_urls"].append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={w_id}&step_no={s_no}&action=Unhold&comment={enc_comment}&time={enc_time}")
-                    # ✅ 解除 Hold 時自動清空 Hold Note 欄位
-                    st.session_state["multi_iframe_urls"].append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={w_id}&step_no={s_no}&column_name=Hold Note&new_value=&callback=jQuery")
-                    st.session_state["checkout_msg"] = f"🟦 晶圓已成功解除 HOLD 狀態（欄位將恢復為 INPR）！若上方表格未即時更新，請點擊上方「🔄 刷新雲端資料」按鈕。"
+                    st.session_state["checkout_msg"] = f"🟦 晶圓已成功解除 HOLD 狀態！（資料寫入中，請稍候 3 秒點擊上方刷新）"
                 else:
                     st.session_state["checkout_msg"] = f"✅ 參數修改儲存成功！"
                 
@@ -241,7 +236,7 @@ with all_tabs[0]:
                 st.cache_data.clear()
                 st.rerun()
 
-            # 🎯 建立彈出對話框物件函數
+            # 🎯 建立設定 Hold 彈出對話框
             @st.dialog("📋 輸入 Hold Note (暫停原因)")
             def show_hold_dialog():
                 st.write(f"正在針對 晶圓編號 `{w_id}` 的 **第 {s_no} 步** 執行暫停指令。")
@@ -271,7 +266,6 @@ with all_tabs[0]:
                         if unhold_reason.strip() == "":
                             st.error("請填寫原因再點擊確認！")
                         else:
-                            # 將解除原因傳給後端
                             execute_stage_action("Unhold", custom_comment=f"[UNHOLD] {unhold_reason.strip()}")
                 with c_cancel:
                     if st.button("❌ 取消", use_container_width=True, key="cancel_unhold_btn"):
@@ -286,7 +280,7 @@ with all_tabs[0]:
             with b2:
                 if st.button("❌ 報廢處理 (Scrap)", type="secondary", use_container_width=True, key="tab1_btn_sc", disabled=is_wip_locked): execute_stage_action("Scrap")
             with b3: 
-                # 🛑 變更點：解 Hold 也呼叫彈出對話框
+                # 判斷狀態，切換為設定 Hold 或是 解除 Hold
                 if is_currently_held:
                     if st.button("🟦 解除暫停 (Release Hold)", type="primary", use_container_width=True, key="tab1_btn_unhd", disabled=is_btn_disabled):
                         show_unhold_dialog()
