@@ -254,12 +254,30 @@ with all_tabs[0]:
                         if hold_reason.strip() == "":
                             st.error("請填寫原因再點擊確認！")
                         else:
-                            # 傳遞 hold_note 參數以更新獨立的 Hold Note 欄位
                             execute_stage_action("Hold", custom_comment=f"[HOLD] {hold_reason.strip()}", hold_note=hold_reason.strip())
                 with c_cancel:
-                    if r_btn := st.button("❌ 取消", use_container_width=True):
+                    if st.button("❌ 取消", use_container_width=True, key="cancel_hold_btn"):
                         st.rerun()
-                        # 自動化流程中斷按鈕禁用防呆鎖定
+
+            # 🎯 建立解除 Hold 彈出對話框
+            @st.dialog("🟦 輸入解除暫停原因 (Unhold Note)")
+            def show_unhold_dialog():
+                st.write(f"正在針對 晶圓編號 `{w_id}` 的 **第 {s_no} 步** 執行解除暫停指令。")
+                unhold_reason = st.text_input("請輸入解 Hold 原因：", placeholder="例如: 客戶已確認規格、機台已修復...")
+                
+                c_ok, c_cancel = st.columns(2)
+                with c_ok:
+                    if st.button("👍 確認解除", type="primary", use_container_width=True):
+                        if unhold_reason.strip() == "":
+                            st.error("請填寫原因再點擊確認！")
+                        else:
+                            # 將解除原因傳給後端
+                            execute_stage_action("Unhold", custom_comment=f"[UNHOLD] {unhold_reason.strip()}")
+                with c_cancel:
+                    if st.button("❌ 取消", use_container_width=True, key="cancel_unhold_btn"):
+                        st.rerun()
+
+            # 自動化流程中斷按鈕禁用防呆鎖定
             is_btn_disabled = True if has_scrap_occurred and current_idx > scrap_step_index else False
             is_wip_locked = True if is_currently_held else is_btn_disabled
 
@@ -268,10 +286,10 @@ with all_tabs[0]:
             with b2:
                 if st.button("❌ 報廢處理 (Scrap)", type="secondary", use_container_width=True, key="tab1_btn_sc", disabled=is_wip_locked): execute_stage_action("Scrap")
             with b3: 
-                # 動態按鈕：若目前是 Hold 狀態，顯示「解 Hold」；反之顯示「設定 Hold」
+                # 🛑 變更點：解 Hold 也呼叫彈出對話框
                 if is_currently_held:
                     if st.button("🟦 解除暫停 (Release Hold)", type="primary", use_container_width=True, key="tab1_btn_unhd", disabled=is_btn_disabled):
-                        execute_stage_action("Unhold", custom_comment="[UNHOLD] 已恢復生產")
+                        show_unhold_dialog()
                 else:
                     if st.button("🟨 設定暫停 (Hold)", use_container_width=True, key="tab1_btn_hd", disabled=is_btn_disabled):
                         show_hold_dialog()
@@ -279,18 +297,6 @@ with all_tabs[0]:
                 st.button("🟦 跳過此站 (Skip)", use_container_width=True, key="tab1_btn_sk", disabled=is_wip_locked)
             with b5:
                 if st.button("💾 儲存修改參數 (Key in data)", use_container_width=True, key="tab1_btn_ki", disabled=is_wip_locked): execute_stage_action("Key in data")
-
-            if st.session_state["trigger_iframe"]:
-                st.success(st.session_state["checkout_msg"])
-                for url in st.session_state["multi_iframe_urls"]:
-                    st.markdown(f'<iframe src="{url}" style="width:0px; height:0px; border:0px; display:none;"></iframe>', unsafe_allow_html=True)
-                st.session_state["trigger_iframe"] = False
-                st.session_state["multi_iframe_urls"] = []
-        else:
-            st.warning(f"⚠️ 雲端資料庫中找不到與 '{search_id}' 相符的晶圓編號。")
-    else:
-        st.warning("⚠️ 無法載入 any 試算表資料，請確認工作表名稱是否為 'route_template'。")
-
 # =========================================================================
 # 📜 頁籤 2: Wafer History (主表顯示母表，點選後顯示該站點完整歷史紀錄)
 # =========================================================================
