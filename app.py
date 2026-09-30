@@ -313,7 +313,8 @@ with all_tabs[1]:
                 use_container_width=True, 
                 hide_index=True,
                 on_select="rerun", 
-                selection_mode="single-row"
+                selection_mode="single-row",
+                key="wafer_history_table"  # 👈 新增這行專屬識別碼
             )
             
             # 🎯 3. 判斷使用者是否有點選表格中的某一個站點 (Row)
