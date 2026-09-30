@@ -202,40 +202,45 @@ with all_tabs[0]:
 
             # 核心執行函數（支援傳入自訂的批註內容）
             def execute_stage_action(action_name, custom_comment=None, hold_note=None):
+                import time
                 now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                st.session_state["multi_iframe_urls"] = []
+                urls_to_send = []
                 
                 # 若非單純狀態變更，回填修改的參數
                 if action_name in ["Check out", "Scrap", "Key in data"]:
                     fields = {"Process Tool": edit_tool, "Recipe": edit_recipe, "Check point": edit_cp}
                     for f_name, f_val in fields.items():
                         if str(f_val).strip() != str(target_row.get(f_name, "")).strip():
-                            st.session_state["multi_iframe_urls"].append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={w_id}&step_no={s_no}&column_name={requests.utils.quote(f_name)}&new_value={requests.utils.quote(str(f_val).strip())}&callback=jQuery")
+                            urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={w_id}&step_no={s_no}&column_name={requests.utils.quote(f_name)}&new_value={requests.utils.quote(str(f_val).strip())}")
                 
                 final_comment = custom_comment if custom_comment is not None else user_comment.strip()
                 enc_comment = requests.utils.quote(final_comment)
                 enc_time = requests.utils.quote(now_str)
                 
-                # 🛑 乾淨的狀態發送邏輯：不再發送多餘的 column_name URL，全部交給 GAS 的 Action 處理
                 if action_name == "Check out":
-                    st.session_state["multi_iframe_urls"].append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={w_id}&step_no={s_no}&action=Check out&comment={enc_comment}&time={enc_time}")
-                    st.session_state["checkout_msg"] = f"✅ 正常出站成功！"
+                    urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={w_id}&step_no={s_no}&action=Check out&comment={enc_comment}&time={enc_time}")
                 elif action_name == "Scrap":
-                    st.session_state["multi_iframe_urls"].append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={w_id}&step_no={s_no}&action=Scrap&comment={enc_comment}&time={enc_time}")
-                    st.session_state["checkout_msg"] = f"🚨 晶圓報廢程序執行完畢！"
+                    urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={w_id}&step_no={s_no}&action=Scrap&comment={enc_comment}&time={enc_time}")
                 elif action_name == "Hold":
-                    st.session_state["multi_iframe_urls"].append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={w_id}&step_no={s_no}&action=Hold&comment={enc_comment}&time={enc_time}")
-                    st.session_state["checkout_msg"] = f"🟨 晶圓已成功設定為 HOLD 狀態！（資料寫入中，請稍候 3 秒點擊上方刷新）"
+                    urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={w_id}&step_no={s_no}&action=Hold&comment={enc_comment}&time={enc_time}")
                 elif action_name == "Unhold":
-                    st.session_state["multi_iframe_urls"].append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={w_id}&step_no={s_no}&action=Unhold&comment={enc_comment}&time={enc_time}")
-                    st.session_state["checkout_msg"] = f"🟦 晶圓已成功解除 HOLD 狀態！（資料寫入中，請稍候 3 秒點擊上方刷新）"
-                else:
-                    st.session_state["checkout_msg"] = f"✅ 參數修改儲存成功！"
+                    urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={w_id}&step_no={s_no}&action=Unhold&comment={enc_comment}&time={enc_time}")
                 
-                st.session_state["trigger_iframe"] = True
+                # 🛑 關鍵修改：直接使用 Python 發送請求到 GAS，不再依賴不穩定的網頁 iframe
+                with st.spinner(f"🚀 正在將 {action_name} 指令同步至雲端，請稍候..."):
+                    for url in urls_to_send:
+                        try:
+                            # timeout=15 確保如果有網路問題不會卡死，且會同步等待 GAS 處理完畢
+                            requests.get(url, timeout=15)
+                        except Exception as e:
+                            st.error(f"網路連線異常: {e}")
+                
+                st.success(f"✅ {action_name} 動作已成功寫入資料庫！")
+                time.sleep(1.2) # 讓成功訊息停留一秒，提升使用者體驗
+                
+                # 清除舊快取並重新整理畫面，這樣載入的絕對是最新狀態！
                 st.cache_data.clear()
                 st.rerun()
-
             # 🎯 建立設定 Hold 彈出對話框
             @st.dialog("📋 輸入 Hold Note (暫停原因)")
             def show_hold_dialog():
