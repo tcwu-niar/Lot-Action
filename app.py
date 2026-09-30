@@ -335,17 +335,16 @@ with all_tabs[1]:
                 ]
                 
                 if not step_logs.empty:
-                    # ⚠️ 關鍵修正：將 HTML 字串前方的空白縮排全數移除，避免 Markdown 誤判為程式碼區塊
-                    html_table = """
-<div style="font-size: 12pt;">
-    <table style="width: 100%; border-collapse: collapse; border: 1px solid #ddd;">
-        <tr style="background-color: #f8f9fa; color: #333;">
-            <th style="padding: 10px; border: 1px solid #ddd; text-align: center; width: 15%;">動作 (Action)</th>
-            <th style="padding: 10px; border: 1px solid #ddd; text-align: center; width: 25%;">日期與時間</th>
-            <th style="padding: 10px; border: 1px solid #ddd; text-align: left; width: 30%;">Hold Note (暫停原因)</th>
-            <th style="padding: 10px; border: 1px solid #ddd; text-align: left; width: 30%;">SPC data (過站備註)</th>
-        </tr>
-"""
+                    # ⚠️ 改用陣列收集 HTML，徹底根除 Python 縮排造成的 Markdown 誤判問題
+                    html_parts = []
+                    html_parts.append('<div style="font-size: 12pt;">')
+                    html_parts.append('<table style="width: 100%; border-collapse: collapse; border: 1px solid #ddd;">')
+                    html_parts.append('<tr style="background-color: #f8f9fa; color: #333;">')
+                    html_parts.append('<th style="padding: 10px; border: 1px solid #ddd; text-align: center; width: 15%;">動作 (Action)</th>')
+                    html_parts.append('<th style="padding: 10px; border: 1px solid #ddd; text-align: center; width: 25%;">日期與時間</th>')
+                    html_parts.append('<th style="padding: 10px; border: 1px solid #ddd; text-align: left; width: 30%;">Hold Note (暫停原因)</th>')
+                    html_parts.append('<th style="padding: 10px; border: 1px solid #ddd; text-align: left; width: 30%;">SPC data (過站備註)</th>')
+                    html_parts.append('</tr>')
                     
                     # 依序把該站點的「每一次」紀錄疊加進表格中
                     for _, log_row in step_logs.iterrows():
@@ -358,19 +357,17 @@ with all_tabs[1]:
                         bg_color = "#fff3cd" if action_val.upper() == "HOLD" else "#ffffff"
                         text_color = "#d9534f" if action_val.upper() == "HOLD" else "#000000"
                         
-                        html_table += f"""
-        <tr style="background-color: {bg_color};">
-            <td style="padding: 10px; border: 1px solid #ddd; text-align: center; font-weight: bold;">{action_val}</td>
-            <td style="padding: 10px; border: 1px solid #ddd; text-align: center;">{time_val}</td>
-            <td style="padding: 10px; border: 1px solid #ddd; text-align: left; color: {text_color}; font-weight: bold;">{hold_note_val}</td>
-            <td style="padding: 10px; border: 1px solid #ddd; text-align: left;">{spc_val}</td>
-        </tr>
-"""
+                        html_parts.append(f'<tr style="background-color: {bg_color};">')
+                        html_parts.append(f'<td style="padding: 10px; border: 1px solid #ddd; text-align: center; font-weight: bold;">{action_val}</td>')
+                        html_parts.append(f'<td style="padding: 10px; border: 1px solid #ddd; text-align: center;">{time_val}</td>')
+                        html_parts.append(f'<td style="padding: 10px; border: 1px solid #ddd; text-align: left; color: {text_color}; font-weight: bold;">{hold_note_val}</td>')
+                        html_parts.append(f'<td style="padding: 10px; border: 1px solid #ddd; text-align: left;">{spc_val}</td>')
+                        html_parts.append('</tr>')
                         
-                    html_table += """
-    </table>
-</div>
-"""
+                    html_parts.append('</table></div>')
+                    
+                    # 將陣列合併成一個沒有換行與縮排的連續字串
+                    html_table = "".join(html_parts)
                     st.markdown(html_table, unsafe_allow_html=True)
                 else:
                     st.info(f"✅ 該晶圓的第 {target_step_no} 步目前無任何歷史紀錄。")
