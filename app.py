@@ -201,7 +201,7 @@ with all_tabs[0]:
                 st.session_state["multi_iframe_urls"] = []
 
             # 核心執行函數（支援傳入自訂的批註內容）
-            def execute_stage_action(action_name, target_w_id, target_s_no, custom_comment=None):
+            def execute_stage_action(action_name, target_w_id, target_s_no, custom_comment=None, target_jump_step=None):
                 import time
                 now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 urls_to_send = []
@@ -224,13 +224,16 @@ with all_tabs[0]:
                     urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&action=Hold&comment={enc_comment}&time={enc_time}")
                 elif action_name == "Unhold":
                     urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&action=Unhold&comment={enc_comment}&time={enc_time}")
+                elif action_name == "Skip":
+                    # 🎯 跳站專屬 URL，附加 target_step 參數
+                    enc_target_step = requests.utils.quote(str(target_jump_step))
+                    urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&action=Skip&comment={enc_comment}&time={enc_time}&target_step={enc_target_step}")
                 
                 with st.spinner(f"🚀 正在同步 {action_name} 指令至雲端..."):
                     has_error = False
                     for url in urls_to_send:
                         try:
                             res = requests.get(url, timeout=15)
-                            # 🛑 攔截並顯示 GAS 回傳的錯誤，方便抓漏
                             if "Error" in res.text:
                                 st.error(f"❌ 雲端拒絕寫入，GAS 錯誤訊息: {res.text}")
                                 has_error = True
@@ -239,8 +242,8 @@ with all_tabs[0]:
                             has_error = True
                             
                     if has_error:
-                        time.sleep(4) # 讓使用者有時間看清楚錯誤訊息
-                        st.rerun()    # 中斷後重整
+                        time.sleep(4)
+                        st.rerun()
                         return
                 
                 st.success(f"✅ {action_name} 動作已成功寫入資料庫！")
@@ -248,7 +251,7 @@ with all_tabs[0]:
                 st.cache_data.clear()
                 st.rerun()
 
-            # 🎯 建立設定 Hold 彈出對話框 (強制接收變數)
+            # 🎯 建立設定 Hold 彈出對話框
             @st.dialog("📋 輸入 Hold Note (暫停原因)")
             def show_hold_dialog(target_w_id, target_s_no):
                 st.write(f"正在針對 晶圓編號 `{target_w_id}` 的 **第 {target_s_no} 步** 執行暫停指令。")
@@ -266,7 +269,7 @@ with all_tabs[0]:
                     if st.button("❌ 取消", use_container_width=True, key="cancel_hold_btn"):
                         st.rerun()
 
-            # 🎯 建立解除 Hold 彈出對話框 (強制接收變數)
+            # 🎯 建立解除 Hold 彈出對話框
             @st.dialog("🟦 輸入解除暫停原因 (Unhold Note)")
             def show_unhold_dialog(target_w_id, target_s_no):
                 st.write(f"正在針對 晶圓編號 `{target_w_id}` 的 **第 {target_s_no} 步** 執行解除暫停指令。")
@@ -283,6 +286,30 @@ with all_tabs[0]:
                     if st.button("❌ 取消", use_container_width=True, key="cancel_unhold_btn"):
                         st.rerun()
 
+            # 🎯 建立跳站 (Skip) 彈出對話框
+            @st.dialog("⏭️ 晶圓跳站設定 (Skip Station)")
+            def show_skip_dialog(target_w_id, target_s_no, available_steps):
+                st.write(f"晶圓 `{target_w_id}` 目前位於 **第 {target_s_no} 步**。")
+                
+                # 下拉選單提供所有站點供選擇
+                default_idx = available_steps.index(target_s_no) if target_s_no in available_steps else 0
+                jump_target = st.selectbox("請選擇要跳至哪一個 Step (可往前退回或往後跳過)：", options=available_steps, index=default_idx)
+                skip_reason = st.text_input("請輸入跳站原因：", placeholder="例如: 客戶要求變更製程、需重工...")
+                
+                c_ok, c_cancel = st.columns(2)
+                with c_ok:
+                    if st.button("👍 確認跳站", type="primary", use_container_width=True):
+                        if skip_reason.strip() == "":
+                            st.error("請填寫跳站原因！")
+                        elif jump_target == target_s_no:
+                            st.error("目標站點不能與當前站點相同！")
+                        else:
+                            # 觸發執行，將目標站點傳給後端
+                            execute_stage_action("Skip", target_w_id, target_s_no, custom_comment=f"[JUMP TO Step {jump_target}] {skip_reason.strip()}", target_jump_step=jump_target)
+                with c_cancel:
+                    if st.button("❌ 取消", use_container_width=True, key="cancel_skip_btn"):
+                        st.rerun()
+
             # 自動化流程中斷按鈕禁用防呆鎖定
             is_btn_disabled = True if has_scrap_occurred and current_idx > scrap_step_index else False
             is_wip_locked = True if is_currently_held else is_btn_disabled
@@ -294,12 +321,14 @@ with all_tabs[0]:
             with b3: 
                 if is_currently_held:
                     if st.button("🟦 解除暫停 (Release Hold)", type="primary", use_container_width=True, key="tab1_btn_unhd", disabled=is_btn_disabled):
-                        show_unhold_dialog(w_id, s_no) # 傳遞參數
+                        show_unhold_dialog(w_id, s_no)
                 else:
                     if st.button("🟨 設定暫停 (Hold)", use_container_width=True, key="tab1_btn_hd", disabled=is_btn_disabled):
-                        show_hold_dialog(w_id, s_no)   # 傳遞參數
+                        show_hold_dialog(w_id, s_no)
             with b4: 
-                st.button("🟦 跳過此站 (Skip)", use_container_width=True, key="tab1_btn_sk", disabled=is_wip_locked)
+                # 🛑 綁定跳站對話框
+                if st.button("🟦 跳過此站 (Skip)", use_container_width=True, key="tab1_btn_sk", disabled=is_wip_locked):
+                    show_skip_dialog(w_id, s_no, step_list)
             with b5:
                 if st.button("💾 儲存修改參數 (Key in data)", use_container_width=True, key="tab1_btn_ki", disabled=is_wip_locked): execute_stage_action("Key in data", w_id, s_no)
 # =========================================================================
