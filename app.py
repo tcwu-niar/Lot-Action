@@ -201,51 +201,58 @@ with all_tabs[0]:
                 st.session_state["multi_iframe_urls"] = []
 
             # 核心執行函數（支援傳入自訂的批註內容）
-            def execute_stage_action(action_name, custom_comment=None, hold_note=None):
+            def execute_stage_action(action_name, target_w_id, target_s_no, custom_comment=None):
                 import time
                 now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 urls_to_send = []
                 
-                # 若非單純狀態變更，回填修改的參數
                 if action_name in ["Check out", "Scrap", "Key in data"]:
                     fields = {"Process Tool": edit_tool, "Recipe": edit_recipe, "Check point": edit_cp}
                     for f_name, f_val in fields.items():
                         if str(f_val).strip() != str(target_row.get(f_name, "")).strip():
-                            urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={w_id}&step_no={s_no}&column_name={requests.utils.quote(f_name)}&new_value={requests.utils.quote(str(f_val).strip())}")
+                            urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&column_name={requests.utils.quote(f_name)}&new_value={requests.utils.quote(str(f_val).strip())}")
                 
                 final_comment = custom_comment if custom_comment is not None else user_comment.strip()
                 enc_comment = requests.utils.quote(final_comment)
                 enc_time = requests.utils.quote(now_str)
                 
                 if action_name == "Check out":
-                    urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={w_id}&step_no={s_no}&action=Check out&comment={enc_comment}&time={enc_time}")
+                    urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&action=Check out&comment={enc_comment}&time={enc_time}")
                 elif action_name == "Scrap":
-                    urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={w_id}&step_no={s_no}&action=Scrap&comment={enc_comment}&time={enc_time}")
+                    urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&action=Scrap&comment={enc_comment}&time={enc_time}")
                 elif action_name == "Hold":
-                    urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={w_id}&step_no={s_no}&action=Hold&comment={enc_comment}&time={enc_time}")
+                    urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&action=Hold&comment={enc_comment}&time={enc_time}")
                 elif action_name == "Unhold":
-                    urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={w_id}&step_no={s_no}&action=Unhold&comment={enc_comment}&time={enc_time}")
+                    urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&action=Unhold&comment={enc_comment}&time={enc_time}")
                 
-                # 🛑 關鍵修改：直接使用 Python 發送請求到 GAS，不再依賴不穩定的網頁 iframe
-                with st.spinner(f"🚀 正在將 {action_name} 指令同步至雲端，請稍候..."):
+                with st.spinner(f"🚀 正在同步 {action_name} 指令至雲端..."):
+                    has_error = False
                     for url in urls_to_send:
                         try:
-                            # timeout=15 確保如果有網路問題不會卡死，且會同步等待 GAS 處理完畢
-                            requests.get(url, timeout=15)
+                            res = requests.get(url, timeout=15)
+                            # 🛑 攔截並顯示 GAS 回傳的錯誤，方便抓漏
+                            if "Error" in res.text:
+                                st.error(f"❌ 雲端拒絕寫入，GAS 錯誤訊息: {res.text}")
+                                has_error = True
                         except Exception as e:
-                            st.error(f"網路連線異常: {e}")
+                            st.error(f"❌ 網路連線異常: {e}")
+                            has_error = True
+                            
+                    if has_error:
+                        time.sleep(4) # 讓使用者有時間看清楚錯誤訊息
+                        st.rerun()    # 中斷後重整
+                        return
                 
                 st.success(f"✅ {action_name} 動作已成功寫入資料庫！")
-                time.sleep(1.2) # 讓成功訊息停留一秒，提升使用者體驗
-                
-                # 清除舊快取並重新整理畫面，這樣載入的絕對是最新狀態！
+                time.sleep(1.2)
                 st.cache_data.clear()
                 st.rerun()
-            # 🎯 建立設定 Hold 彈出對話框
+
+            # 🎯 建立設定 Hold 彈出對話框 (強制接收變數)
             @st.dialog("📋 輸入 Hold Note (暫停原因)")
-            def show_hold_dialog():
-                st.write(f"正在針對 晶圓編號 `{w_id}` 的 **第 {s_no} 步** 執行暫停指令。")
-                hold_reason = st.text_input("請輸入 Hold Note (暫停原因)：", placeholder="例如: 機台異常溫度過高、等待客戶回覆確認...")
+            def show_hold_dialog(target_w_id, target_s_no):
+                st.write(f"正在針對 晶圓編號 `{target_w_id}` 的 **第 {target_s_no} 步** 執行暫停指令。")
+                hold_reason = st.text_input("請輸入 Hold Note (暫停原因)：", placeholder="例如: 機台異常溫度過高...")
                 st.warning("⚠️ 確認提交後，該站點將會鎖定，直到執行解除暫停。")
                 
                 c_ok, c_cancel = st.columns(2)
@@ -254,16 +261,16 @@ with all_tabs[0]:
                         if hold_reason.strip() == "":
                             st.error("請填寫原因再點擊確認！")
                         else:
-                            execute_stage_action("Hold", custom_comment=f"[HOLD] {hold_reason.strip()}", hold_note=hold_reason.strip())
+                            execute_stage_action("Hold", target_w_id, target_s_no, custom_comment=f"[HOLD] {hold_reason.strip()}")
                 with c_cancel:
                     if st.button("❌ 取消", use_container_width=True, key="cancel_hold_btn"):
                         st.rerun()
 
-            # 🎯 建立解除 Hold 彈出對話框
+            # 🎯 建立解除 Hold 彈出對話框 (強制接收變數)
             @st.dialog("🟦 輸入解除暫停原因 (Unhold Note)")
-            def show_unhold_dialog():
-                st.write(f"正在針對 晶圓編號 `{w_id}` 的 **第 {s_no} 步** 執行解除暫停指令。")
-                unhold_reason = st.text_input("請輸入解 Hold 原因：", placeholder="例如: 客戶已確認規格、機台已修復...")
+            def show_unhold_dialog(target_w_id, target_s_no):
+                st.write(f"正在針對 晶圓編號 `{target_w_id}` 的 **第 {target_s_no} 步** 執行解除暫停指令。")
+                unhold_reason = st.text_input("請輸入解 Hold 原因：", placeholder="例如: 客戶已確認規格...")
                 
                 c_ok, c_cancel = st.columns(2)
                 with c_ok:
@@ -271,7 +278,7 @@ with all_tabs[0]:
                         if unhold_reason.strip() == "":
                             st.error("請填寫原因再點擊確認！")
                         else:
-                            execute_stage_action("Unhold", custom_comment=f"[UNHOLD] {unhold_reason.strip()}")
+                            execute_stage_action("Unhold", target_w_id, target_s_no, custom_comment=f"[UNHOLD] {unhold_reason.strip()}")
                 with c_cancel:
                     if st.button("❌ 取消", use_container_width=True, key="cancel_unhold_btn"):
                         st.rerun()
@@ -281,21 +288,20 @@ with all_tabs[0]:
             is_wip_locked = True if is_currently_held else is_btn_disabled
 
             with b1:
-                if st.button("🟢 正常出站 (Check out)", type="primary", use_container_width=True, key="tab1_btn_co", disabled=is_wip_locked): execute_stage_action("Check out")
+                if st.button("🟢 正常出站 (Check out)", type="primary", use_container_width=True, key="tab1_btn_co", disabled=is_wip_locked): execute_stage_action("Check out", w_id, s_no)
             with b2:
-                if st.button("❌ 報廢處理 (Scrap)", type="secondary", use_container_width=True, key="tab1_btn_sc", disabled=is_wip_locked): execute_stage_action("Scrap")
+                if st.button("❌ 報廢處理 (Scrap)", type="secondary", use_container_width=True, key="tab1_btn_sc", disabled=is_wip_locked): execute_stage_action("Scrap", w_id, s_no)
             with b3: 
-                # 判斷狀態，切換為設定 Hold 或是 解除 Hold
                 if is_currently_held:
                     if st.button("🟦 解除暫停 (Release Hold)", type="primary", use_container_width=True, key="tab1_btn_unhd", disabled=is_btn_disabled):
-                        show_unhold_dialog()
+                        show_unhold_dialog(w_id, s_no) # 傳遞參數
                 else:
                     if st.button("🟨 設定暫停 (Hold)", use_container_width=True, key="tab1_btn_hd", disabled=is_btn_disabled):
-                        show_hold_dialog()
+                        show_hold_dialog(w_id, s_no)   # 傳遞參數
             with b4: 
                 st.button("🟦 跳過此站 (Skip)", use_container_width=True, key="tab1_btn_sk", disabled=is_wip_locked)
             with b5:
-                if st.button("💾 儲存修改參數 (Key in data)", use_container_width=True, key="tab1_btn_ki", disabled=is_wip_locked): execute_stage_action("Key in data")
+                if st.button("💾 儲存修改參數 (Key in data)", use_container_width=True, key="tab1_btn_ki", disabled=is_wip_locked): execute_stage_action("Key in data", w_id, s_no)
 # =========================================================================
 # 📜 頁籤 2: Wafer History (主表顯示母表，點選後顯示該站點完整歷史紀錄)
 # =========================================================================
