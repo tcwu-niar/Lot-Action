@@ -180,7 +180,11 @@ with all_tabs[0]:
             
             # 🎯 這裡會同步將批註（包含 Hold Note）顯示在最下方
             current_comment = str(target_row.get("Comments", "")).strip() or str(target_row.get("備註", "")).strip() or "暫無紀錄"
-            st.markdown(f"ℹ️ **目前此站點之歷史批註 / Hold Note：** `{current_comment}`")
+            current_hold_note = str(target_row.get("Hold Note", "")).strip() or "無"
+            
+            st.markdown(f"ℹ️ **目前此站點之歷史批註：** `{current_comment}`")
+            if current_hold_note != "無" or is_currently_held:
+                st.markdown(f"🛑 **目前此站點之 Hold Note：** `{current_hold_note}`")
 
             st.markdown("⚠️ **流程變更權限指令**")
             b1, b2, b3, b4, b5 = st.columns(5)
@@ -192,7 +196,7 @@ with all_tabs[0]:
                 st.session_state["multi_iframe_urls"] = []
 
             # 核心執行函數（支援傳入自訂的批註內容）
-            def execute_stage_action(action_name, custom_comment=None):
+            def execute_stage_action(action_name, custom_comment=None, hold_note=None):
                 now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 st.session_state["multi_iframe_urls"] = []
                 
@@ -216,9 +220,14 @@ with all_tabs[0]:
                     st.session_state["checkout_msg"] = f"🚨 晶圓報廢程序執行完畢｜該站點已被強制註記為 SCRP 狀態！"
                 elif action_name == "Hold":
                     st.session_state["multi_iframe_urls"].append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={w_id}&step_no={s_no}&action=Hold&comment={enc_comment}&time={enc_time}")
+                    # ✅ 寫入專屬的 Hold Note 欄位
+                    if hold_note:
+                        st.session_state["multi_iframe_urls"].append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={w_id}&step_no={s_no}&column_name=Hold Note&new_value={requests.utils.quote(hold_note)}&callback=jQuery")
                     st.session_state["checkout_msg"] = f"🟨 晶圓已成功設定為 HOLD 狀態！"
                 elif action_name == "Unhold":
                     st.session_state["multi_iframe_urls"].append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={w_id}&step_no={s_no}&action=Unhold&comment={enc_comment}&time={enc_time}")
+                    # ✅ 解除 Hold 時自動清空 Hold Note 欄位
+                    st.session_state["multi_iframe_urls"].append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={w_id}&step_no={s_no}&column_name=Hold Note&new_value=&callback=jQuery")
                     st.session_state["checkout_msg"] = f"🟦 晶圓已成功解除 HOLD 狀態（欄位將恢復為 INPR）！若上方表格未即時更新，請點擊上方「🔄 刷新雲端資料」按鈕。"
                 else:
                     st.session_state["checkout_msg"] = f"✅ 參數修改儲存成功！"
@@ -240,7 +249,8 @@ with all_tabs[0]:
                         if hold_reason.strip() == "":
                             st.error("請填寫原因再點擊確認！")
                         else:
-                            execute_stage_action("Hold", custom_comment=f"[HOLD] {hold_reason.strip()}")
+                            # 傳遞 hold_note 參數以更新獨立的 Hold Note 欄位
+                            execute_stage_action("Hold", custom_comment=f"[HOLD] {hold_reason.strip()}", hold_note=hold_reason.strip())
                 with c_cancel:
                     if r_btn := st.button("❌ 取消", use_container_width=True):
                         st.rerun()
