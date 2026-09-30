@@ -220,12 +220,13 @@ with all_tabs[0]:
                     urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&action=Check out&comment={enc_comment}&time={enc_time}")
                 elif action_name == "Scrap":
                     urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&action=Scrap&comment={enc_comment}&time={enc_time}")
+                elif action_name == "Unscrap":
+                    urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&action=Unscrap&comment={enc_comment}&time={enc_time}")
                 elif action_name == "Hold":
                     urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&action=Hold&comment={enc_comment}&time={enc_time}")
                 elif action_name == "Unhold":
                     urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&action=Unhold&comment={enc_comment}&time={enc_time}")
                 elif action_name == "Skip":
-                    # 🎯 跳站專屬 URL，附加 target_step 參數
                     enc_target_step = requests.utils.quote(str(target_jump_step))
                     urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&action=Skip&comment={enc_comment}&time={enc_time}&target_step={enc_target_step}")
                 
@@ -257,7 +258,6 @@ with all_tabs[0]:
                 st.write(f"正在針對 晶圓編號 `{target_w_id}` 的 **第 {target_s_no} 步** 執行暫停指令。")
                 hold_reason = st.text_input("請輸入 Hold Note (暫停原因)：", placeholder="例如: 機台異常溫度過高...")
                 st.warning("⚠️ 確認提交後，該站點將會鎖定，直到執行解除暫停。")
-                
                 c_ok, c_cancel = st.columns(2)
                 with c_ok:
                     if st.button("👍 確認 OK", type="primary", use_container_width=True):
@@ -266,15 +266,13 @@ with all_tabs[0]:
                         else:
                             execute_stage_action("Hold", target_w_id, target_s_no, custom_comment=f"[HOLD] {hold_reason.strip()}")
                 with c_cancel:
-                    if st.button("❌ 取消", use_container_width=True, key="cancel_hold_btn"):
-                        st.rerun()
+                    if st.button("❌ 取消", use_container_width=True, key="cancel_hold_btn"): st.rerun()
 
             # 🎯 建立解除 Hold 彈出對話框
             @st.dialog("🟦 輸入解除暫停原因 (Unhold Note)")
             def show_unhold_dialog(target_w_id, target_s_no):
                 st.write(f"正在針對 晶圓編號 `{target_w_id}` 的 **第 {target_s_no} 步** 執行解除暫停指令。")
                 unhold_reason = st.text_input("請輸入解 Hold 原因：", placeholder="例如: 客戶已確認規格...")
-                
                 c_ok, c_cancel = st.columns(2)
                 with c_ok:
                     if st.button("👍 確認解除", type="primary", use_container_width=True):
@@ -283,19 +281,46 @@ with all_tabs[0]:
                         else:
                             execute_stage_action("Unhold", target_w_id, target_s_no, custom_comment=f"[UNHOLD] {unhold_reason.strip()}")
                 with c_cancel:
-                    if st.button("❌ 取消", use_container_width=True, key="cancel_unhold_btn"):
-                        st.rerun()
+                    if st.button("❌ 取消", use_container_width=True, key="cancel_unhold_btn"): st.rerun()
+
+            # 🎯 建立報廢 (Scrap) 彈出對話框
+            @st.dialog("❌ 輸入報廢原因 (Scrap Note)")
+            def show_scrap_dialog(target_w_id, target_s_no):
+                st.write(f"正在針對 晶圓編號 `{target_w_id}` 的 **第 {target_s_no} 步** 執行報廢指令。")
+                scrap_reason = st.text_input("請輸入報廢原因：", placeholder="例如: 破片、線寬超規...")
+                st.warning("🚨 警告：確認提交後，該站點將標記為 SCRP，且後續流程將被強制鎖定！")
+                c_ok, c_cancel = st.columns(2)
+                with c_ok:
+                    if st.button("👍 確認報廢", type="primary", use_container_width=True):
+                        if scrap_reason.strip() == "":
+                            st.error("請填寫原因再點擊確認！")
+                        else:
+                            execute_stage_action("Scrap", target_w_id, target_s_no, custom_comment=f"[SCRAP] {scrap_reason.strip()}")
+                with c_cancel:
+                    if st.button("❌ 取消", use_container_width=True, key="cancel_scrap_btn"): st.rerun()
+
+            # 🎯 建立解除報廢 (Unscrap) 彈出對話框
+            @st.dialog("🔄 輸入解除報廢原因 (Unscrap Note)")
+            def show_unscrap_dialog(target_w_id, target_s_no):
+                st.write(f"正在針對 晶圓編號 `{target_w_id}` 的 **第 {target_s_no} 步** 執行解除報廢指令。")
+                unscrap_reason = st.text_input("請輸入解除報廢原因：", placeholder="例如: 誤判、經重測後合格...")
+                c_ok, c_cancel = st.columns(2)
+                with c_ok:
+                    if st.button("👍 確認復原", type="primary", use_container_width=True):
+                        if unscrap_reason.strip() == "":
+                            st.error("請填寫原因再點擊確認！")
+                        else:
+                            execute_stage_action("Unscrap", target_w_id, target_s_no, custom_comment=f"[UNSCRAP] {unscrap_reason.strip()}")
+                with c_cancel:
+                    if st.button("❌ 取消", use_container_width=True, key="cancel_unscrap_btn"): st.rerun()
 
             # 🎯 建立跳站 (Skip) 彈出對話框
             @st.dialog("⏭️ 晶圓跳站設定 (Skip Station)")
             def show_skip_dialog(target_w_id, target_s_no, available_steps):
                 st.write(f"晶圓 `{target_w_id}` 目前位於 **第 {target_s_no} 步**。")
-                
-                # 下拉選單提供所有站點供選擇
                 default_idx = available_steps.index(target_s_no) if target_s_no in available_steps else 0
                 jump_target = st.selectbox("請選擇要跳至哪一個 Step (可往前退回或往後跳過)：", options=available_steps, index=default_idx)
                 skip_reason = st.text_input("請輸入跳站原因：", placeholder="例如: 客戶要求變更製程、需重工...")
-                
                 c_ok, c_cancel = st.columns(2)
                 with c_ok:
                     if st.button("👍 確認跳站", type="primary", use_container_width=True):
@@ -304,11 +329,12 @@ with all_tabs[0]:
                         elif jump_target == target_s_no:
                             st.error("目標站點不能與當前站點相同！")
                         else:
-                            # 觸發執行，將目標站點傳給後端
                             execute_stage_action("Skip", target_w_id, target_s_no, custom_comment=f"[JUMP TO Step {jump_target}] {skip_reason.strip()}", target_jump_step=jump_target)
                 with c_cancel:
-                    if st.button("❌ 取消", use_container_width=True, key="cancel_skip_btn"):
-                        st.rerun()
+                    if st.button("❌ 取消", use_container_width=True, key="cancel_skip_btn"): st.rerun()
+
+            # 判斷是否為 SCRP 狀態，以切換報廢按鈕顯示邏輯
+            is_currently_scrapped = (str(target_row.get("First Check Out", "")).strip().upper() == "SCRP")
 
             # 自動化流程中斷按鈕禁用防呆鎖定
             is_btn_disabled = True if has_scrap_occurred and current_idx > scrap_step_index else False
@@ -317,7 +343,13 @@ with all_tabs[0]:
             with b1:
                 if st.button("🟢 正常出站 (Check out)", type="primary", use_container_width=True, key="tab1_btn_co", disabled=is_wip_locked): execute_stage_action("Check out", w_id, s_no)
             with b2:
-                if st.button("❌ 報廢處理 (Scrap)", type="secondary", use_container_width=True, key="tab1_btn_sc", disabled=is_wip_locked): execute_stage_action("Scrap", w_id, s_no)
+                # 🛑 變更點：報廢改為呼叫對話框，若該站已報廢則顯示「復原報廢」按鈕
+                if is_currently_scrapped:
+                    if st.button("🔄 復原報廢 (Unscrap)", type="primary", use_container_width=True, key="tab1_btn_unsc", disabled=is_btn_disabled):
+                        show_unscrap_dialog(w_id, s_no)
+                else:
+                    if st.button("❌ 報廢處理 (Scrap)", type="secondary", use_container_width=True, key="tab1_btn_sc", disabled=is_wip_locked):
+                        show_scrap_dialog(w_id, s_no)
             with b3: 
                 if is_currently_held:
                     if st.button("🟦 解除暫停 (Release Hold)", type="primary", use_container_width=True, key="tab1_btn_unhd", disabled=is_btn_disabled):
@@ -326,7 +358,6 @@ with all_tabs[0]:
                     if st.button("🟨 設定暫停 (Hold)", use_container_width=True, key="tab1_btn_hd", disabled=is_btn_disabled):
                         show_hold_dialog(w_id, s_no)
             with b4: 
-                # 🛑 綁定跳站對話框
                 if st.button("🟦 跳過此站 (Skip)", use_container_width=True, key="tab1_btn_sk", disabled=is_wip_locked):
                     show_skip_dialog(w_id, s_no, step_list)
             with b5:
