@@ -19,7 +19,9 @@ all_tabs = st.tabs(["📋 Full Route", "📜 Wafer History", "📤 Upload New Wa
 # 🔄 載入雲端最新資料的公用函數
 @st.cache_data(ttl=2)
 def fetch_route_data_via_csv(sheet_name="route_template"):
-    csv_url = "https://docs.google.com/spreadsheets/d/1RQt29KIb4rkVo4A-Y3GouMAezYEBakb1q283d1sgdZU/export?format=csv&gid=0"
+    # 🛑 關鍵修正：確保網址結尾使用的是 sheet={sheet_name} 來動態切換工作表
+    csv_url = f"https://docs.google.com/spreadsheets/d/1RQt29KIb4rkVo4A-Y3GouMAezYEBakb1q283d1sgdZU/gviz/tq?tqx=out:csv&sheet={sheet_name}"
+    
     try:
         response = requests.get(csv_url, timeout=8)
         if response.status_code == 200:
