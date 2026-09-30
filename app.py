@@ -303,7 +303,60 @@ with all_tabs[1]:
             
         if not filtered_logs.empty:
             st.markdown(f"📊 晶圓 **{search_id}** 的歷史生產追蹤稽核足跡：")
-            st.dataframe(filtered_logs, use_container_width=True, hide_index=True)
+            
+            # 🎯 1. 重設 index 確保 st.dataframe 回傳的 row 索引可以精確對應
+            display_logs = filtered_logs.copy().reset_index(drop=True)
+
+            # 🎯 2. 開啟單列選取功能 (on_select="rerun")
+            selected_log_rows = st.dataframe(
+                display_logs, 
+                use_container_width=True, 
+                hide_index=True,
+                on_select="rerun", 
+                selection_mode="single-row"
+            )
+            
+            # 🎯 3. 判斷使用者是否有點選表格中的某一個站點 (Row)
+            if selected_log_rows and selected_log_rows.get("selection", {}).get("rows"):
+                selected_idx = selected_log_rows["selection"]["rows"][0]
+                target_log_row = display_logs.iloc[selected_idx]
+                
+                # 取得該站點的 Hold Note
+                hold_note_val = str(target_log_row.get("Hold Note", "")).strip()
+                
+                # 檢查該站點是否有 Hold Note 紀錄
+                if hold_note_val and hold_note_val.lower() not in ["nan", "none", ""]:
+                    step_no_val = str(target_log_row.get("Step No.", "N/A"))
+                    
+                    # 抓取時間欄位：若有專屬的 Time 欄位則優先使用，若無則抓取 First Check Out
+                    time_val = str(target_log_row.get("Time", "")).strip()
+                    if not time_val or time_val.lower() in ["nan", "none"]:
+                        time_val = str(target_log_row.get("First Check Out", "無時間紀錄")).strip()
+                        
+                    st.markdown("---")
+                    st.markdown("### 🛑 該站點暫停紀錄詳細資訊 (Hold Information)")
+                    
+                    # 🎯 4. 使用 HTML 語法呈現 12pt 字體的整齊表格
+                    html_table = f"""
+                    <div style="font-size: 12pt;">
+                        <table style="width: 100%; border-collapse: collapse; border: 1px solid #ddd;">
+                            <tr style="background-color: #fff3cd; color: #856404;">
+                                <th style="padding: 10px; border: 1px solid #ddd; text-align: center; width: 15%;">站點 (Step No.)</th>
+                                <th style="padding: 10px; border: 1px solid #ddd; text-align: center; width: 25%;">Hold 日期與時間</th>
+                                <th style="padding: 10px; border: 1px solid #ddd; text-align: left; width: 60%;">Hold Note (暫停原因)</th>
+                            </tr>
+                            <tr>
+                                <td style="padding: 10px; border: 1px solid #ddd; text-align: center; font-weight: bold;">{step_no_val}</td>
+                                <td style="padding: 10px; border: 1px solid #ddd; text-align: center;">{time_val}</td>
+                                <td style="padding: 10px; border: 1px solid #ddd; text-align: left; color: #d9534f; font-weight: bold;">{hold_note_val}</td>
+                            </tr>
+                        </table>
+                    </div>
+                    """
+                    st.markdown(html_table, unsafe_allow_html=True)
+                else:
+                    st.markdown("---")
+                    st.info("✅ 此站點無 Hold (暫停) 紀錄。")
         else:
             st.info(f"ℹ️ 晶圓編號 {search_id} 目前在 wafer_status 中尚無紀錄。")
     else:
