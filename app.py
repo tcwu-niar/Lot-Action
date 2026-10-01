@@ -92,10 +92,13 @@ with all_tabs[0]:
             # 💡 【熔斷機制 2】計算在製站點 (WIP Step)
             wip_step_no = "9999"
             wip_row_idx = 9999
+            
+            # 動態抓取 Check out 欄位名稱 (防呆)
+            fco_col = next((c for c in filtered_df.columns if "check out" in str(c).lower()), "First Check Out")
+            
             if not has_scrap_occurred:
                 for idx, row in filtered_df.reset_index(drop=True).iterrows():
-                    co_val = str(row.get("First Check Out", "")).strip().upper()
-                    # 🎯 關鍵修正：將 BANK 納入停站判斷，這樣才不會跳到下一站！
+                    co_val = str(row.get(fco_col, "")).strip().upper()
                     if co_val in ["", "NAN", "INPR", "HOLD", "BANK"]:
                         wip_row_idx = idx
                         wip_step_no = str(row.get("Step No.", "1"))
@@ -105,35 +108,28 @@ with all_tabs[0]:
             display_df = filtered_df.copy().reset_index(drop=True)
             new_co_display = []
             for idx, r in display_df.iterrows():
-                co_val = str(r.get("First Check Out", "")).strip().upper()
+                co_val = str(r.get(fco_col, "")).strip().upper()
                 if co_val == "SCRP": new_co_display.append("SCRP")
                 elif co_val == "HOLD": new_co_display.append("HOLD")
                 elif co_val == "BANK": new_co_display.append("BANK")
                 elif idx > scrap_step_index: new_co_display.append("") 
                 elif idx == wip_row_idx: new_co_display.append("INPR")
-                else: new_co_display.append(co_val)
-            display_df["First Check Out"] = new_co_display
+                else: new_co_display.append(str(r.get(fco_col, ""))) 
+            display_df[fco_col] = new_co_display
 
-            # 💡 【多色彩鋪滿底色引擎】紅 / 綠 / 黃 / 灰 完美分層
+            # 💡 多色彩鋪滿底色引擎
             def highlight_dynamic_rows(row):
                 row_idx = row.name
-                co_cell_string = str(row["First Check Out"]).strip().upper()
-                step_cell_string = str(row["Step"]).strip()
+                co_cell_string = str(row[fco_col]).strip().upper()
                 
-                if co_cell_string == "SCRP":
-                    return ['background-color: #f8d7da; font-weight: bold; color: #721c24;'] * len(row)
-                elif co_cell_string == "HOLD":
-                    return ['background-color: #fff3cd; font-weight: bold; color: #856404;'] * len(row)
-                elif row_idx > scrap_step_index:
-                    return ['background-color: #e2e3e5; font-weight: normal; color: #6c757d;'] * len(row)  # 🎯 報廢後方步驟灰修
-                elif step_cell_string == wip_step_no.strip():
-                    return ['background-color: #c3e6cb; font-weight: bold; color: #155724;'] * len(row)
-                elif co_cell_string == "BANK":
-                    return ['background-color: #d1ecf1; font-weight: bold; color: #0c5460;'] * len(row)
+                if co_cell_string == "SCRP": return ['background-color: #f8d7da; font-weight: bold; color: #721c24;'] * len(row)
+                elif co_cell_string == "HOLD": return ['background-color: #fff3cd; font-weight: bold; color: #856404;'] * len(row)
+                elif co_cell_string == "BANK": return ['background-color: #d1ecf1; font-weight: bold; color: #0c5460;'] * len(row)
+                elif row_idx > scrap_step_index: return ['background-color: #e2e3e5; font-weight: normal; color: #6c757d;'] * len(row)
+                elif row_idx == wip_row_idx: return ['background-color: #c3e6cb; font-weight: bold; color: #155724;'] * len(row)
                 return [''] * len(row)
             
             styled_df = display_df.style.apply(highlight_dynamic_rows, axis=1)
-
             selected_rows = st.dataframe(
                 styled_df, use_container_width=True, hide_index=True, 
                 on_select="rerun", selection_mode="single-row"
