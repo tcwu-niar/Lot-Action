@@ -85,7 +85,7 @@ with all_tabs[0]:
             scrap_step_index = 9999
             
             for idx, row in filtered_df.reset_index(drop=True).iterrows():
-                co_val = str(row.get("First Check Out", "")).strip().upper()
+                co_val = str(row.get("Check out Time", "")).strip().upper()
                 if co_val == "SCRP":
                     has_scrap_occurred = True
                     scrap_step_index = idx
@@ -96,7 +96,7 @@ with all_tabs[0]:
             wip_row_idx = 9999
             
             # 動態抓取 Check out 欄位名稱 (防呆)
-            fco_col = next((c for c in filtered_df.columns if "check out" in str(c).lower()), "First Check Out")
+            fco_col = next((c for c in filtered_df.columns if "check out" in str(c).lower()), "Check out Time")
             
             if not has_scrap_occurred:
                 for idx, row in filtered_df.reset_index(drop=True).iterrows():
@@ -160,7 +160,7 @@ with all_tabs[0]:
             c4.metric("客戶團隊 (Customer)", str(target_row.get("Customer", "N/A")))
             
             # 檢查當前站點是否為 HOLD 狀態
-            current_status = str(target_row.get("First Check Out", "")).strip().upper()
+            current_status = str(target_row.get("Check out Time", "")).strip().upper()
             is_currently_held = (current_status == "HOLD")
 
             # 針對已中斷流程的防呆紅色警示
@@ -274,8 +274,8 @@ with all_tabs[0]:
                 with c_cancel:
                     if st.button("❌ 取消", use_container_width=True, key="cancel_bankout_btn"): st.rerun()
 
-            is_currently_scrapped = (str(target_row.get("First Check Out", "")).strip().upper() == "SCRP")
-            is_currently_banked = (str(target_row.get("First Check Out", "")).strip().upper() == "BANK")
+            is_currently_scrapped = (str(target_row.get("Check out Time", "")).strip().upper() == "SCRP")
+            is_currently_banked = (str(target_row.get("Check out Time", "")).strip().upper() == "BANK")
 
             is_btn_disabled = True if has_scrap_occurred and current_idx > scrap_step_index else False
             is_wip_locked = True if is_currently_held or is_currently_banked else is_btn_disabled
@@ -365,7 +365,7 @@ with all_tabs[1]:
                     # 依序把該站點的「每一次」紀錄疊加進表格中
                     for _, log_row in step_logs.iterrows():
                         action_val = str(log_row.get("Action", "")).strip()
-                        time_val = str(log_row.get("First Check Out", "")).strip()
+                        time_val = str(log_row.get("Check out Time", "")).strip()
                         hold_note_val = str(log_row.get("Hold Note", "")).strip()
                         spc_val = str(log_row.get("SPC data", "")).strip()
                         
@@ -401,14 +401,14 @@ with all_tabs[2]:
             df_upload = pd.read_csv(uploaded_file) if uploaded_file.name.endswith('.csv') else pd.read_excel(uploaded_file)
             df_upload = df_upload.fillna("")
             
-            # 🎯 智慧欄位尋找：確保能找到 Wafer ID 與 First Check Out 欄位
+            # 🎯 智慧欄位尋找：確保能找到 Wafer ID 與 Check out Time 欄位
             upload_wafer_col = next((c for c in df_upload.columns if str(c).strip().lower() in ["wafer id", "id", "wafer"]), "Wafer ID")
-            upload_fco_col = next((c for c in df_upload.columns if "check out" in str(c).lower()), "First Check Out")
+            upload_fco_col = next((c for c in df_upload.columns if "check out" in str(c).lower()), "Check out Time")
             
             if upload_wafer_col in df_upload.columns:
                 if upload_fco_col not in df_upload.columns:
-                    df_upload["First Check Out"] = ""
-                    upload_fco_col = "First Check Out"
+                    df_upload["Check out Time"] = ""
+                    upload_fco_col = "Check out Time"
                 
                 # 🎯 自動化邏輯：將每一片 Wafer 的第一站強制作為 BANK
                 for wid, group in df_upload.groupby(upload_wafer_col, sort=False):
@@ -450,7 +450,7 @@ with all_tabs[3]:
         shuttle_col = next((c for c in df_route.columns if "shuttle" in str(c).lower()), "Shuttle Name")
         owner_col = next((c for c in df_route.columns if "owner" in str(c).lower()), "Stage Owner")
         team_col = next((c for c in df_route.columns if "customer" in str(c).lower()), "Customer")
-        fco_col = next((c for c in df_route.columns if "check out" in str(c).lower()), "First Check Out")
+        fco_col = next((c for c in df_route.columns if "check out" in str(c).lower()), "Check out Time")
         desc_col = next((c for c in df_route.columns if "description" in str(c).lower()), "Step description")
         
         if wafer_col in df_route.columns:
@@ -625,7 +625,7 @@ with all_tabs[4]:
         shuttle_col = next((c for c in df_route_bank.columns if "shuttle" in str(c).lower()), "Shuttle Name")
         owner_col = next((c for c in df_route_bank.columns if "owner" in str(c).lower()), "Stage Owner")
         team_col = next((c for c in df_route_bank.columns if "customer" in str(c).lower()), "Customer")
-        fco_col = next((c for c in df_route_bank.columns if "check out" in str(c).lower()), "First Check Out")
+        fco_col = next((c for c in df_route_bank.columns if "check out" in str(c).lower()), "Check out Time")
         comment_col = next((c for c in df_route_bank.columns if str(c).strip().lower() in ["comments", "備註", "comment"]), "Comments")
         
         if wafer_col in df_route_bank.columns:
