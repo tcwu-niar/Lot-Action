@@ -14,7 +14,7 @@ MY_ORGANIZATION_GAS_URL = "https://script.google.com/macros/s/AKfycbxSpHeSlbCyMg
 SPREADSHEET_ID = "1RQt29KIb4rkVo4A-Y3GouMAezYEBakb1q283d1sgdZU"
 
 # 建立上方四大核心功能頁籤物件陣列 (確保存儲在單一變數中供後續解包)
-all_tabs = st.tabs(["📋 Full Route", "📜 Wafer History", "📤 Upload New Wafer", "🔄 Upload R/C"])
+all_tabs = st.tabs(["📋 Full Route", "📜 Wafer History", "📤 Upload New Wafer", "📊 Wafer Overview"])
 
 # 🔄 載入雲端最新資料的公用函數
 @st.cache_data(ttl=2)
@@ -504,18 +504,99 @@ with all_tabs[2]:
         except Exception as e:
             st.error(f"❌ 檔案解析失敗: {str(e)}")
 # =========================================================================
-# 🔄 頁籤 4: Upload R/C (🎯 完美對齊原本宣告的 all_tabs[3])
+# 📊 頁籤 4: Wafer Overview (取代原本的 Upload R/C)
 # =========================================================================
 with all_tabs[3]:
-    st.subheader("🔄 上傳 R/C 規範 (Upload Run Card Change)")
-    st.markdown("當晶圓需要執行晶圓重工 (Rework)、機台特例改道或特殊參數調整時，在此進行 R/C 規範單號綁定。")
-    with st.form("rc_form"):
-        rc_no = st.text_input("📋 Run Card 簽核單號 (R/C Number):", placeholder="例如: RC-2026-001")
-        rc_step = st.text_input("📍 影響之起迄製程步驟 (Affected Steps):", placeholder="例如: Step 4 - Step 9")
-        rc_reason = st.text_area("📝 改道製程說明與特別配方參數註記 (R/C Instruction):")
-        submitted = st.form_submit_button(label="提交 R/C 變更指令至雲端母表", use_container_width=True)
-        if submitted:
-            if rc_no and rc_reason:
-                st.success(f"✅ R/C 單號 {rc_no} 指令已成功暫存！")
-            else:
-                st.warning("⚠️ 請完整填寫 R/C 單號與改道說明。")
+    st.subheader("📊 晶圓生產總表與進度追蹤 (Wafer Overview)")
+    st.markdown("即時彙整目前線上所有晶圓的生產進度、站點位置與狀態。")
+
+    df_route, conn_status = fetch_route_data_via_csv("route_template")
+    
+    if not df_route.empty:
+        # 尋找實際的 Wafer ID 欄位名稱
+        wafer_col_list = [c for c in df_route.columns if "Wafer" in c or "wafer" in c]
+        if wafer_col_list:
+            wafer_col = wafer_col_list[0]
+            summary_data = []
+            
+            # 將母表依照 Wafer ID 進行群組化計算
+            for wafer, group in df_route.groupby(wafer_col, sort=False):
+                group = group.reset_index(drop=True)
+                total_steps = len(group)
+                
+                has_scrap = False
+                wip_idx = total_steps  # 預設為全數完成
+                wip_step_no = str(group.iloc[-1].get("Step No.", total_steps))
+                status_text = "🔵 Completed (已完工)"
+                
+                # 尋找是否報廢
+                for idx, row in group.iterrows():
+                    fco = str(row.get("First Check Out", "")).strip().upper()
+                    if fco == "SCRP":
+                        has_scrap = True
+                        wip_idx = idx
+                        wip_step_no = str(row.get("Step No.", ""))
+                        status_text = f"🔴 SCRAPPED: {row.get('Step Description', '')}"
+                        break
+                
+                # 若無報廢，尋找當前 WIP (在製) 站點
+                if not has_scrap:
+                    for idx, row in group.iterrows():
+                        fco = str(row.get("First Check Out", "")).strip().upper()
+                        if fco in ["", "NAN", "INPR", "HOLD"]:
+                            wip_idx = idx
+                            wip_step_no = str(row.get("Step No.", ""))
+                            if fco == "HOLD":
+                                status_text = f"🟡 HOLD: {row.get('Step Description', '')}"
+                            else:
+                                status_text = f"🟢 INPR: {row.get('Step Description', '')}"
+                            break
+                
+                # 計算進度百分比 (已完成站點數 / 總站點數)
+                progress_pct = int((wip_idx / total_steps) * 100) if total_steps > 0 else 0
+                
+                # 抓取第一列的通用資訊作為總表顯示
+                first_row = group.iloc[0]
+                lot_id = str(first_row.get("Shuttle Name", ""))
+                owner = str(first_row.get("Stage Owner", ""))
+                team = str(first_row.get("Customer", ""))
+                
+                summary_data.append({
+                    "Lot ID": lot_id,
+                    "Owner": owner,
+                    "團隊 (or split test)": team,
+                    "ID (Wafer)": wafer,
+                    "Step": f"{wip_step_no} / {total_steps}",
+                    "Status": status_text,
+                    "目前龍頭Wafer進度條": progress_pct
+                })
+            
+            summary_df = pd.DataFrame(summary_data)
+            
+            # 使用 Streamlit 原生 column_config 渲染帶有進度條的表格
+            st.dataframe(
+                summary_df,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "目前龍頭Wafer進度條": st.column_config.ProgressColumn(
+                        "目前龍頭Wafer進度條",
+                        help="晶圓完成進度百分比",
+                        format="%d%%",
+                        min_value=0,
+                        max_value=100,
+                    ),
+                    "Status": st.column_config.TextColumn(
+                        "Status",
+                        width="large"
+                    ),
+                    "Step": st.column_config.TextColumn(
+                        "Step",
+                        width="small"
+                    )
+                }
+            )
+        else:
+            st.warning("⚠️ 母表中找不到 Wafer ID 欄位，無法計算總表。")
+    else:
+        st.info("💡 目前雲端母表尚無資料可供計算。")
