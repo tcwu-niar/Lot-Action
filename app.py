@@ -387,58 +387,49 @@ with all_tabs[1]:
                     st.info(f"✅ 該晶圓的第 {target_step_no} 步目前無任何歷史紀錄。")
 
 # =========================================================================
-# 📤 頁籤 3: Upload New Wafer
+# 📤 頁籤 3: Upload New Wafer (批次上傳 & 自動帶入 BANK)
 # =========================================================================
 with all_tabs[2]:
     st.subheader("📤 上傳新晶圓路由母表 (Upload New Wafer)")
-    st.markdown("供製程整合工程師導入全新批次的半導體製造整合路由母體檔案。")
+    st.markdown("供製程整合工程師導入全新批次的生產路由檔案。上傳時系統會自動將每一片晶圓的第 1 站預設為 `BANK` (入庫) 狀態。")
     
-    uploaded_file = st.file_uploader("請選擇或拖曳要上傳的全新批次生產路由檔案 (.csv 或 .xlsx)", type=["csv", "xlsx"])
-    
+    uploaded_file = st.file_uploader("選擇全新批次生產路由檔案 (.csv 或 .xlsx)", type=["csv", "xlsx"])
     if uploaded_file is not None:
         try:
-            # 讀取上傳的檔案
             df_upload = pd.read_csv(uploaded_file) if uploaded_file.name.endswith('.csv') else pd.read_excel(uploaded_file)
-            # 將 NaN 替換為空字串，避免 JSON 序列化錯誤
             df_upload = df_upload.fillna("")
             
-            st.info("💡 **資料預覽與編輯**：您可以在下方表格中直接點擊儲存格修改資料，甚至可以勾選左側核取方塊來刪除整列。確認無誤後再點擊最下方的上傳按鈕。")
+            # 🎯 智慧欄位尋找：確保能找到 Wafer ID 與 First Check Out 欄位
+            upload_wafer_col = next((c for c in df_upload.columns if str(c).strip().lower() in ["wafer id", "id", "wafer"]), "Wafer ID")
+            upload_fco_col = next((c for c in df_upload.columns if "check out" in str(c).lower()), "First Check Out")
             
-            # 使用 data_editor 賦予表格線上編輯與刪減列的能力
-            edited_df = st.data_editor(
-                df_upload, 
-                use_container_width=True, 
-                num_rows="dynamic", # 允許使用者在前端增刪列
-                key="wafer_upload_editor"
-            )
+            if upload_wafer_col in df_upload.columns:
+                if upload_fco_col not in df_upload.columns:
+                    df_upload["First Check Out"] = ""
+                    upload_fco_col = "First Check Out"
+                
+                # 🎯 自動化邏輯：將每一片 Wafer 的第一站強制作為 BANK
+                for wid, group in df_upload.groupby(upload_wafer_col, sort=False):
+                    if not group.empty:
+                        first_idx = group.index[0]
+                        df_upload.at[first_idx, upload_fco_col] = "BANK"
+            
+            st.info("💡 **資料預覽與編輯**：第 1 站已自動設定為 BANK。您可直接點擊儲存格修改，確認無誤後再上傳。")
+            edited_df = st.data_editor(df_upload, use_container_width=True, num_rows="dynamic", key="wafer_upload_editor")
             
             st.markdown("---")
             if st.button("🚀 確認資料無誤，開始批量寫入雲端母表", type="primary", use_container_width=True):
-                import json
-                import time
-                
                 with st.spinner("⏳ 正在將資料打包發送至 Google Sheets，請稍候..."):
-                    # 將 DataFrame 轉換為字典陣列，以 JSON 格式準備發送 POST 請求
-                    payload = {
-                        "action": "bulk_upload",
-                        "data": edited_df.to_dict(orient="records")
-                    }
-                    
+                    payload = {"action": "bulk_upload", "data": edited_df.to_dict(orient="records")}
                     try:
-                        # 透過 POST 傳送大容量 JSON 資料
                         res = requests.post(MY_ORGANIZATION_GAS_URL, json=payload, timeout=30)
-                        
                         if res.status_code == 200 and "Success" in res.text:
-                            st.success("✅ 批量寫入成功！資料已附加至 route_template 工作表的最下方。")
+                            st.success("✅ 批量寫入成功！全新晶圓已入庫。")
                             time.sleep(2)
-                            # 清除快取並重整，確保 Tab 1 能抓到最新上傳的晶圓
                             st.cache_data.clear()
                             st.rerun()
-                        else:
-                            st.error(f"❌ 寫入失敗，雲端回傳：{res.text}")
-                    except Exception as e:
-                        st.error(f"❌ 網路發送失敗: {e}")
-                        
+                        else: st.error(f"❌ 寫入失敗：{res.text}")
+                    except Exception as e: st.error(f"❌ 網路發送失敗: {e}")
         except Exception as e:
             st.error(f"❌ 檔案解析失敗: {str(e)}")
             
@@ -618,13 +609,12 @@ with all_tabs[3]:
     else:
         st.info("💡 目前雲端母表尚無資料可供計算。")
 # =========================================================================
-# 📦 頁籤 5: Bank Wafers (入庫晶圓清單)
+# 📦 頁籤 5: Bank Wafers (入庫晶圓清單 & 批次 Kick off)
 # =========================================================================
 with all_tabs[4]:
     st.subheader("📦 入庫晶圓清單 (Banked Wafers)")
-    st.markdown("集中顯示目前被標記為 Bank (暫停執行) 的所有晶圓。若要出庫，請至 Full Route 搜尋該晶圓並點擊 Kick off。")
+    st.markdown("集中顯示目前被標記為 Bank (暫停執行/未下線) 的所有晶圓。**勾選左側框框並點擊下方按鈕，即可批次 Kick off (下貨出庫)**。")
 
-    # 沿用 Tab 4 的抓取邏輯 (確保抓到最新資料)
     df_route_bank, conn_status_bank = fetch_route_data_via_csv("route_template")
     
     if not df_route_bank.empty:
@@ -639,23 +629,19 @@ with all_tabs[4]:
         if wafer_col in df_route_bank.columns:
             banked_wafers = []
             
-            # 依照 Wafer ID 進行分組檢查
             for wid, w_group in df_route_bank.groupby(wafer_col, sort=False):
                 w_group = w_group.reset_index(drop=True)
-                
                 has_scrap = False
                 is_banked = False
                 bank_step_no = ""
                 bank_comment = ""
                 
-                # 檢查是否報廢
                 for idx, row in w_group.iterrows():
                     fco = str(row.get(fco_col, "")).strip().upper()
                     if fco == "SCRP":
                         has_scrap = True
                         break
                         
-                # 若無報廢，尋找當前 WIP 站點狀態是否為 BANK
                 if not has_scrap:
                     for idx, row in w_group.iterrows():
                         fco = str(row.get(fco_col, "")).strip().upper()
@@ -666,20 +652,68 @@ with all_tabs[4]:
                                 bank_comment = str(row.get(comment_col, ""))
                             break
                             
-                # 若為 Bank，加入顯示清單
                 if is_banked:
                     first_row = w_group.iloc[0]
                     banked_wafers.append({
+                        "🚀 選取 (Kick off)": False,  # 🎯 新增布林值供使用者勾選
                         "Shuttle Name": str(first_row.get(shuttle_col, "")),
                         "Owner": str(first_row.get(owner_col, "")),
                         "團隊 (or split test)": str(first_row.get(team_col, "")),
                         "ID (Wafer)": str(wid),
                         "Bank 停留站點": f"第 {bank_step_no} 步",
+                        "_Raw_Step": bank_step_no, # 隱藏欄位，傳 API 用
                         "備註 (Bank Note)": bank_comment
                     })
                     
             if banked_wafers:
-                st.dataframe(pd.DataFrame(banked_wafers), use_container_width=True, hide_index=True)
+                df_bank = pd.DataFrame(banked_wafers)
+                
+                # 🎯 使用 st.data_editor 讓使用者可以勾選
+                edited_bank_df = st.data_editor(
+                    df_bank.drop(columns=["_Raw_Step"]), # 畫面上隱藏原始 Step 數字
+                    hide_index=True,
+                    use_container_width=True,
+                    disabled=["Shuttle Name", "Owner", "團隊 (or split test)", "ID (Wafer)", "Bank 停留站點", "備註 (Bank Note)"]
+                )
+                
+                # 抓出被選取的 Wafer
+                selected_flags = edited_bank_df["🚀 選取 (Kick off)"].tolist()
+                selected_wids = [banked_wafers[i]["ID (Wafer)"] for i, flag in enumerate(selected_flags) if flag]
+                selected_steps = [banked_wafers[i]["_Raw_Step"] for i, flag in enumerate(selected_flags) if flag]
+                
+                if selected_wids:
+                    st.markdown("---")
+                    if st.button(f"🚀 將選取的 {len(selected_wids)} 片晶圓執行 Kick off (下線出庫)", type="primary"):
+                        urls_to_send = []
+                        now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        enc_time = requests.utils.quote(now_str)
+                        enc_comment = requests.utils.quote("[KICK OFF] 從 Bank Wafers 批次出庫下線")
+                        
+                        # 準備所有 API 網址
+                        for w, s in zip(selected_wids, selected_steps):
+                            url = f"{MY_ORGANIZATION_GAS_URL}?wafer_id={requests.utils.quote(str(w))}&step_no={requests.utils.quote(str(s))}&action=Kick%20off&comment={enc_comment}&time={enc_time}"
+                            urls_to_send.append(url)
+                            
+                        # 執行批次發送
+                        with st.spinner(f"⏳ 正在為 {len(selected_wids)} 片晶圓執行 Kick off，請稍候..."):
+                            has_err = False
+                            for url in urls_to_send:
+                                try:
+                                    res = requests.get(url, timeout=15)
+                                    if "Error" in res.text:
+                                        st.error(f"❌ 寫入失敗: {res.text}")
+                                        has_err = True
+                                except Exception as e:
+                                    st.error(f"❌ 網路連線異常: {e}")
+                                    has_err = True
+                                    
+                            if has_err:
+                                time.sleep(3)
+                            else:
+                                st.success("✅ 批次 Kick off 成功！已重返產線。")
+                                time.sleep(1.5)
+                            st.cache_data.clear()
+                            st.rerun()
             else:
                 st.success("🎉 目前產線上沒有任何晶圓處於 Bank (入庫) 狀態。")
         else:
