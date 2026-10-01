@@ -449,22 +449,60 @@ with all_tabs[1]:
                     st.info(f"✅ 該晶圓的第 {target_step_no} 步目前無任何歷史紀錄。")
 
 # =========================================================================
-# 📤 頁籤 3: Upload New Wafer (🎯 完美對齊原本宣告的 all_tabs[2])
+# 📤 頁籤 3: Upload New Wafer
 # =========================================================================
 with all_tabs[2]:
     st.subheader("📤 上傳新晶圓路由母表 (Upload New Wafer)")
     st.markdown("供製程整合工程師導入全新批次的半導體製造整合路由母體檔案。")
+    
     uploaded_file = st.file_uploader("請選擇或拖曳要上傳的全新批次生產路由檔案 (.csv 或 .xlsx)", type=["csv", "xlsx"])
+    
     if uploaded_file is not None:
         try:
-            preview_df = pd.read_csv(uploaded_file) if uploaded_file.name.endswith('.csv') else pd.read_excel(uploaded_file)
-            st.success("✅ 檔案解析成功！以下為前 5 筆製程路由資料預覽：")
-            st.dataframe(preview_df.head(5), use_container_width=True, hide_index=True)
-            if st.button("🚀 開始批量寫入 Google Sheets 資料庫", type="primary", use_container_width=True):
-                st.info("正在連線至國研院專案母表... 批量解析寫入模組初始化完成！")
+            # 讀取上傳的檔案
+            df_upload = pd.read_csv(uploaded_file) if uploaded_file.name.endswith('.csv') else pd.read_excel(uploaded_file)
+            # 將 NaN 替換為空字串，避免 JSON 序列化錯誤
+            df_upload = df_upload.fillna("")
+            
+            st.info("💡 **資料預覽與編輯**：您可以在下方表格中直接點擊儲存格修改資料，甚至可以勾選左側核取方塊來刪除整列。確認無誤後再點擊最下方的上傳按鈕。")
+            
+            # 使用 data_editor 賦予表格線上編輯與刪減列的能力
+            edited_df = st.data_editor(
+                df_upload, 
+                use_container_width=True, 
+                num_rows="dynamic", # 允許使用者在前端增刪列
+                key="wafer_upload_editor"
+            )
+            
+            st.markdown("---")
+            if st.button("🚀 確認資料無誤，開始批量寫入雲端母表", type="primary", use_container_width=True):
+                import json
+                import time
+                
+                with st.spinner("⏳ 正在將資料打包發送至 Google Sheets，請稍候..."):
+                    # 將 DataFrame 轉換為字典陣列，以 JSON 格式準備發送 POST 請求
+                    payload = {
+                        "action": "bulk_upload",
+                        "data": edited_df.to_dict(orient="records")
+                    }
+                    
+                    try:
+                        # 透過 POST 傳送大容量 JSON 資料
+                        res = requests.post(MY_ORGANIZATION_GAS_URL, json=payload, timeout=30)
+                        
+                        if res.status_code == 200 and "Success" in res.text:
+                            st.success("✅ 批量寫入成功！資料已附加至 route_template 工作表的最下方。")
+                            time.sleep(2)
+                            # 清除快取並重整，確保 Tab 1 能抓到最新上傳的晶圓
+                            st.cache_data.clear()
+                            st.rerun()
+                        else:
+                            st.error(f"❌ 寫入失敗，雲端回傳：{res.text}")
+                    except Exception as e:
+                        st.error(f"❌ 網路發送失敗: {e}")
+                        
         except Exception as e:
             st.error(f"❌ 檔案解析失敗: {str(e)}")
-
 # =========================================================================
 # 🔄 頁籤 4: Upload R/C (🎯 完美對齊原本宣告的 all_tabs[3])
 # =========================================================================
