@@ -514,14 +514,14 @@ with all_tabs[3]:
     df_route, conn_status = fetch_route_data_via_csv("route_template")
     
     if not df_route.empty:
-        # 動態尋找真實欄位名稱
-        wafer_col = next((c for c in df_route.columns if "wafer" in c.lower()), "Wafer ID")
-        step_col = next((c for c in df_route.columns if "step" in c.lower() and "no" in c.lower()), "Step No.")
-        shuttle_col = next((c for c in df_route.columns if "shuttle" in c.lower()), "Shuttle Name")
-        owner_col = next((c for c in df_route.columns if "owner" in c.lower()), "Stage Owner")
-        team_col = next((c for c in df_route.columns if "customer" in c.lower()), "Customer")
-        fco_col = next((c for c in df_route.columns if "check out" in c.lower()), "First Check Out")
-        desc_col = next((c for c in df_route.columns if "description" in c.lower()), "Step Description")
+        # 🎯 動態尋找真實欄位名稱 (修正精準比對，解決 Step 對不上的問題)
+        wafer_col = next((c for c in df_route.columns if str(c).strip().lower() in ["wafer id", "id", "wafer"]), "Wafer ID")
+        step_col = next((c for c in df_route.columns if str(c).strip().lower() in ["step", "step no.", "step no"]), "Step")
+        shuttle_col = next((c for c in df_route.columns if "shuttle" in str(c).lower()), "Shuttle Name")
+        owner_col = next((c for c in df_route.columns if "owner" in str(c).lower()), "Stage Owner")
+        team_col = next((c for c in df_route.columns if "customer" in str(c).lower()), "Customer")
+        fco_col = next((c for c in df_route.columns if "check out" in str(c).lower()), "First Check Out")
+        desc_col = next((c for c in df_route.columns if "description" in str(c).lower()), "Step description")
         
         if wafer_col in df_route.columns:
             html_table = """
@@ -533,7 +533,7 @@ with all_tabs[3]:
               .overview-table .owner-team-cell { text-align: center; vertical-align: middle; background-color: #ffffff; }
               .prog-wrapper { display: flex; align-items: center; width: 100%; }
               .prog-container { background-color: #e9ecef; border-radius: 4px; flex-grow: 1; height: 16px; overflow: hidden; }
-              .prog-bar { background-color: #28a745; height: 100%; border-radius: 4px; transition: width 0.4s ease; } /* 🟢 鎖定綠色 */
+              .prog-bar { background-color: #28a745; height: 100%; border-radius: 4px; transition: width 0.4s ease; }
               .prog-text { margin-left: 10px; font-size: 13px; font-weight: 500; min-width: 35px; text-align: right; }
               .status-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
             </style>
@@ -552,16 +552,14 @@ with all_tabs[3]:
             # 填補空值以防報錯
             df_route[shuttle_col] = df_route[shuttle_col].fillna("")
             
-            # 🎯 第一層：只依照 Shuttle Name 進行大群組合併 (避免 Stage Owner 不同導致列被拆散)
+            # 第一層：依照 Shuttle Name 進行大群組合併
             for shuttle, s_group in df_route.groupby(shuttle_col, sort=False):
                 if str(shuttle).strip() == "":
                     continue
                 
-                # 取該 Shuttle 第一筆資料的 Owner 與 Team 作為整個群組的代表
                 rep_owner = str(s_group.iloc[0].get(owner_col, ""))
                 rep_team = str(s_group.iloc[0].get(team_col, ""))
                 
-                # 第二層：尋找該 Shuttle 下包含幾片不同的 Wafer
                 wafer_list = s_group[wafer_col].unique()
                 rowspan_count = len(wafer_list)
                 
@@ -570,7 +568,6 @@ with all_tabs[3]:
                 
                 # 計算每片 Wafer 的當前最終進度
                 for wid in wafer_list:
-                    # 篩選出該片 Wafer 的所有站點
                     w_group = s_group[s_group[wafer_col] == wid].reset_index(drop=True)
                     total_steps = len(w_group)
                     
@@ -604,7 +601,6 @@ with all_tabs[3]:
                                     status_html = f'<span class="status-dot" style="background-color: #198754;"></span> INPR: {row.get(desc_col, "")}'
                                 break
                     
-                    # 計算進度百分比，並比較出該 Shuttle 最大的進度
                     progress_pct = int((wip_idx / total_steps) * 100) if total_steps > 0 else 0
                     max_progress_pct = max(max_progress_pct, progress_pct)
                     
@@ -618,7 +614,6 @@ with all_tabs[3]:
                 for i, w_data in enumerate(wafer_render_data):
                     html_table += "<tr>"
                     
-                    # 只在第一筆 Wafer 生成 rowspan，將 Shuttle, Owner, Team 合併為一大格
                     if i == 0:
                         html_table += f'<td class="merged-cell" rowspan="{rowspan_count}">{shuttle}</td>'
                         html_table += f'<td class="owner-team-cell" rowspan="{rowspan_count}">{rep_owner}</td>'
@@ -628,7 +623,6 @@ with all_tabs[3]:
                     html_table += f"<td>{w_data['step']}</td>"
                     html_table += f"<td>{w_data['status']}</td>"
                     
-                    # 龍頭進度條也只在第一筆合併顯示
                     if i == 0:
                         html_table += f"""
                         <td rowspan="{rowspan_count}">
@@ -643,7 +637,6 @@ with all_tabs[3]:
                     html_table += "</tr>"
             
             html_table += "</table>"
-            
             st.markdown(html_table, unsafe_allow_html=True)
             
         else:
