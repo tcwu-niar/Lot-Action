@@ -505,7 +505,7 @@ with all_tabs[2]:
             st.error(f"❌ 檔案解析失敗: {str(e)}")
             
 # =========================================================================
-# 📊 頁籤 4: Wafer Overview (HTML 合併儲存格與龍頭進度條版)
+# 📊 頁籤 4: Wafer Overview (精簡合併版 + 龍頭綠色進度條)
 # =========================================================================
 with all_tabs[3]:
     st.subheader("📊 晶圓生產總表與進度追蹤 (Wafer Overview)")
@@ -514,7 +514,7 @@ with all_tabs[3]:
     df_route, conn_status = fetch_route_data_via_csv("route_template")
     
     if not df_route.empty:
-        # 動態尋找真實欄位名稱 (防呆：避免隱藏空白導致抓不到)
+        # 動態尋找真實欄位名稱
         wafer_col = next((c for c in df_route.columns if "wafer" in c.lower()), "Wafer ID")
         step_col = next((c for c in df_route.columns if "step" in c.lower() and "no" in c.lower()), "Step No.")
         shuttle_col = next((c for c in df_route.columns if "shuttle" in c.lower()), "Shuttle Name")
@@ -524,7 +524,6 @@ with all_tabs[3]:
         desc_col = next((c for c in df_route.columns if "description" in c.lower()), "Step Description")
         
         if wafer_col in df_route.columns:
-            # 建立客製化 HTML 表格樣式 (包含專屬綠色進度條)
             html_table = """
             <style>
               .overview-table { width: 100%; border-collapse: collapse; font-family: sans-serif; font-size: 14px; margin-top: 10px; }
@@ -550,31 +549,34 @@ with all_tabs[3]:
               </tr>
             """
             
-            # 確保群組鍵沒有 NaN，否則 groupby 會遺漏資料
-            group_keys = [shuttle_col, owner_col, team_col]
-            df_route[group_keys] = df_route[group_keys].fillna("")
+            # 填補空值以防報錯
+            df_route[shuttle_col] = df_route[shuttle_col].fillna("")
             
-            # 第一層：依照 Shuttle, Owner, 團隊 進行群組化 (計算 rowspan)
-            for (shuttle, owner, team), group_df in df_route.groupby(group_keys, sort=False):
+            # 🎯 第一層：只依照 Shuttle Name 進行大群組合併 (避免 Stage Owner 不同導致列被拆散)
+            for shuttle, s_group in df_route.groupby(shuttle_col, sort=False):
                 if str(shuttle).strip() == "":
                     continue
-                    
-                # 第二層：在同一個大群組下，拆分出個別 Wafer
-                wafer_groups = list(group_df.groupby(wafer_col, sort=False))
-                rowspan_count = len(wafer_groups)
                 
-                # 暫存該群組內所有晶圓的資料，以利找出「進度最快」的數值
+                # 取該 Shuttle 第一筆資料的 Owner 與 Team 作為整個群組的代表
+                rep_owner = str(s_group.iloc[0].get(owner_col, ""))
+                rep_team = str(s_group.iloc[0].get(team_col, ""))
+                
+                # 第二層：尋找該 Shuttle 下包含幾片不同的 Wafer
+                wafer_list = s_group[wafer_col].unique()
+                rowspan_count = len(wafer_list)
+                
                 wafer_render_data = []
                 max_progress_pct = 0
                 
-                for wafer_id, w_group in wafer_groups:
-                    w_group = w_group.reset_index(drop=True)
+                # 計算每片 Wafer 的當前最終進度
+                for wid in wafer_list:
+                    # 篩選出該片 Wafer 的所有站點
+                    w_group = s_group[s_group[wafer_col] == wid].reset_index(drop=True)
                     total_steps = len(w_group)
                     
                     has_scrap = False
                     wip_idx = total_steps  
                     
-                    # 預設完工狀態判定
                     raw_last_step = str(w_group.iloc[-1].get(step_col, "")).replace(".0", "").strip()
                     wip_step_no = str(total_steps) if raw_last_step in ["", "nan", "NaN", "None"] else raw_last_step
                     status_html = '<span class="status-dot" style="background-color: #0d6efd;"></span> Completed (已完工)'
@@ -602,12 +604,12 @@ with all_tabs[3]:
                                     status_html = f'<span class="status-dot" style="background-color: #198754;"></span> INPR: {row.get(desc_col, "")}'
                                 break
                     
-                    # 計算該片 Wafer 的進度百分比，並更新龍頭最大值
+                    # 計算進度百分比，並比較出該 Shuttle 最大的進度
                     progress_pct = int((wip_idx / total_steps) * 100) if total_steps > 0 else 0
                     max_progress_pct = max(max_progress_pct, progress_pct)
                     
                     wafer_render_data.append({
-                        "id": wafer_id,
+                        "id": wid,
                         "step": f"{wip_step_no}/92",
                         "status": status_html
                     })
@@ -616,17 +618,17 @@ with all_tabs[3]:
                 for i, w_data in enumerate(wafer_render_data):
                     html_table += "<tr>"
                     
-                    # 只在第一筆 Wafer 生成 rowspan 的合併欄位 (Shuttle, Owner, Team)
+                    # 只在第一筆 Wafer 生成 rowspan，將 Shuttle, Owner, Team 合併為一大格
                     if i == 0:
                         html_table += f'<td class="merged-cell" rowspan="{rowspan_count}">{shuttle}</td>'
-                        html_table += f'<td class="owner-team-cell" rowspan="{rowspan_count}">{owner}</td>'
-                        html_table += f'<td class="owner-team-cell" rowspan="{rowspan_count}">{team}</td>'
+                        html_table += f'<td class="owner-team-cell" rowspan="{rowspan_count}">{rep_owner}</td>'
+                        html_table += f'<td class="owner-team-cell" rowspan="{rowspan_count}">{rep_team}</td>'
                         
                     html_table += f"<td>{w_data['id']}</td>"
                     html_table += f"<td>{w_data['step']}</td>"
                     html_table += f"<td>{w_data['status']}</td>"
                     
-                    # 只在第一筆 Wafer 生成 rowspan 的「龍頭進度條」欄位
+                    # 龍頭進度條也只在第一筆合併顯示
                     if i == 0:
                         html_table += f"""
                         <td rowspan="{rowspan_count}">
@@ -642,7 +644,6 @@ with all_tabs[3]:
             
             html_table += "</table>"
             
-            # 渲染原生 HTML 表格
             st.markdown(html_table, unsafe_allow_html=True)
             
         else:
