@@ -541,7 +541,7 @@ with all_tabs[3]:
     <th>Shuttle Name</th>
     <th>Owner</th>
     <th>團隊 (or split test)</th>
-    <th style="width: 90px; text-align: center;">已出貨片數</th>
+    <th style="width: 90px; text-align: center;">已出貨</th>
     <th>ID (Wafer)</th>
     <th>Step</th>
     <th>Status</th>
