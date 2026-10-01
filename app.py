@@ -509,7 +509,7 @@ with all_tabs[2]:
 # =========================================================================
 with all_tabs[3]:
     st.subheader("📊 晶圓生產總表與進度追蹤 (Wafer Overview)")
-    st.markdown("即時彙整線上所有晶圓的生產進度。相同批次將自動合併，並以進度最快的晶圓作為龍頭進度條指標 (已出貨晶圓不計入)。")
+    st.markdown("即時彙整線上所有晶圓的生產進度。相同批次與團隊將自動合併，並以進度最快的晶圓作為龍頭進度條指標 (已出貨晶圓不計入)。")
 
     df_route, conn_status = fetch_route_data_via_csv("route_template")
     
@@ -524,7 +524,6 @@ with all_tabs[3]:
         desc_col = next((c for c in df_route.columns if "description" in str(c).lower()), "Step description")
         
         if wafer_col in df_route.columns:
-            # 🎯 修正：移除前方所有縮排，避免被 Streamlit 誤認為 Markdown 程式碼區塊
             html_table = """<style>
 .overview-table { width: 100%; border-collapse: collapse; font-family: sans-serif; font-size: 14px; margin-top: 10px; }
 .overview-table th { background-color: #f8f9fa; padding: 12px 10px; border: 1px solid #dee2e6; text-align: left; font-weight: bold; color: #495057; }
@@ -549,14 +548,17 @@ with all_tabs[3]:
     <th style="width: 200px;">目前龍頭Wafer進度條</th>
   </tr>"""
             
+            # 填補空值以防報錯
             df_route[shuttle_col] = df_route[shuttle_col].fillna("")
+            df_route[team_col] = df_route[team_col].fillna("")
             
-            for shuttle, s_group in df_route.groupby(shuttle_col, sort=False):
+            # 🎯 關鍵修改：同時使用 Shuttle Name 與 團隊 (Customer) 進行群組化
+            # 這樣同一個 Shuttle 若有不同的 split test，就會被拆成不同的列顯示
+            for (shuttle, rep_team), s_group in df_route.groupby([shuttle_col, team_col], sort=False):
                 if str(shuttle).strip() == "":
                     continue
                 
                 rep_owner = str(s_group.iloc[0].get(owner_col, ""))
-                rep_team = str(s_group.iloc[0].get(team_col, ""))
                 
                 wafer_list = s_group[wafer_col].unique()
                 rowspan_count = len(wafer_list)
