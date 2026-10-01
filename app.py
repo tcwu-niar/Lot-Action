@@ -605,5 +605,3 @@ with all_tabs[3]:
             st.warning("⚠️ 母表中找不到 Wafer ID 欄位，無法計算總表。")
     else:
         st.info("💡 目前雲端母表尚無資料可供計算。")
-    else:
-        st.info("💡 目前雲端母表尚無資料可供計算。")
