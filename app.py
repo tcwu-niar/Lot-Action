@@ -509,7 +509,7 @@ with all_tabs[2]:
 # =========================================================================
 with all_tabs[3]:
     st.subheader("📊 晶圓生產總表與進度追蹤 (Wafer Overview)")
-    st.markdown("即時彙整線上所有晶圓的生產進度。相同批次與團隊將自動合併，並以進度最快的晶圓作為龍頭進度條指標 (已出貨晶圓不計入)。")
+    st.markdown("即時彙整線上所有晶圓的生產進度。相同批次會自動合併，若有不同團隊 (Split test) 則會展開分組計算進度 (已出貨晶圓不計入龍頭)。")
 
     df_route, conn_status = fetch_route_data_via_csv("route_template")
     
@@ -548,107 +548,122 @@ with all_tabs[3]:
     <th style="width: 200px;">目前龍頭Wafer進度條</th>
   </tr>"""
             
-            # 填補空值以防報錯
             df_route[shuttle_col] = df_route[shuttle_col].fillna("")
             df_route[team_col] = df_route[team_col].fillna("")
             
-            # 🎯 關鍵修改：同時使用 Shuttle Name 與 團隊 (Customer) 進行群組化
-            # 這樣同一個 Shuttle 若有不同的 split test，就會被拆成不同的列顯示
-            for (shuttle, rep_team), s_group in df_route.groupby([shuttle_col, team_col], sort=False):
+            # 第一層：只依照 Shuttle Name 群組化
+            for shuttle, s_group in df_route.groupby(shuttle_col, sort=False):
                 if str(shuttle).strip() == "":
                     continue
                 
                 rep_owner = str(s_group.iloc[0].get(owner_col, ""))
                 
-                wafer_list = s_group[wafer_col].unique()
-                rowspan_count = len(wafer_list)
+                # 計算整個 Shuttle 總共有幾片晶圓 (第一層合併儲存格高度)
+                shuttle_rowspan = sum(len(t_group[wafer_col].unique()) for _, t_group in s_group.groupby(team_col, sort=False))
+                is_first_in_shuttle = True
                 
-                wafer_render_data = []
-                max_progress_pct = 0
-                shipped_count = 0  
-                
-                for wid in wafer_list:
-                    w_group = s_group[s_group[wafer_col] == wid].reset_index(drop=True)
-                    total_steps = len(w_group)
+                # 第二層：在同一個 Shuttle 下，依照 團隊 (Team) 再度拆分群組
+                for team, t_group in s_group.groupby(team_col, sort=False):
+                    team_wafer_list = t_group[wafer_col].unique()
+                    team_rowspan = len(team_wafer_list) # 第二層合併儲存格高度
                     
-                    has_scrap = False
-                    wip_idx = total_steps  
+                    team_render_data = []
+                    max_progress_pct = 0
+                    shipped_count = 0  
                     
-                    raw_last_step = str(w_group.iloc[-1].get(step_col, "")).replace(".0", "").strip()
-                    wip_step_no = str(total_steps) if raw_last_step in ["", "nan", "NaN", "None"] else raw_last_step
-                    status_html = '<span class="status-dot" style="background-color: #0d6efd;"></span> Shipped (已出貨)'
-                    
-                    for idx, row in w_group.iterrows():
-                        fco = str(row.get(fco_col, "")).strip().upper()
-                        if fco == "SCRP":
-                            has_scrap = True
-                            wip_idx = idx
-                            raw_step = str(row.get(step_col, "")).replace(".0", "").strip()
-                            wip_step_no = str(idx + 1) if raw_step in ["", "nan", "NaN", "None"] else raw_step
-                            status_html = f'<span class="status-dot" style="background-color: #dc3545;"></span> SCRAPPED: {row.get(desc_col, "")}'
-                            break
-                            
-                    if not has_scrap:
+                    for wid in team_wafer_list:
+                        w_group = t_group[t_group[wafer_col] == wid].reset_index(drop=True)
+                        total_steps = len(w_group)
+                        
+                        has_scrap = False
+                        wip_idx = total_steps  
+                        
+                        raw_last_step = str(w_group.iloc[-1].get(step_col, "")).replace(".0", "").strip()
+                        wip_step_no = str(total_steps) if raw_last_step in ["", "nan", "NaN", "None"] else raw_last_step
+                        status_html = '<span class="status-dot" style="background-color: #0d6efd;"></span> Shipped (已出貨)'
+                        
                         for idx, row in w_group.iterrows():
                             fco = str(row.get(fco_col, "")).strip().upper()
-                            if fco in ["", "NAN", "INPR", "HOLD"]:
+                            if fco == "SCRP":
+                                has_scrap = True
                                 wip_idx = idx
                                 raw_step = str(row.get(step_col, "")).replace(".0", "").strip()
                                 wip_step_no = str(idx + 1) if raw_step in ["", "nan", "NaN", "None"] else raw_step
-                                if fco == "HOLD":
-                                    status_html = f'<span class="status-dot" style="background-color: #ffc107;"></span> HOLD: {row.get(desc_col, "")}'
-                                else:
-                                    status_html = f'<span class="status-dot" style="background-color: #198754;"></span> INPR: {row.get(desc_col, "")}'
+                                status_html = f'<span class="status-dot" style="background-color: #dc3545;"></span> SCRAPPED: {row.get(desc_col, "")}'
                                 break
-                    
-                    is_shipped = False
-                    if wip_idx == total_steps and not has_scrap:
-                        is_shipped = True
-                        shipped_count += 1
+                                
+                        if not has_scrap:
+                            for idx, row in w_group.iterrows():
+                                fco = str(row.get(fco_col, "")).strip().upper()
+                                if fco in ["", "NAN", "INPR", "HOLD"]:
+                                    wip_idx = idx
+                                    raw_step = str(row.get(step_col, "")).replace(".0", "").strip()
+                                    wip_step_no = str(idx + 1) if raw_step in ["", "nan", "NaN", "None"] else raw_step
+                                    if fco == "HOLD":
+                                        status_html = f'<span class="status-dot" style="background-color: #ffc107;"></span> HOLD: {row.get(desc_col, "")}'
+                                    else:
+                                        status_html = f'<span class="status-dot" style="background-color: #198754;"></span> INPR: {row.get(desc_col, "")}'
+                                    break
                         
-                    import re
-                    nums = re.findall(r'\d+', str(wip_step_no))
-                    step_num = int(nums[0]) if nums else 0
-                    progress_pct = int((step_num / 92) * 100)
-                    if progress_pct > 100: progress_pct = 100  
+                        is_shipped = False
+                        if wip_idx == total_steps and not has_scrap:
+                            is_shipped = True
+                            shipped_count += 1
+                            
+                        import re
+                        nums = re.findall(r'\d+', str(wip_step_no))
+                        step_num = int(nums[0]) if nums else 0
+                        progress_pct = int((step_num / 92) * 100)
+                        if progress_pct > 100: progress_pct = 100  
+                        
+                        if not is_shipped:
+                            max_progress_pct = max(max_progress_pct, progress_pct)
+                        
+                        team_render_data.append({
+                            "id": wid,
+                            "step": f"{wip_step_no}/92",
+                            "status": status_html
+                        })
                     
-                    if not is_shipped:
-                        max_progress_pct = max(max_progress_pct, progress_pct)
-                    
-                    wafer_render_data.append({
-                        "id": wid,
-                        "step": f"{wip_step_no}/92",
-                        "status": status_html
-                    })
-                
-                if shipped_count > 0 and shipped_count == len(wafer_list):
-                    max_progress_pct = 100
+                    if shipped_count > 0 and shipped_count == len(team_wafer_list):
+                        max_progress_pct = 100
 
-                for i, w_data in enumerate(wafer_render_data):
-                    html_table += "<tr>"
-                    
-                    if i == 0:
-                        html_table += f'<td class="merged-cell" rowspan="{rowspan_count}">{shuttle}</td>'
-                        html_table += f'<td class="owner-team-cell" rowspan="{rowspan_count}">{rep_owner}</td>'
-                        html_table += f'<td class="owner-team-cell" rowspan="{rowspan_count}">{rep_team}</td>'
-                        html_table += f'<td class="merged-cell" rowspan="{rowspan_count}">{shipped_count}</td>' 
+                    is_first_in_team = True
+
+                    # 渲染該團隊的每一片晶圓
+                    for w_data in team_render_data:
+                        html_table += "<tr>"
                         
-                    html_table += f"<td>{w_data['id']}</td>"
-                    html_table += f"<td>{w_data['step']}</td>"
-                    html_table += f"<td>{w_data['status']}</td>"
-                    
-                    if i == 0:
-                        html_table += f"""
-                        <td rowspan="{rowspan_count}">
-                          <div class="prog-wrapper">
-                            <div class="prog-container">
-                              <div class="prog-bar" style="width: {max_progress_pct}%;"></div>
-                            </div>
-                            <div class="prog-text">{max_progress_pct}%</div>
-                          </div>
-                        </td>
-                        """
-                    html_table += "</tr>"
+                        # 第一層合併：只有在整個 Shuttle 的最前面，才會產生 Shuttle Name 與 Owner 的儲存格
+                        if is_first_in_shuttle:
+                            html_table += f'<td class="merged-cell" rowspan="{shuttle_rowspan}">{shuttle}</td>'
+                            html_table += f'<td class="owner-team-cell" rowspan="{shuttle_rowspan}">{rep_owner}</td>'
+                            is_first_in_shuttle = False
+                            
+                        # 第二層合併：只有在每個 Team 的最前面，才會產生 Team 與 已出貨數 的儲存格
+                        if is_first_in_team:
+                            html_table += f'<td class="owner-team-cell" rowspan="{team_rowspan}">{team}</td>'
+                            html_table += f'<td class="merged-cell" rowspan="{team_rowspan}">{shipped_count}</td>'
+                            
+                        html_table += f"<td>{w_data['id']}</td>"
+                        html_table += f"<td>{w_data['step']}</td>"
+                        html_table += f"<td>{w_data['status']}</td>"
+                        
+                        # 龍頭進度條，跟隨第二層 (Team) 進行合併
+                        if is_first_in_team:
+                            html_table += f"""
+                            <td rowspan="{team_rowspan}">
+                              <div class="prog-wrapper">
+                                <div class="prog-container">
+                                  <div class="prog-bar" style="width: {max_progress_pct}%;"></div>
+                                </div>
+                                <div class="prog-text">{max_progress_pct}%</div>
+                              </div>
+                            </td>
+                            """
+                            is_first_in_team = False
+                            
+                        html_table += "</tr>"
             
             html_table += "</table>"
             st.markdown(html_table, unsafe_allow_html=True)
