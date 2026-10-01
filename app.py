@@ -524,31 +524,30 @@ with all_tabs[3]:
         desc_col = next((c for c in df_route.columns if "description" in str(c).lower()), "Step description")
         
         if wafer_col in df_route.columns:
-            html_table = """
-            <style>
-              .overview-table { width: 100%; border-collapse: collapse; font-family: sans-serif; font-size: 14px; margin-top: 10px; }
-              .overview-table th { background-color: #f8f9fa; padding: 12px 10px; border: 1px solid #dee2e6; text-align: left; font-weight: bold; color: #495057; }
-              .overview-table td { padding: 10px; border: 1px solid #dee2e6; text-align: left; vertical-align: middle; color: #212529; }
-              .overview-table .merged-cell { text-align: center; vertical-align: middle; font-weight: bold; background-color: #ffffff; color: #0d6efd; }
-              .overview-table .owner-team-cell { text-align: center; vertical-align: middle; background-color: #ffffff; }
-              .prog-wrapper { display: flex; align-items: center; width: 100%; }
-              .prog-container { background-color: #e9ecef; border-radius: 4px; flex-grow: 1; height: 16px; overflow: hidden; }
-              .prog-bar { background-color: #28a745; height: 100%; border-radius: 4px; transition: width 0.4s ease; }
-              .prog-text { margin-left: 10px; font-size: 13px; font-weight: 500; min-width: 35px; text-align: right; }
-              .status-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
-            </style>
-            <table class="overview-table">
-              <tr>
-                <th>Shuttle Name</th>
-                <th>Owner</th>
-                <th>團隊 (or split test)</th>
-                <th style="width: 90px; text-align: center;">已出貨</th>
-                <th>ID (Wafer)</th>
-                <th>Step</th>
-                <th>Status</th>
-                <th style="width: 200px;">目前龍頭Wafer進度條</th>
-              </tr>
-            """
+            # 🎯 修正：移除前方所有縮排，避免被 Streamlit 誤認為 Markdown 程式碼區塊
+            html_table = """<style>
+.overview-table { width: 100%; border-collapse: collapse; font-family: sans-serif; font-size: 14px; margin-top: 10px; }
+.overview-table th { background-color: #f8f9fa; padding: 12px 10px; border: 1px solid #dee2e6; text-align: left; font-weight: bold; color: #495057; }
+.overview-table td { padding: 10px; border: 1px solid #dee2e6; text-align: left; vertical-align: middle; color: #212529; }
+.overview-table .merged-cell { text-align: center; vertical-align: middle; font-weight: bold; background-color: #ffffff; color: #0d6efd; }
+.overview-table .owner-team-cell { text-align: center; vertical-align: middle; background-color: #ffffff; }
+.prog-wrapper { display: flex; align-items: center; width: 100%; }
+.prog-container { background-color: #e9ecef; border-radius: 4px; flex-grow: 1; height: 16px; overflow: hidden; }
+.prog-bar { background-color: #28a745; height: 100%; border-radius: 4px; transition: width 0.4s ease; }
+.prog-text { margin-left: 10px; font-size: 13px; font-weight: 500; min-width: 35px; text-align: right; }
+.status-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
+</style>
+<table class="overview-table">
+  <tr>
+    <th>Shuttle Name</th>
+    <th>Owner</th>
+    <th>團隊 (or split test)</th>
+    <th style="width: 90px; text-align: center;">已出貨片數</th>
+    <th>ID (Wafer)</th>
+    <th>Step</th>
+    <th>Status</th>
+    <th style="width: 200px;">目前龍頭Wafer進度條</th>
+  </tr>"""
             
             df_route[shuttle_col] = df_route[shuttle_col].fillna("")
             
@@ -600,7 +599,6 @@ with all_tabs[3]:
                                     status_html = f'<span class="status-dot" style="background-color: #198754;"></span> INPR: {row.get(desc_col, "")}'
                                 break
                     
-                    # 🎯 判斷是否出貨：走到最後一步且無報廢
                     is_shipped = False
                     if wip_idx == total_steps and not has_scrap:
                         is_shipped = True
@@ -612,7 +610,6 @@ with all_tabs[3]:
                     progress_pct = int((step_num / 92) * 100)
                     if progress_pct > 100: progress_pct = 100  
                     
-                    # 🎯 關鍵修改：只要未出貨，才將該片晶圓的進度拿去比對「最大龍頭進度」
                     if not is_shipped:
                         max_progress_pct = max(max_progress_pct, progress_pct)
                     
@@ -622,7 +619,6 @@ with all_tabs[3]:
                         "status": status_html
                     })
                 
-                # 🎯 防呆處理：如果這個 Shuttle 裡面所有的晶圓都已經出貨了，就把龍頭進度條手動設為 100%
                 if shipped_count > 0 and shipped_count == len(wafer_list):
                     max_progress_pct = 100
 
