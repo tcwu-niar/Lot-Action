@@ -95,14 +95,14 @@ with all_tabs[0]:
                 for idx, row in filtered_df.iterrows():
                     co_val = str(row.get("First Check Out", "")).strip().upper()
                     if co_val in ["", "NAN", "INPR", "HOLD"]:
-                        wip_step_no = str(row.get("Step No.", "1"))
+                        wip_step_no = str(row.get("Step", "1"))
                         break
             
             # 動態重組文字顯示欄位（實施 Scrap 後方站點清空空格機制與 HOLD 顯示）
             display_df = filtered_df.copy().reset_index(drop=True)
             new_co_display = []
             for idx, r in display_df.iterrows():
-                s_val = str(r.get("Step No.", "")).strip()
+                s_val = str(r.get("Step", "")).strip()
                 co_val = str(r.get("First Check Out", "")).strip()
                 
                 if co_val.upper() == "SCRP":
@@ -121,7 +121,7 @@ with all_tabs[0]:
             def highlight_dynamic_rows(row):
                 row_idx = row.name
                 co_cell_string = str(row["First Check Out"]).strip().upper()
-                step_cell_string = str(row["Step No."]).strip()
+                step_cell_string = str(row["Step"]).strip()
                 
                 if co_cell_string == "SCRP":
                     return ['background-color: #f8d7da; font-weight: bold; color: #721c24;'] * len(row)
@@ -144,7 +144,7 @@ with all_tabs[0]:
             # =========================================================================
             # 純 Python 清單安全定位，100% 繞過 InvalidIndexError
             default_row_idx = 0
-            step_list = [str(x).strip() for x in filtered_df['Step No.'].tolist()]
+            step_list = [str(x).strip() for x in filtered_df['Step'].tolist()]
             if wip_step_no.strip() in step_list:
                 default_row_idx = step_list.index(wip_step_no.strip())
             elif has_scrap_occurred:
@@ -158,7 +158,7 @@ with all_tabs[0]:
             
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("晶圓編號 (Wafer ID)", str(target_row.get("Wafer ID", "N/A")))
-            c2.metric("選定步驟 (Step No.)", f"第 {target_row.get('Step No.', 'N/A')} 步")
+            c2.metric("選定步驟 (Step)", f"第 {target_row.get('Step', 'N/A')} 步")
             c3.metric("負責模組 (Module)", str(target_row.get("Module", "N/A")))
             c4.metric("客戶團隊 (Customer)", str(target_row.get("Customer", "N/A")))
             
@@ -168,7 +168,7 @@ with all_tabs[0]:
 
             # 針對已中斷流程的防呆紅色警示
             if has_scrap_occurred and current_idx > scrap_step_index:
-                st.error(f"🚫 流程已中斷：該晶圓已於第 {filtered_df.iloc[scrap_step_index].get('Step No.')} 步報廢 (SCRP)。後續第 {target_row.get('Step No.')} 步已被系統強制鎖定封鎖！")
+                st.error(f"🚫 流程已中斷：該晶圓已於第 {filtered_df.iloc[scrap_step_index].get('Step')} 步報廢 (SCRP)。後續第 {target_row.get('Step')} 步已被系統強制鎖定封鎖！")
             elif is_currently_held:
                 st.warning(f"⚠️ 警告：目前此站點處於 ［HOLD 暫停製程］ 狀態。在解 Hold 恢復正常之前，無法執行出站或修改。")
             
@@ -193,7 +193,7 @@ with all_tabs[0]:
 
             st.markdown("⚠️ **流程變更權限指令**")
             b1, b2, b3, b4, b5 = st.columns(5)
-            w_id, s_no = str(target_row.get("Wafer ID", "")).strip(), str(target_row.get("Step No.", "")).strip()
+            w_id, s_no = str(target_row.get("Wafer ID", "")).strip(), str(target_row.get("Step", "")).strip()
             
             if "trigger_iframe" not in st.session_state:
                 st.session_state["trigger_iframe"], st.session_state["iframe_url"] = False, ""
@@ -398,7 +398,7 @@ with all_tabs[1]:
             # --- 2. 當點擊特定站點時，從歷史紀錄表中撈出該站點的「所有完整紀錄」 ---
             if selected_route_row and selected_route_row.get("selection", {}).get("rows"):
                 selected_idx = selected_route_row["selection"]["rows"][0]
-                target_step_no = str(display_route.iloc[selected_idx].get("Step No.", "")).strip()
+                target_step_no = str(display_route.iloc[selected_idx].get("Step", "")).strip()
                 
                 st.markdown("---")
                 st.markdown(f"### 🛑 第 {target_step_no} 步 - 歷史動作完整紀錄 (Action History)")
@@ -407,7 +407,7 @@ with all_tabs[1]:
                 log_wafer_col = [c for c in df_logs.columns if "Wafer" in c or "晶圓" in c][0]
                 step_logs = df_logs[
                     (df_logs[log_wafer_col].astype(str).str.upper() == search_id.upper()) & 
-                    (df_logs["Step No."].astype(str).str.strip() == target_step_no)
+                    (df_logs["Step"].astype(str).str.strip() == target_step_no)
                 ]
                 
                 if not step_logs.empty:
