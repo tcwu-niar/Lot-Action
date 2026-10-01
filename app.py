@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 import requests
 import datetime
+import time      # 👈 請確保最上方有加上這一行
+import re
 
 # =========================================================================
 # 1. 系統全域基礎配置與資料載入
