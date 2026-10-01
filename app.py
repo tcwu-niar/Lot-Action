@@ -199,8 +199,8 @@ with all_tabs[0]:
 
             # 核心執行函數（支援傳入自訂的批註內容）
             def execute_stage_action(action_name, target_w_id, target_s_no, custom_comment=None, target_jump_step=None):
-                import time
-                now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                tw_tz = datetime.timezone(datetime.timedelta(hours=8))
+                now_str = datetime.datetime.now(tw_tz).strftime("%Y-%m-%d %H:%M:%S")
                 urls_to_send = []
                 
                 if action_name in ["Check out", "Scrap", "Key in data"]:
@@ -687,7 +687,11 @@ with all_tabs[4]:
                     st.markdown("---")
                     if st.button(f"🚀 將選取的 {len(selected_wids)} 片晶圓執行 Kick off (下線出庫)", type="primary"):
                         urls_to_send = []
-                        now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        
+                        # 🎯 強制指定為台灣時間 (UTC+8)
+                        tw_tz = datetime.timezone(datetime.timedelta(hours=8))
+                        now_str = datetime.datetime.now(tw_tz).strftime("%Y-%m-%d %H:%M:%S")
+                        
                         enc_time = requests.utils.quote(now_str)
                         enc_comment = requests.utils.quote("[KICK OFF] 從 Bank Wafers 批次出庫下線")
                         
