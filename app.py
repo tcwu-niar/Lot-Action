@@ -48,44 +48,28 @@ def fetch_route_data_via_csv(sheet_name="route_template"):
     except Exception as e:
         return pd.DataFrame(), str(e)
 # =========================================================================
-# 📋 頁籤 1: Full Route (對齊 index 0 - 前半段：資料加載與雙色彩大表格)
+# 📋 頁籤 1: Full Route (過站與操作核心)
 # =========================================================================
-with all_tabs[0]:  
-    st.subheader("HETEROGENEOUS INTEGRATION & MANUFACTURING DIVISION")
+with all_tabs[0]:
+    target_w_id = st.text_input("🔍 請輸入或掃描晶圓 ID (Wafer ID):", key="search_w_id")
     
-    df, conn_status = fetch_route_data_via_csv("route_template")
-    if "Error" in conn_status or "HTTP" in conn_status:
-        st.error(f"❌ 雲端資料庫連線失敗 ({conn_status})")
-    else:
-        st.success("🟢 成功連結 Google Sheets 資料庫")
-    
-    col_input1, col_input2 = st.columns(2)
-    with col_input1:
-        search_id = st.text_input("🔍 請輸入或掃描晶圓 ID (Wafer ID):", value="LOT4-11F0", key="search_wafer_id")
-    with col_input2:
-        st.write(" ")
-        st.write(" ")
-        if st.button("🔄 刷新雲端資料", use_container_width=True, key="ta_refresh"):
-            st.cache_data.clear()
-            st.rerun()
-
-    st.markdown("🟢 *綠列代表在製中 (INPR)* | 🔴 *紅列代表已報廢 (SCRP)* | 🟡 *黃列代表已暫停 (HOLD)* | ⚪ *灰列代表因報廢已中斷鎖定*")
-    
-    if not df.empty:
-        wafer_col_list = [c for c in df.columns if "Wafer" in c or "wafer" in c]
-        if wafer_col_list:
-            actual_string_col = wafer_col_list[0]  # 🟢 精確提取純字串
-            filtered_df = df[df[actual_string_col].astype(str).str.upper() == search_id.upper()].copy()
-        else:
-            filtered_df = df.copy()
-
+    if target_w_id and not df_route.empty:
+        # 動態尋找真實欄位名稱
+        wafer_col = next((c for c in df_route.columns if str(c).strip().lower() in ["wafer id", "id", "wafer"]), "Wafer ID")
+        filtered_df = df_route[df_route[wafer_col].astype(str).str.strip().str.upper() == target_w_id.strip().upper()]
+        
         if not filtered_df.empty:
+            st.markdown("🟢 *綠列代表在製中 (INPR)* | 🔴 *紅列代表已報廢 (SCRP)* | 🟡 *黃列代表已暫停 (HOLD)* | 🧊 *藍列代表已入庫 (BANK)* | ⚪ *灰列代表因報廢已中斷鎖定*")
+            
+            # 動態抓取 Check out 欄位名稱 (防呆)
+            fco_col = next((c for c in filtered_df.columns if "check out" in str(c).lower()), "First Check Out")
+            
             # 💡 【熔斷機制 1】尋找是否有任何一站已經被標記為 SCRP
             has_scrap_occurred = False
             scrap_step_index = 9999
             
             for idx, row in filtered_df.reset_index(drop=True).iterrows():
-                co_val = str(row.get("Check out Time", "")).strip().upper()
+                co_val = str(row.get(fco_col, "")).strip().upper()
                 if co_val == "SCRP":
                     has_scrap_occurred = True
                     scrap_step_index = idx
@@ -94,10 +78,6 @@ with all_tabs[0]:
             # 💡 【熔斷機制 2】計算在製站點 (WIP Step)
             wip_step_no = "9999"
             wip_row_idx = 9999
-            
-            # 動態抓取 Check out 欄位名稱 (防呆)
-            fco_col = next((c for c in filtered_df.columns if "check out" in str(c).lower()), "Check out Time")
-            
             if not has_scrap_occurred:
                 for idx, row in filtered_df.reset_index(drop=True).iterrows():
                     co_val = str(row.get(fco_col, "")).strip().upper()
@@ -116,7 +96,7 @@ with all_tabs[0]:
                 elif co_val == "BANK": new_co_display.append("BANK")
                 elif idx > scrap_step_index: new_co_display.append("") 
                 elif idx == wip_row_idx: new_co_display.append("INPR")
-                else: new_co_display.append(str(r.get(fco_col, ""))) 
+                else: new_co_display.append(str(r.get(fco_col, "")))
             display_df[fco_col] = new_co_display
 
             # 💡 多色彩鋪滿底色引擎
@@ -132,176 +112,167 @@ with all_tabs[0]:
                 return [''] * len(row)
             
             styled_df = display_df.style.apply(highlight_dynamic_rows, axis=1)
+
             selected_rows = st.dataframe(
                 styled_df, use_container_width=True, hide_index=True, 
                 on_select="rerun", selection_mode="single-row"
             )
-           # =========================================================================
-            # 📋 頁籤 1: Full Route (後半段：定位與動態過站控制面板)
-            # =========================================================================
-            # 純 Python 清單安全定位，100% 繞過 InvalidIndexError
-            default_row_idx = 0
-            step_list = [str(x).strip() for x in filtered_df['Step'].tolist()]
-            if wip_step_no.strip() in step_list:
-                default_row_idx = step_list.index(wip_step_no.strip())
-            elif has_scrap_occurred:
-                default_row_idx = scrap_step_index
-            
-            current_idx = selected_rows["selection"]["rows"][0] if selected_rows and selected_rows.get("selection", {}).get("rows") else default_row_idx
-            target_row = filtered_df.iloc[current_idx]
-            
-            st.write("---")
-            st.subheader("⚙️ 當前過站與動態編輯面板 (Current Stage Action Panel)")
-            
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("晶圓編號 (Wafer ID)", str(target_row.get("Wafer ID", "N/A")))
-            c2.metric("選定步驟 (Step)", f"第 {target_row.get('Step', 'N/A')} 步")
-            c3.metric("負責模組 (Module)", str(target_row.get("Module", "N/A")))
-            c4.metric("客戶團隊 (Customer)", str(target_row.get("Customer", "N/A")))
-            
-            # 檢查當前站點是否為 HOLD 狀態
-            current_status = str(target_row.get("Check out Time", "")).strip().upper()
-            is_currently_held = (current_status == "HOLD")
 
-            # 針對已中斷流程的防呆紅色警示
-            if has_scrap_occurred and current_idx > scrap_step_index:
-                st.error(f"🚫 流程已中斷：該晶圓已於第 {filtered_df.iloc[scrap_step_index].get('Step')} 步報廢 (SCRP)。後續第 {target_row.get('Step')} 步已被系統強制鎖定封鎖！")
-            elif is_currently_held:
-                st.warning(f"⚠️ 警告：目前此站點處於 ［HOLD 暫停製程］ 狀態。在解 Hold 恢復正常之前，無法執行出站或修改。")
-            
-            st.info(f"💡 **目前站點描述**：{target_row.get('Step Description', 'N/A')}")
-            
-            st.markdown("✏️ **本站參數快速修改區（若不需變更請保持預設）**")
-            edit_col1, edit_col2, edit_col3 = st.columns(3)
-            with edit_col1: edit_tool = st.text_input("🔧 變更製程機台 (Process Tool):", value=str(target_row.get("Process Tool", "")))
-            with edit_col2: edit_recipe = st.text_input("🧪 變更機台配方 (Recipe):", value=str(target_row.get("Recipe", "")))
-            with edit_col3: edit_cp = st.text_input("🎯 變更檢驗點 (Check point):", value=str(target_row.get("Check point", "")))
-            
-            st.markdown("📝 **批註 / 機台數據回填 (SPC Data / Comments):**")
-            user_comment = st.text_input("請在此輸入過站紀錄...", key="user_comment_input", placeholder="例如: 正常過站資料回填")
-            
-            # 🎯 這裡會同步將批註（包含 Hold Note）顯示在最下方
-            current_comment = str(target_row.get("Comments", "")).strip() or str(target_row.get("備註", "")).strip() or "暫無紀錄"
-            current_hold_note = str(target_row.get("Hold Note", "")).strip() or "無"
-            
-            st.markdown(f"ℹ️ **目前此站點之歷史批註：** `{current_comment}`")
-            if current_hold_note != "無" or is_currently_held:
-                st.markdown(f"🛑 **目前此站點之 Hold Note：** `{current_hold_note}`")
+            # --- 下方操作面板區塊 ---
+            if len(selected_rows.selection.rows) > 0:
+                current_idx = selected_rows.selection.rows[0]
+                target_row = display_df.iloc[current_idx]
+                w_id = str(target_row.get(wafer_col, ""))
+                s_no = str(target_row.get("Step No.", ""))
+                
+                st.markdown(f"### ⚙️ 針對 `{w_id}` - 第 {s_no} 步進行操作")
+                
+                c_edit1, c_edit2, c_edit3 = st.columns(3)
+                with c_edit1: edit_tool = st.text_input("Process Tool", value=str(target_row.get("Process Tool", "")))
+                with c_edit2: edit_recipe = st.text_input("Recipe", value=str(target_row.get("Recipe", "")))
+                with c_edit3: edit_cp = st.text_input("Check point", value=str(target_row.get("Check point", "")))
+                
+                user_comment = st.text_input("📝 填寫備註 (選填，將記錄於雲端母表):")
+                step_list = display_df["Step No."].astype(str).tolist()
 
-            st.markdown("⚠️ **流程變更權限指令**")
-            b1, b2, b3, b4, b5, b6 = st.columns(6)
-            w_id, s_no = str(target_row.get("Wafer ID", "")).strip(), str(target_row.get("Step", "")).strip()
-            
-            if "trigger_iframe" not in st.session_state:
-                st.session_state["trigger_iframe"], st.session_state["iframe_url"] = False, ""
-            if "multi_iframe_urls" not in st.session_state:
-                st.session_state["multi_iframe_urls"] = []
-
-            # 核心執行函數（支援傳入自訂的批註內容）
-            def execute_stage_action(action_name, target_w_id, target_s_no, custom_comment=None, target_jump_step=None):
-                tw_tz = datetime.timezone(datetime.timedelta(hours=8))
-                now_str = datetime.datetime.now(tw_tz).strftime("%Y-%m-%d %H:%M:%S")
-                urls_to_send = []
-                
-                if action_name in ["Check out", "Scrap", "Key in data"]:
-                    fields = {"Process Tool": edit_tool, "Recipe": edit_recipe, "Check point": edit_cp}
-                    for f_name, f_val in fields.items():
-                        if str(f_val).strip() != str(target_row.get(f_name, "")).strip():
-                            urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&column_name={requests.utils.quote(f_name)}&new_value={requests.utils.quote(str(f_val).strip())}")
-                
-                final_comment = custom_comment if custom_comment is not None else user_comment.strip()
-                enc_comment = requests.utils.quote(final_comment)
-                enc_time = requests.utils.quote(now_str)
-                
-                # 處理傳送指令
-                if action_name == "Check out": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&action=Check out&comment={enc_comment}&time={enc_time}")
-                elif action_name == "Scrap": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&action=Scrap&comment={enc_comment}&time={enc_time}")
-                elif action_name == "Unscrap": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&action=Unscrap&comment={enc_comment}&time={enc_time}")
-                elif action_name == "Hold": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&action=Hold&comment={enc_comment}&time={enc_time}")
-                elif action_name == "Unhold": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&action=Unhold&comment={enc_comment}&time={enc_time}")
-                elif action_name == "Bank": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&action=Bank&comment={enc_comment}&time={enc_time}")
-                elif action_name == "Kick off": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&action=Kick off&comment={enc_comment}&time={enc_time}")
-                elif action_name == "Skip":
-                    enc_target_step = requests.utils.quote(str(target_jump_step))
-                    urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&action=Skip&comment={enc_comment}&time={enc_time}&target_step={enc_target_step}")
-                
-                with st.spinner(f"🚀 正在同步 {action_name} 指令至雲端..."):
-                    has_error = False
-                    for url in urls_to_send:
-                        try:
-                            res = requests.get(url, timeout=15)
-                            if "Error" in res.text:
-                                st.error(f"❌ 雲端拒絕寫入，GAS 錯誤訊息: {res.text}")
+                # --- API 執行核心函式 ---
+                def execute_stage_action(action_name, target_w_id, target_s_no, custom_comment=None, target_jump_step=None):
+                    # 🎯 強制指定為台灣時間 (UTC+8)
+                    tw_tz = datetime.timezone(datetime.timedelta(hours=8))
+                    now_str = datetime.datetime.now(tw_tz).strftime("%Y-%m-%d %H:%M:%S")
+                    
+                    urls_to_send = []
+                    
+                    if action_name in ["Check out", "Scrap", "Key in data"]:
+                        fields = {"Process Tool": edit_tool, "Recipe": edit_recipe, "Check point": edit_cp}
+                        for f_name, f_val in fields.items():
+                            if str(f_val).strip() != str(target_row.get(f_name, "")).strip():
+                                urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&column_name={requests.utils.quote(f_name)}&new_value={requests.utils.quote(str(f_val).strip())}")
+                    
+                    final_comment = custom_comment if custom_comment is not None else user_comment.strip()
+                    enc_comment = requests.utils.quote(final_comment)
+                    enc_time = requests.utils.quote(now_str)
+                    
+                    if action_name == "Check out": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&action=Check out&comment={enc_comment}&time={enc_time}")
+                    elif action_name == "Scrap": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&action=Scrap&comment={enc_comment}&time={enc_time}")
+                    elif action_name == "Unscrap": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&action=Unscrap&comment={enc_comment}&time={enc_time}")
+                    elif action_name == "Hold": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&action=Hold&comment={enc_comment}&time={enc_time}")
+                    elif action_name == "Unhold": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&action=Unhold&comment={enc_comment}&time={enc_time}")
+                    elif action_name == "Bank": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&action=Bank&comment={enc_comment}&time={enc_time}")
+                    elif action_name == "Kick off": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&action=Kick off&comment={enc_comment}&time={enc_time}")
+                    elif action_name == "Skip":
+                        enc_target_step = requests.utils.quote(str(target_jump_step))
+                        urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&action=Skip&comment={enc_comment}&time={enc_time}&target_step={enc_target_step}")
+                    
+                    with st.spinner(f"🚀 正在同步 {action_name} 指令至雲端..."):
+                        has_error = False
+                        for url in urls_to_send:
+                            try:
+                                res = requests.get(url, timeout=15)
+                                if "Error" in res.text:
+                                    st.error(f"❌ GAS 錯誤訊息: {res.text}")
+                                    has_error = True
+                            except Exception as e:
+                                st.error(f"❌ 網路異常: {e}")
                                 has_error = True
-                        except Exception as e:
-                            st.error(f"❌ 網路連線異常: {e}")
-                            has_error = True
-                    if has_error:
-                        time.sleep(4)
-                        st.rerun()
-                        return
-                
-                st.success(f"✅ {action_name} 動作已成功寫入資料庫！")
-                time.sleep(1.2)
-                st.cache_data.clear()
-                st.rerun()
+                        if has_error:
+                            time.sleep(4)
+                            st.rerun()
+                            return
+                    st.success(f"✅ {action_name} 動作成功寫入！")
+                    time.sleep(1.2)
+                    st.cache_data.clear()
+                    st.rerun()
 
-            # ... (保留原有的 Hold / Unhold / Scrap / Unscrap / Skip 彈出對話框設定) ...
+                # --- 彈出對話框定義 ---
+                @st.dialog("📋 輸入 Hold Note")
+                def show_hold_dialog(tw_id, ts_no):
+                    r = st.text_input("暫停原因：")
+                    c_ok, c_cancel = st.columns(2)
+                    if c_ok.button("👍 確認", type="primary", use_container_width=True): execute_stage_action("Hold", tw_id, ts_no, f"[HOLD] {r.strip()}")
+                    if c_cancel.button("❌ 取消", use_container_width=True): st.rerun()
 
-            # 🎯 建立 Bank (入庫) 彈出對話框
-            @st.dialog("📦 晶圓入庫 / 暫停執行 (Bank)")
-            def show_bank_dialog(target_w_id, target_s_no):
-                st.write(f"將晶圓 `{target_w_id}` 標記為 **Bank (入庫/暫時不執行)**。")
-                st.info("💡 入庫後，此晶圓將暫時從 Tab 4 (Wafer Overview) 總表中隱藏。")
-                bank_reason = st.text_input("請輸入 Bank 原因：", placeholder="例如: 尚未 Kick off, 暫存等待料件...")
-                c_ok, c_cancel = st.columns(2)
-                with c_ok:
-                    if st.button("👍 確認入庫", type="primary", use_container_width=True):
-                        execute_stage_action("Bank", target_w_id, target_s_no, custom_comment=f"[BANK] {bank_reason.strip()}")
-                with c_cancel:
-                    if st.button("❌ 取消", use_container_width=True, key="cancel_bank_btn"): st.rerun()
+                @st.dialog("🟦 輸入解 Hold 原因")
+                def show_unhold_dialog(tw_id, ts_no):
+                    r = st.text_input("解 Hold 原因：")
+                    c_ok, c_cancel = st.columns(2)
+                    if c_ok.button("👍 確認", type="primary", use_container_width=True): execute_stage_action("Unhold", tw_id, ts_no, f"[UNHOLD] {r.strip()}")
+                    if c_cancel.button("❌ 取消", use_container_width=True): st.rerun()
 
-            # 🎯 建立 Kick off (出庫) 彈出對話框
-            @st.dialog("🚀 晶圓出庫 / 開始執行 (Kick off)")
-            def show_bankout_dialog(target_w_id, target_s_no):
-                st.write(f"將晶圓 `{target_w_id}` **出庫 (Kick off)** 並恢復執行。")
-                st.info("💡 恢復後，此晶圓將重新出現在 Wafer Overview 總表中。")
-                bankout_reason = st.text_input("請輸入 Kick off 原因 (選填)：", placeholder="例如: 開始投片...")
-                c_ok, c_cancel = st.columns(2)
-                with c_ok:
-                    if st.button("👍 確認開始", type="primary", use_container_width=True):
-                        execute_stage_action("Kick off", target_w_id, target_s_no, custom_comment=f"[KICK OFF] {bankout_reason.strip()}")
-                with c_cancel:
-                    if st.button("❌ 取消", use_container_width=True, key="cancel_bankout_btn"): st.rerun()
+                @st.dialog("❌ 輸入報廢原因")
+                def show_scrap_dialog(tw_id, ts_no):
+                    r = st.text_input("報廢原因：")
+                    c_ok, c_cancel = st.columns(2)
+                    if c_ok.button("👍 確認報廢", type="primary", use_container_width=True): execute_stage_action("Scrap", tw_id, ts_no, f"[SCRAP] {r.strip()}")
+                    if c_cancel.button("❌ 取消", use_container_width=True): st.rerun()
 
-            is_currently_scrapped = (str(target_row.get("Check out Time", "")).strip().upper() == "SCRP")
-            is_currently_banked = (str(target_row.get("Check out Time", "")).strip().upper() == "BANK")
+                @st.dialog("🔄 輸入解除報廢原因")
+                def show_unscrap_dialog(tw_id, ts_no):
+                    r = st.text_input("復原原因：")
+                    c_ok, c_cancel = st.columns(2)
+                    if c_ok.button("👍 確認復原", type="primary", use_container_width=True): execute_stage_action("Unscrap", tw_id, ts_no, f"[UNSCRAP] {r.strip()}")
+                    if c_cancel.button("❌ 取消", use_container_width=True): st.rerun()
 
-            is_btn_disabled = True if has_scrap_occurred and current_idx > scrap_step_index else False
-            is_wip_locked = True if is_currently_held or is_currently_banked else is_btn_disabled
+                @st.dialog("📦 晶圓入庫 (Bank)")
+                def show_bank_dialog(tw_id, ts_no):
+                    st.info("💡 入庫後，晶圓將暫時從 Wafer Overview 中隱藏。")
+                    r = st.text_input("Bank 原因：")
+                    c_ok, c_cancel = st.columns(2)
+                    if c_ok.button("👍 確認入庫", type="primary", use_container_width=True): execute_stage_action("Bank", tw_id, ts_no, f"[BANK] {r.strip()}")
+                    if c_cancel.button("❌ 取消", use_container_width=True): st.rerun()
 
-            with b1:
-                if st.button("🟢 正常出站 (Check out)", type="primary", use_container_width=True, disabled=is_wip_locked): execute_stage_action("Check out", w_id, s_no)
-            with b2:
-                if is_currently_scrapped:
-                    if st.button("🔄 復原報廢 (Unscrap)", type="primary", use_container_width=True, disabled=is_btn_disabled): show_unscrap_dialog(w_id, s_no)
-                else:
-                    if st.button("❌ 報廢處理 (Scrap)", type="secondary", use_container_width=True, disabled=is_wip_locked): show_scrap_dialog(w_id, s_no)
-            with b3: 
-                if is_currently_held:
-                    if st.button("🟦 解除暫停 (Release Hold)", type="primary", use_container_width=True, disabled=is_btn_disabled): show_unhold_dialog(w_id, s_no)
-                else:
-                    if st.button("🟨 設定暫停 (Hold)", use_container_width=True, disabled=is_wip_locked): show_hold_dialog(w_id, s_no)
-            with b4: 
-                if st.button("🟦 跳過此站 (Skip)", use_container_width=True, disabled=is_wip_locked): show_skip_dialog(w_id, s_no, step_list)
-            with b5:
-                if st.button("💾 儲存修改參數", use_container_width=True, disabled=is_wip_locked): execute_stage_action("Key in data", w_id, s_no)
-            with b6:
-                # 🎯 切換顯示 Kick off 或 Bank
-                if is_currently_banked:
-                    if st.button("🚀 Kick off (出庫)", type="primary", use_container_width=True, disabled=is_btn_disabled): show_bankout_dialog(w_id, s_no)
-                else:
-                    if st.button("📦 Bank (入庫隱藏)", use_container_width=True, disabled=is_wip_locked): show_bank_dialog(w_id, s_no)
+                @st.dialog("🚀 晶圓出庫 (Kick off)")
+                def show_bankout_dialog(tw_id, ts_no):
+                    st.info("💡 恢復後，晶圓將重新出現於 Wafer Overview 中。")
+                    r = st.text_input("Kick off 原因：")
+                    c_ok, c_cancel = st.columns(2)
+                    if c_ok.button("👍 確認開始", type="primary", use_container_width=True): execute_stage_action("Kick off", tw_id, ts_no, f"[KICK OFF] {r.strip()}")
+                    if c_cancel.button("❌ 取消", use_container_width=True): st.rerun()
+
+                @st.dialog("⏭️ 晶圓跳站")
+                def show_skip_dialog(tw_id, ts_no, avail_steps):
+                    default_idx = avail_steps.index(ts_no) if ts_no in avail_steps else 0
+                    j_target = st.selectbox("跳至：", options=avail_steps, index=default_idx)
+                    r = st.text_input("跳站原因：")
+                    c_ok, c_cancel = st.columns(2)
+                    if c_ok.button("👍 確認跳站", type="primary", use_container_width=True):
+                        execute_stage_action("Skip", tw_id, ts_no, f"[JUMP TO Step {j_target}] {r.strip()}", j_target)
+                    if c_cancel.button("❌ 取消", use_container_width=True): st.rerun()
+
+                # --- 狀態按鈕判定 ---
+                fco_status = str(target_row.get(fco_col, "")).strip().upper()
+                is_currently_scrapped = (fco_status == "SCRP")
+                is_currently_held = (fco_status == "HOLD")
+                is_currently_banked = (fco_status == "BANK")
+
+                is_btn_disabled = True if has_scrap_occurred and current_idx > scrap_step_index else False
+                is_wip_locked = True if is_currently_held or is_currently_banked else is_btn_disabled
+
+                st.markdown("---")
+                b1, b2, b3, b4, b5, b6 = st.columns(6)
+                with b1:
+                    if st.button("🟢 正常出站 (Check out)", type="primary", use_container_width=True, disabled=is_wip_locked): execute_stage_action("Check out", w_id, s_no)
+                with b2:
+                    if is_currently_scrapped:
+                        if st.button("🔄 復原報廢", type="primary", use_container_width=True, disabled=is_btn_disabled): show_unscrap_dialog(w_id, s_no)
+                    else:
+                        if st.button("❌ 報廢處理 (Scrap)", type="secondary", use_container_width=True, disabled=is_wip_locked): show_scrap_dialog(w_id, s_no)
+                with b3: 
+                    if is_currently_held:
+                        if st.button("🟦 解除暫停", type="primary", use_container_width=True, disabled=is_btn_disabled): show_unhold_dialog(w_id, s_no)
+                    else:
+                        if st.button("🟨 設定暫停", use_container_width=True, disabled=is_wip_locked): show_hold_dialog(w_id, s_no)
+                with b4: 
+                    if st.button("🟦 跳過此站", use_container_width=True, disabled=is_wip_locked): show_skip_dialog(w_id, s_no, step_list)
+                with b5:
+                    if st.button("💾 儲存修改參數", use_container_width=True, disabled=is_wip_locked): execute_stage_action("Key in data", w_id, s_no)
+                with b6:
+                    if is_currently_banked:
+                        if st.button("🚀 Kick off (出庫)", type="primary", use_container_width=True, disabled=is_btn_disabled): show_bankout_dialog(w_id, s_no)
+                    else:
+                        if st.button("📦 Bank (入庫隱藏)", use_container_width=True, disabled=is_wip_locked): show_bank_dialog(w_id, s_no)
+        else:
+            st.warning("查無此 Wafer ID，請重新確認。")
 # =========================================================================
 # 📜 頁籤 2: Wafer History (主表顯示母表，點選後顯示該站點完整歷史紀錄)
 # =========================================================================
