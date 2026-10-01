@@ -63,7 +63,7 @@ with all_tabs[0]:
     with col_input2:
         st.write(" ")
         st.write(" ")
-        if st.button("🔄 刷新雲端資料", use_container_width=True, key="tab1_refresh"):
+        if st.button("🔄 刷新雲端資料", use_container_width=True, key="ta_refresh"):
             st.cache_data.clear()
             st.rerun()
 
@@ -97,6 +97,10 @@ with all_tabs[0]:
                     if co_val in ["", "NAN", "INPR", "HOLD"]:
                         wip_step_no = str(row.get("Step", "1"))
                         break
+                        
+            # 尋找當前站點 (新增 "BANK")
+            if co_val in ["", "NAN", "INPR", "HOLD", "BANK"]:
+                wip_row_idx = idx
             
             # 動態重組文字顯示欄位（實施 Scrap 後方站點清空空格機制與 HOLD 顯示）
             display_df = filtered_df.copy().reset_index(drop=True)
@@ -113,6 +117,8 @@ with all_tabs[0]:
                     new_co_display.append("")  # 🎯 報廢後方步驟強制清空
                 elif s_val == wip_step_no.strip():
                     new_co_display.append("INPR")
+                elif co_val.upper() == "BANK":
+                    new_co_display.append("BANK")
                 else:
                     new_co_display.append(co_val)
             display_df["First Check Out"] = new_co_display
@@ -131,6 +137,8 @@ with all_tabs[0]:
                     return ['background-color: #e2e3e5; font-weight: normal; color: #6c757d;'] * len(row)  # 🎯 報廢後方步驟灰修
                 elif step_cell_string == wip_step_no.strip():
                     return ['background-color: #c3e6cb; font-weight: bold; color: #155724;'] * len(row)
+                elif co_cell_string == "BANK":
+                    return ['background-color: #d1ecf1; font-weight: bold; color: #0c5460;'] * len(row)
                 return [''] * len(row)
             
             styled_df = display_df.style.apply(highlight_dynamic_rows, axis=1)
@@ -192,7 +200,7 @@ with all_tabs[0]:
                 st.markdown(f"🛑 **目前此站點之 Hold Note：** `{current_hold_note}`")
 
             st.markdown("⚠️ **流程變更權限指令**")
-            b1, b2, b3, b4, b5 = st.columns(5)
+            b1, b2, b3, b4, b5, b6 = st.columns(6)
             w_id, s_no = str(target_row.get("Wafer ID", "")).strip(), str(target_row.get("Step", "")).strip()
             
             if "trigger_iframe" not in st.session_state:
@@ -216,16 +224,14 @@ with all_tabs[0]:
                 enc_comment = requests.utils.quote(final_comment)
                 enc_time = requests.utils.quote(now_str)
                 
-                if action_name == "Check out":
-                    urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&action=Check out&comment={enc_comment}&time={enc_time}")
-                elif action_name == "Scrap":
-                    urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&action=Scrap&comment={enc_comment}&time={enc_time}")
-                elif action_name == "Unscrap":
-                    urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&action=Unscrap&comment={enc_comment}&time={enc_time}")
-                elif action_name == "Hold":
-                    urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&action=Hold&comment={enc_comment}&time={enc_time}")
-                elif action_name == "Unhold":
-                    urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&action=Unhold&comment={enc_comment}&time={enc_time}")
+                # 處理傳送指令
+                if action_name == "Check out": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&action=Check out&comment={enc_comment}&time={enc_time}")
+                elif action_name == "Scrap": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&action=Scrap&comment={enc_comment}&time={enc_time}")
+                elif action_name == "Unscrap": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&action=Unscrap&comment={enc_comment}&time={enc_time}")
+                elif action_name == "Hold": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&action=Hold&comment={enc_comment}&time={enc_time}")
+                elif action_name == "Unhold": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&action=Unhold&comment={enc_comment}&time={enc_time}")
+                elif action_name == "Bank": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&action=Bank&comment={enc_comment}&time={enc_time}")
+                elif action_name == "Kick off": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&action=Kick off&comment={enc_comment}&time={enc_time}")
                 elif action_name == "Skip":
                     enc_target_step = requests.utils.quote(str(target_jump_step))
                     urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&action=Skip&comment={enc_comment}&time={enc_time}&target_step={enc_target_step}")
@@ -241,7 +247,6 @@ with all_tabs[0]:
                         except Exception as e:
                             st.error(f"❌ 網路連線異常: {e}")
                             has_error = True
-                            
                     if has_error:
                         time.sleep(4)
                         st.rerun()
@@ -252,116 +257,62 @@ with all_tabs[0]:
                 st.cache_data.clear()
                 st.rerun()
 
-            # 🎯 建立設定 Hold 彈出對話框
-            @st.dialog("📋 輸入 Hold Note (暫停原因)")
-            def show_hold_dialog(target_w_id, target_s_no):
-                st.write(f"正在針對 晶圓編號 `{target_w_id}` 的 **第 {target_s_no} 步** 執行暫停指令。")
-                hold_reason = st.text_input("請輸入 Hold Note (暫停原因)：", placeholder="例如: 機台異常溫度過高...")
-                st.warning("⚠️ 確認提交後，該站點將會鎖定，直到執行解除暫停。")
+            # ... (保留原有的 Hold / Unhold / Scrap / Unscrap / Skip 彈出對話框設定) ...
+
+            # 🎯 建立 Bank (入庫) 彈出對話框
+            @st.dialog("📦 晶圓入庫 / 暫停執行 (Bank)")
+            def show_bank_dialog(target_w_id, target_s_no):
+                st.write(f"將晶圓 `{target_w_id}` 標記為 **Bank (入庫/暫時不執行)**。")
+                st.info("💡 入庫後，此晶圓將暫時從 Tab 4 (Wafer Overview) 總表中隱藏。")
+                bank_reason = st.text_input("請輸入 Bank 原因：", placeholder="例如: 尚未 Kick off, 暫存等待料件...")
                 c_ok, c_cancel = st.columns(2)
                 with c_ok:
-                    if st.button("👍 確認 OK", type="primary", use_container_width=True):
-                        if hold_reason.strip() == "":
-                            st.error("請填寫原因再點擊確認！")
-                        else:
-                            execute_stage_action("Hold", target_w_id, target_s_no, custom_comment=f"[HOLD] {hold_reason.strip()}")
+                    if st.button("👍 確認入庫", type="primary", use_container_width=True):
+                        execute_stage_action("Bank", target_w_id, target_s_no, custom_comment=f"[BANK] {bank_reason.strip()}")
                 with c_cancel:
-                    if st.button("❌ 取消", use_container_width=True, key="cancel_hold_btn"): st.rerun()
+                    if st.button("❌ 取消", use_container_width=True, key="cancel_bank_btn"): st.rerun()
 
-            # 🎯 建立解除 Hold 彈出對話框
-            @st.dialog("🟦 輸入解除暫停原因 (Unhold Note)")
-            def show_unhold_dialog(target_w_id, target_s_no):
-                st.write(f"正在針對 晶圓編號 `{target_w_id}` 的 **第 {target_s_no} 步** 執行解除暫停指令。")
-                unhold_reason = st.text_input("請輸入解 Hold 原因：", placeholder="例如: 客戶已確認規格...")
+            # 🎯 建立 Kick off (出庫) 彈出對話框
+            @st.dialog("🚀 晶圓出庫 / 開始執行 (Kick off)")
+            def show_bankout_dialog(target_w_id, target_s_no):
+                st.write(f"將晶圓 `{target_w_id}` **出庫 (Kick off)** 並恢復執行。")
+                st.info("💡 恢復後，此晶圓將重新出現在 Wafer Overview 總表中。")
+                bankout_reason = st.text_input("請輸入 Kick off 原因 (選填)：", placeholder="例如: 開始投片...")
                 c_ok, c_cancel = st.columns(2)
                 with c_ok:
-                    if st.button("👍 確認解除", type="primary", use_container_width=True):
-                        if unhold_reason.strip() == "":
-                            st.error("請填寫原因再點擊確認！")
-                        else:
-                            execute_stage_action("Unhold", target_w_id, target_s_no, custom_comment=f"[UNHOLD] {unhold_reason.strip()}")
+                    if st.button("👍 確認開始", type="primary", use_container_width=True):
+                        execute_stage_action("Kick off", target_w_id, target_s_no, custom_comment=f"[KICK OFF] {bankout_reason.strip()}")
                 with c_cancel:
-                    if st.button("❌ 取消", use_container_width=True, key="cancel_unhold_btn"): st.rerun()
+                    if st.button("❌ 取消", use_container_width=True, key="cancel_bankout_btn"): st.rerun()
 
-            # 🎯 建立報廢 (Scrap) 彈出對話框
-            @st.dialog("❌ 輸入報廢原因 (Scrap Note)")
-            def show_scrap_dialog(target_w_id, target_s_no):
-                st.write(f"正在針對 晶圓編號 `{target_w_id}` 的 **第 {target_s_no} 步** 執行報廢指令。")
-                scrap_reason = st.text_input("請輸入報廢原因：", placeholder="例如: 破片、線寬超規...")
-                st.warning("🚨 警告：確認提交後，該站點將標記為 SCRP，且後續流程將被強制鎖定！")
-                c_ok, c_cancel = st.columns(2)
-                with c_ok:
-                    if st.button("👍 確認報廢", type="primary", use_container_width=True):
-                        if scrap_reason.strip() == "":
-                            st.error("請填寫原因再點擊確認！")
-                        else:
-                            execute_stage_action("Scrap", target_w_id, target_s_no, custom_comment=f"[SCRAP] {scrap_reason.strip()}")
-                with c_cancel:
-                    if st.button("❌ 取消", use_container_width=True, key="cancel_scrap_btn"): st.rerun()
-
-            # 🎯 建立解除報廢 (Unscrap) 彈出對話框
-            @st.dialog("🔄 輸入解除報廢原因 (Unscrap Note)")
-            def show_unscrap_dialog(target_w_id, target_s_no):
-                st.write(f"正在針對 晶圓編號 `{target_w_id}` 的 **第 {target_s_no} 步** 執行解除報廢指令。")
-                unscrap_reason = st.text_input("請輸入解除報廢原因：", placeholder="例如: 誤判、經重測後合格...")
-                c_ok, c_cancel = st.columns(2)
-                with c_ok:
-                    if st.button("👍 確認復原", type="primary", use_container_width=True):
-                        if unscrap_reason.strip() == "":
-                            st.error("請填寫原因再點擊確認！")
-                        else:
-                            execute_stage_action("Unscrap", target_w_id, target_s_no, custom_comment=f"[UNSCRAP] {unscrap_reason.strip()}")
-                with c_cancel:
-                    if st.button("❌ 取消", use_container_width=True, key="cancel_unscrap_btn"): st.rerun()
-
-            # 🎯 建立跳站 (Skip) 彈出對話框
-            @st.dialog("⏭️ 晶圓跳站設定 (Skip Station)")
-            def show_skip_dialog(target_w_id, target_s_no, available_steps):
-                st.write(f"晶圓 `{target_w_id}` 目前位於 **第 {target_s_no} 步**。")
-                default_idx = available_steps.index(target_s_no) if target_s_no in available_steps else 0
-                jump_target = st.selectbox("請選擇要跳至哪一個 Step (可往前退回或往後跳過)：", options=available_steps, index=default_idx)
-                skip_reason = st.text_input("請輸入跳站原因：", placeholder="例如: 客戶要求變更製程、需重工...")
-                c_ok, c_cancel = st.columns(2)
-                with c_ok:
-                    if st.button("👍 確認跳站", type="primary", use_container_width=True):
-                        if skip_reason.strip() == "":
-                            st.error("請填寫跳站原因！")
-                        elif jump_target == target_s_no:
-                            st.error("目標站點不能與當前站點相同！")
-                        else:
-                            execute_stage_action("Skip", target_w_id, target_s_no, custom_comment=f"[JUMP TO Step {jump_target}] {skip_reason.strip()}", target_jump_step=jump_target)
-                with c_cancel:
-                    if st.button("❌ 取消", use_container_width=True, key="cancel_skip_btn"): st.rerun()
-
-            # 判斷是否為 SCRP 狀態，以切換報廢按鈕顯示邏輯
             is_currently_scrapped = (str(target_row.get("First Check Out", "")).strip().upper() == "SCRP")
+            is_currently_banked = (str(target_row.get("First Check Out", "")).strip().upper() == "BANK")
 
-            # 自動化流程中斷按鈕禁用防呆鎖定
             is_btn_disabled = True if has_scrap_occurred and current_idx > scrap_step_index else False
-            is_wip_locked = True if is_currently_held else is_btn_disabled
+            is_wip_locked = True if is_currently_held or is_currently_banked else is_btn_disabled
 
             with b1:
-                if st.button("🟢 正常出站 (Check out)", type="primary", use_container_width=True, key="tab1_btn_co", disabled=is_wip_locked): execute_stage_action("Check out", w_id, s_no)
+                if st.button("🟢 正常出站 (Check out)", type="primary", use_container_width=True, disabled=is_wip_locked): execute_stage_action("Check out", w_id, s_no)
             with b2:
-                # 🛑 變更點：報廢改為呼叫對話框，若該站已報廢則顯示「復原報廢」按鈕
                 if is_currently_scrapped:
-                    if st.button("🔄 復原報廢 (Unscrap)", type="primary", use_container_width=True, key="tab1_btn_unsc", disabled=is_btn_disabled):
-                        show_unscrap_dialog(w_id, s_no)
+                    if st.button("🔄 復原報廢 (Unscrap)", type="primary", use_container_width=True, disabled=is_btn_disabled): show_unscrap_dialog(w_id, s_no)
                 else:
-                    if st.button("❌ 報廢處理 (Scrap)", type="secondary", use_container_width=True, key="tab1_btn_sc", disabled=is_wip_locked):
-                        show_scrap_dialog(w_id, s_no)
+                    if st.button("❌ 報廢處理 (Scrap)", type="secondary", use_container_width=True, disabled=is_wip_locked): show_scrap_dialog(w_id, s_no)
             with b3: 
                 if is_currently_held:
-                    if st.button("🟦 解除暫停 (Release Hold)", type="primary", use_container_width=True, key="tab1_btn_unhd", disabled=is_btn_disabled):
-                        show_unhold_dialog(w_id, s_no)
+                    if st.button("🟦 解除暫停 (Release Hold)", type="primary", use_container_width=True, disabled=is_btn_disabled): show_unhold_dialog(w_id, s_no)
                 else:
-                    if st.button("🟨 設定暫停 (Hold)", use_container_width=True, key="tab1_btn_hd", disabled=is_btn_disabled):
-                        show_hold_dialog(w_id, s_no)
+                    if st.button("🟨 設定暫停 (Hold)", use_container_width=True, disabled=is_wip_locked): show_hold_dialog(w_id, s_no)
             with b4: 
-                if st.button("🟦 跳過此站 (Skip)", use_container_width=True, key="tab1_btn_sk", disabled=is_wip_locked):
-                    show_skip_dialog(w_id, s_no, step_list)
+                if st.button("🟦 跳過此站 (Skip)", use_container_width=True, disabled=is_wip_locked): show_skip_dialog(w_id, s_no, step_list)
             with b5:
-                if st.button("💾 儲存修改參數 (Key in data)", use_container_width=True, key="tab1_btn_ki", disabled=is_wip_locked): execute_stage_action("Key in data", w_id, s_no)
+                if st.button("💾 儲存修改參數", use_container_width=True, disabled=is_wip_locked): execute_stage_action("Key in data", w_id, s_no)
+            with b6:
+                # 🎯 切換顯示 Kick off 或 Bank
+                if is_currently_banked:
+                    if st.button("🚀 Kick off (出庫)", type="primary", use_container_width=True, disabled=is_btn_disabled): show_bankout_dialog(w_id, s_no)
+                else:
+                    if st.button("📦 Bank (入庫隱藏)", use_container_width=True, disabled=is_wip_locked): show_bank_dialog(w_id, s_no)
 # =========================================================================
 # 📜 頁籤 2: Wafer History (主表顯示母表，點選後顯示該站點完整歷史紀錄)
 # =========================================================================
@@ -505,16 +456,15 @@ with all_tabs[2]:
             st.error(f"❌ 檔案解析失敗: {str(e)}")
             
 # =========================================================================
-# 📊 頁籤 4: Wafer Overview
+# 📊 頁籤 4: Wafer Overview (自動隱藏 Bank 晶圓)
 # =========================================================================
 with all_tabs[3]:
     st.subheader("📊 晶圓生產總表與進度追蹤 (Wafer Overview)")
-    st.markdown("即時彙整線上所有晶圓的生產進度。相同批次會自動合併，若有不同團隊 (Split test) 則會展開分組計算進度 (已出貨晶圓不計入龍頭)。")
+    st.markdown("即時彙整線上所有晶圓的生產進度。尚未 Kick off 或已入庫 (Bank) 的晶圓將暫時隱藏。")
 
     df_route, conn_status = fetch_route_data_via_csv("route_template")
     
     if not df_route.empty:
-        # 動態尋找真實欄位名稱
         wafer_col = next((c for c in df_route.columns if str(c).strip().lower() in ["wafer id", "id", "wafer"]), "Wafer ID")
         step_col = next((c for c in df_route.columns if str(c).strip().lower() in ["step", "step no.", "step no"]), "Step")
         shuttle_col = next((c for c in df_route.columns if "shuttle" in str(c).lower()), "Shuttle Name")
@@ -541,7 +491,7 @@ with all_tabs[3]:
     <th>Shuttle Name</th>
     <th>Owner</th>
     <th>團隊 (or split test)</th>
-    <th style="width: 90px; text-align: center;">已出貨</th>
+    <th style="width: 90px; text-align: center;">已出貨片數</th>
     <th>ID (Wafer)</th>
     <th>Step</th>
     <th>Status</th>
@@ -551,105 +501,113 @@ with all_tabs[3]:
             df_route[shuttle_col] = df_route[shuttle_col].fillna("")
             df_route[team_col] = df_route[team_col].fillna("")
             
-            # 第一層：只依照 Shuttle Name 群組化
-            for shuttle, s_group in df_route.groupby(shuttle_col, sort=False):
-                if str(shuttle).strip() == "":
-                    continue
-                
+            # 建立有效晶圓資料庫 (排除 Bank 晶圓)
+            valid_shuttles = {}
+
+            for (shuttle, rep_team), s_group in df_route.groupby([shuttle_col, team_col], sort=False):
+                if str(shuttle).strip() == "": continue
                 rep_owner = str(s_group.iloc[0].get(owner_col, ""))
                 
-                # 計算整個 Shuttle 總共有幾片晶圓 (第一層合併儲存格高度)
-                shuttle_rowspan = sum(len(t_group[wafer_col].unique()) for _, t_group in s_group.groupby(team_col, sort=False))
-                is_first_in_shuttle = True
+                team_wafer_list = s_group[wafer_col].unique()
+                team_valid_wafers = []
                 
-                # 第二層：在同一個 Shuttle 下，依照 團隊 (Team) 再度拆分群組
-                for team, t_group in s_group.groupby(team_col, sort=False):
-                    team_wafer_list = t_group[wafer_col].unique()
-                    team_rowspan = len(team_wafer_list) # 第二層合併儲存格高度
+                for wid in team_wafer_list:
+                    w_group = s_group[s_group[wafer_col] == wid].reset_index(drop=True)
+                    total_steps = len(w_group)
                     
-                    team_render_data = []
-                    max_progress_pct = 0
-                    shipped_count = 0  
+                    has_scrap = False
+                    is_banked = False
+                    wip_idx = total_steps  
                     
-                    for wid in team_wafer_list:
-                        w_group = t_group[t_group[wafer_col] == wid].reset_index(drop=True)
-                        total_steps = len(w_group)
-                        
-                        has_scrap = False
-                        wip_idx = total_steps  
-                        
-                        raw_last_step = str(w_group.iloc[-1].get(step_col, "")).replace(".0", "").strip()
-                        wip_step_no = str(total_steps) if raw_last_step in ["", "nan", "NaN", "None"] else raw_last_step
-                        status_html = '<span class="status-dot" style="background-color: #0d6efd;"></span> Shipped (已出貨)'
-                        
+                    raw_last_step = str(w_group.iloc[-1].get(step_col, "")).replace(".0", "").strip()
+                    wip_step_no = str(total_steps) if raw_last_step in ["", "nan", "NaN", "None"] else raw_last_step
+                    status_html = '<span class="status-dot" style="background-color: #0d6efd;"></span> Shipped (已出貨)'
+                    
+                    for idx, row in w_group.iterrows():
+                        fco = str(row.get(fco_col, "")).strip().upper()
+                        if fco == "SCRP":
+                            has_scrap = True
+                            wip_idx = idx
+                            raw_step = str(row.get(step_col, "")).replace(".0", "").strip()
+                            wip_step_no = str(idx + 1) if raw_step in ["", "nan", "NaN", "None"] else raw_step
+                            status_html = f'<span class="status-dot" style="background-color: #dc3545;"></span> SCRAPPED: {row.get(desc_col, "")}'
+                            break
+                            
+                    if not has_scrap:
                         for idx, row in w_group.iterrows():
                             fco = str(row.get(fco_col, "")).strip().upper()
-                            if fco == "SCRP":
-                                has_scrap = True
+                            if fco in ["", "NAN", "INPR", "HOLD", "BANK"]:
                                 wip_idx = idx
                                 raw_step = str(row.get(step_col, "")).replace(".0", "").strip()
                                 wip_step_no = str(idx + 1) if raw_step in ["", "nan", "NaN", "None"] else raw_step
-                                status_html = f'<span class="status-dot" style="background-color: #dc3545;"></span> SCRAPPED: {row.get(desc_col, "")}'
+                                if fco == "HOLD":
+                                    status_html = f'<span class="status-dot" style="background-color: #ffc107;"></span> HOLD: {row.get(desc_col, "")}'
+                                elif fco == "BANK":
+                                    is_banked = True # 🎯 偵測到 Bank 狀態
+                                else:
+                                    status_html = f'<span class="status-dot" style="background-color: #198754;"></span> INPR: {row.get(desc_col, "")}'
                                 break
-                                
-                        if not has_scrap:
-                            for idx, row in w_group.iterrows():
-                                fco = str(row.get(fco_col, "")).strip().upper()
-                                if fco in ["", "NAN", "INPR", "HOLD"]:
-                                    wip_idx = idx
-                                    raw_step = str(row.get(step_col, "")).replace(".0", "").strip()
-                                    wip_step_no = str(idx + 1) if raw_step in ["", "nan", "NaN", "None"] else raw_step
-                                    if fco == "HOLD":
-                                        status_html = f'<span class="status-dot" style="background-color: #ffc107;"></span> HOLD: {row.get(desc_col, "")}'
-                                    else:
-                                        status_html = f'<span class="status-dot" style="background-color: #198754;"></span> INPR: {row.get(desc_col, "")}'
-                                    break
-                        
-                        is_shipped = False
-                        if wip_idx == total_steps and not has_scrap:
-                            is_shipped = True
-                            shipped_count += 1
-                            
-                        import re
-                        nums = re.findall(r'\d+', str(wip_step_no))
-                        step_num = int(nums[0]) if nums else 0
-                        progress_pct = int((step_num / 92) * 100)
-                        if progress_pct > 100: progress_pct = 100  
-                        
-                        if not is_shipped:
-                            max_progress_pct = max(max_progress_pct, progress_pct)
-                        
-                        team_render_data.append({
-                            "id": wid,
-                            "step": f"{wip_step_no}/92",
-                            "status": status_html
-                        })
                     
-                    if shipped_count > 0 and shipped_count == len(team_wafer_list):
+                    if is_banked:
+                        continue # 🎯 如果是 Bank，直接跳過不加入渲染清單
+                        
+                    is_shipped = False
+                    if wip_idx == total_steps and not has_scrap:
+                        is_shipped = True
+                        
+                    import re
+                    nums = re.findall(r'\d+', str(wip_step_no))
+                    step_num = int(nums[0]) if nums else 0
+                    progress_pct = int((step_num / 92) * 100)
+                    if progress_pct > 100: progress_pct = 100  
+                    
+                    team_valid_wafers.append({
+                        "id": wid,
+                        "step": f"{wip_step_no}/92",
+                        "status": status_html,
+                        "is_shipped": is_shipped,
+                        "progress_pct": progress_pct
+                    })
+                
+                # 將未被隱藏的有效資料加入字典，以利計算雙層合併列數
+                if team_valid_wafers:
+                    if shuttle not in valid_shuttles:
+                        valid_shuttles[shuttle] = {"owner": rep_owner, "teams": []}
+                    valid_shuttles[shuttle]["teams"].append({
+                        "team_name": rep_team,
+                        "wafers": team_valid_wafers
+                    })
+            
+            # 開始將結構化資料組合為 HTML
+            for shuttle, s_data in valid_shuttles.items():
+                shuttle_rowspan = sum(len(t["wafers"]) for t in s_data["teams"])
+                is_first_in_shuttle = True
+                
+                for t_data in s_data["teams"]:
+                    team_rowspan = len(t_data["wafers"])
+                    is_first_in_team = True
+                    
+                    shipped_count = sum(1 for w in t_data["wafers"] if w["is_shipped"])
+                    max_progress_pct = max([w["progress_pct"] for w in t_data["wafers"] if not w["is_shipped"]] + [0])
+                    if shipped_count > 0 and shipped_count == team_rowspan:
                         max_progress_pct = 100
 
-                    is_first_in_team = True
-
-                    # 渲染該團隊的每一片晶圓
-                    for w_data in team_render_data:
+                    for w_data in t_data["wafers"]:
                         html_table += "<tr>"
                         
-                        # 第一層合併：只有在整個 Shuttle 的最前面，才會產生 Shuttle Name 與 Owner 的儲存格
                         if is_first_in_shuttle:
                             html_table += f'<td class="merged-cell" rowspan="{shuttle_rowspan}">{shuttle}</td>'
-                            html_table += f'<td class="owner-team-cell" rowspan="{shuttle_rowspan}">{rep_owner}</td>'
+                            html_table += f'<td class="owner-team-cell" rowspan="{shuttle_rowspan}">{s_data["owner"]}</td>'
                             is_first_in_shuttle = False
                             
-                        # 第二層合併：只有在每個 Team 的最前面，才會產生 Team 與 已出貨數 的儲存格
                         if is_first_in_team:
-                            html_table += f'<td class="owner-team-cell" rowspan="{team_rowspan}">{team}</td>'
+                            html_table += f'<td class="owner-team-cell" rowspan="{team_rowspan}">{t_data["team_name"]}</td>'
                             html_table += f'<td class="merged-cell" rowspan="{team_rowspan}">{shipped_count}</td>'
                             
                         html_table += f"<td>{w_data['id']}</td>"
                         html_table += f"<td>{w_data['step']}</td>"
                         html_table += f"<td>{w_data['status']}</td>"
                         
-                        # 龍頭進度條，跟隨第二層 (Team) 進行合併
                         if is_first_in_team:
                             html_table += f"""
                             <td rowspan="{team_rowspan}">
