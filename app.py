@@ -509,7 +509,7 @@ with all_tabs[2]:
 # =========================================================================
 with all_tabs[3]:
     st.subheader("📊 晶圓生產總表與進度追蹤 (Wafer Overview)")
-    st.markdown("即時彙整線上所有晶圓的生產進度。相同批次將自動合併，並以進度最快的晶圓作為龍頭進度條指標。")
+    st.markdown("即時彙整線上所有晶圓的生產進度。相同批次將自動合併，並以進度最快的晶圓作為龍頭進度條指標 (已出貨晶圓不計入)。")
 
     df_route, conn_status = fetch_route_data_via_csv("route_template")
     
@@ -564,7 +564,7 @@ with all_tabs[3]:
                 
                 wafer_render_data = []
                 max_progress_pct = 0
-                shipped_count = 0  # 🎯 新增變數：統計該批次已出貨數量
+                shipped_count = 0  
                 
                 for wid in wafer_list:
                     w_group = s_group[s_group[wafer_col] == wid].reset_index(drop=True)
@@ -601,17 +601,20 @@ with all_tabs[3]:
                                 break
                     
                     # 🎯 判斷是否出貨：走到最後一步且無報廢
+                    is_shipped = False
                     if wip_idx == total_steps and not has_scrap:
+                        is_shipped = True
                         shipped_count += 1
                         
-                    # 🎯 進度條新算法：直接拿 Step 數字 / 92
                     import re
                     nums = re.findall(r'\d+', str(wip_step_no))
                     step_num = int(nums[0]) if nums else 0
                     progress_pct = int((step_num / 92) * 100)
-                    if progress_pct > 100: progress_pct = 100  # 避免超過100%破版
+                    if progress_pct > 100: progress_pct = 100  
                     
-                    max_progress_pct = max(max_progress_pct, progress_pct)
+                    # 🎯 關鍵修改：只要未出貨，才將該片晶圓的進度拿去比對「最大龍頭進度」
+                    if not is_shipped:
+                        max_progress_pct = max(max_progress_pct, progress_pct)
                     
                     wafer_render_data.append({
                         "id": wid,
@@ -619,6 +622,10 @@ with all_tabs[3]:
                         "status": status_html
                     })
                 
+                # 🎯 防呆處理：如果這個 Shuttle 裡面所有的晶圓都已經出貨了，就把龍頭進度條手動設為 100%
+                if shipped_count > 0 and shipped_count == len(wafer_list):
+                    max_progress_pct = 100
+
                 for i, w_data in enumerate(wafer_render_data):
                     html_table += "<tr>"
                     
@@ -626,7 +633,7 @@ with all_tabs[3]:
                         html_table += f'<td class="merged-cell" rowspan="{rowspan_count}">{shuttle}</td>'
                         html_table += f'<td class="owner-team-cell" rowspan="{rowspan_count}">{rep_owner}</td>'
                         html_table += f'<td class="owner-team-cell" rowspan="{rowspan_count}">{rep_team}</td>'
-                        html_table += f'<td class="merged-cell" rowspan="{rowspan_count}">{shipped_count}</td>' # 顯示已出貨片數
+                        html_table += f'<td class="merged-cell" rowspan="{rowspan_count}">{shipped_count}</td>' 
                         
                     html_table += f"<td>{w_data['id']}</td>"
                     html_table += f"<td>{w_data['step']}</td>"
