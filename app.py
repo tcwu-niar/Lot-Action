@@ -312,17 +312,20 @@ with all_tabs[1]:
     df_route, route_status = fetch_route_data_via_csv("route_template")
     df_logs, log_status = fetch_route_data_via_csv("wafer_status")
     
-    if not df_route.empty and not df_logs.empty:
+    # 🎯 修正：加入 'target_w_id' 檢查，確保使用者有搜尋晶圓才執行
+    if 'target_w_id' in locals() and target_w_id and not df_route.empty and not df_logs.empty:
         # --- 1. 處理並顯示上半部的母表 ---
         wafer_col_list = [c for c in df_route.columns if "Wafer" in c or "wafer" in c]
         if wafer_col_list:
             actual_string_col = wafer_col_list[0]
-            filtered_route = df_route[df_route[actual_string_col].astype(str).str.upper() == search_id.upper()]
+            # 🎯 修正：將舊的 search_id 改為 target_w_id
+            filtered_route = df_route[df_route[actual_string_col].astype(str).str.upper() == target_w_id.upper()]
         else:
             filtered_route = df_route
             
         if not filtered_route.empty:
-            st.markdown(f"📊 晶圓 **{search_id}** 的母表生產路由全貌：")
+            # 🎯 修正：將舊的 search_id 改為 target_w_id
+            st.markdown(f"📊 晶圓 **{target_w_id}** 的母表生產路由全貌：")
             display_route = filtered_route.copy().reset_index(drop=True)
 
             # 顯示母表並開啟單列選取功能
@@ -346,12 +349,12 @@ with all_tabs[1]:
                 # 過濾出符合該晶圓且符合該步驟的所有歷史紀錄
                 log_wafer_col = [c for c in df_logs.columns if "Wafer" in c or "晶圓" in c][0]
                 step_logs = df_logs[
-                    (df_logs[log_wafer_col].astype(str).str.upper() == search_id.upper()) & 
+                    # 🎯 修正：將舊的 search_id 改為 target_w_id
+                    (df_logs[log_wafer_col].astype(str).str.upper() == target_w_id.upper()) & 
                     (df_logs["Step"].astype(str).str.strip() == target_step_no)
                 ]
                 
                 if not step_logs.empty:
-                    # ⚠️ 改用陣列收集 HTML，徹底根除 Python 縮排造成的 Markdown 誤判問題
                     html_parts = []
                     html_parts.append('<div style="font-size: 12pt;">')
                     html_parts.append('<table style="width: 100%; border-collapse: collapse; border: 1px solid #ddd;">')
@@ -382,11 +385,12 @@ with all_tabs[1]:
                         
                     html_parts.append('</table></div>')
                     
-                    # 將陣列合併成一個沒有換行與縮排的連續字串
                     html_table = "".join(html_parts)
                     st.markdown(html_table, unsafe_allow_html=True)
                 else:
                     st.info(f"✅ 該晶圓的第 {target_step_no} 步目前無任何歷史紀錄。")
+    else:
+        st.info("請先於 Full Route 頁籤搜尋並選擇晶圓。")
 
 # =========================================================================
 # 📤 頁籤 3: Upload New Wafer (批次上傳 & 自動帶入 BANK)
