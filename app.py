@@ -505,7 +505,7 @@ with all_tabs[2]:
             st.error(f"❌ 檔案解析失敗: {str(e)}")
             
 # =========================================================================
-# 📊 頁籤 4: Wafer Overview (精簡合併版 + 龍頭綠色進度條)
+# 📊 頁籤 4: Wafer Overview
 # =========================================================================
 with all_tabs[3]:
     st.subheader("📊 晶圓生產總表與進度追蹤 (Wafer Overview)")
@@ -514,7 +514,7 @@ with all_tabs[3]:
     df_route, conn_status = fetch_route_data_via_csv("route_template")
     
     if not df_route.empty:
-        # 🎯 動態尋找真實欄位名稱 (修正精準比對，解決 Step 對不上的問題)
+        # 動態尋找真實欄位名稱
         wafer_col = next((c for c in df_route.columns if str(c).strip().lower() in ["wafer id", "id", "wafer"]), "Wafer ID")
         step_col = next((c for c in df_route.columns if str(c).strip().lower() in ["step", "step no.", "step no"]), "Step")
         shuttle_col = next((c for c in df_route.columns if "shuttle" in str(c).lower()), "Shuttle Name")
@@ -542,6 +542,7 @@ with all_tabs[3]:
                 <th>Shuttle Name</th>
                 <th>Owner</th>
                 <th>團隊 (or split test)</th>
+                <th style="width: 90px; text-align: center;">已出貨片數</th>
                 <th>ID (Wafer)</th>
                 <th>Step</th>
                 <th>Status</th>
@@ -549,10 +550,8 @@ with all_tabs[3]:
               </tr>
             """
             
-            # 填補空值以防報錯
             df_route[shuttle_col] = df_route[shuttle_col].fillna("")
             
-            # 第一層：依照 Shuttle Name 進行大群組合併
             for shuttle, s_group in df_route.groupby(shuttle_col, sort=False):
                 if str(shuttle).strip() == "":
                     continue
@@ -565,8 +564,8 @@ with all_tabs[3]:
                 
                 wafer_render_data = []
                 max_progress_pct = 0
+                shipped_count = 0  # 🎯 新增變數：統計該批次已出貨數量
                 
-                # 計算每片 Wafer 的當前最終進度
                 for wid in wafer_list:
                     w_group = s_group[s_group[wafer_col] == wid].reset_index(drop=True)
                     total_steps = len(w_group)
@@ -576,7 +575,7 @@ with all_tabs[3]:
                     
                     raw_last_step = str(w_group.iloc[-1].get(step_col, "")).replace(".0", "").strip()
                     wip_step_no = str(total_steps) if raw_last_step in ["", "nan", "NaN", "None"] else raw_last_step
-                    status_html = '<span class="status-dot" style="background-color: #0d6efd;"></span> Completed (已完工)'
+                    status_html = '<span class="status-dot" style="background-color: #0d6efd;"></span> Shipped (已出貨)'
                     
                     for idx, row in w_group.iterrows():
                         fco = str(row.get(fco_col, "")).strip().upper()
@@ -601,7 +600,17 @@ with all_tabs[3]:
                                     status_html = f'<span class="status-dot" style="background-color: #198754;"></span> INPR: {row.get(desc_col, "")}'
                                 break
                     
-                    progress_pct = int((wip_idx / total_steps) * 100) if total_steps > 0 else 0
+                    # 🎯 判斷是否出貨：走到最後一步且無報廢
+                    if wip_idx == total_steps and not has_scrap:
+                        shipped_count += 1
+                        
+                    # 🎯 進度條新算法：直接拿 Step 數字 / 92
+                    import re
+                    nums = re.findall(r'\d+', str(wip_step_no))
+                    step_num = int(nums[0]) if nums else 0
+                    progress_pct = int((step_num / 92) * 100)
+                    if progress_pct > 100: progress_pct = 100  # 避免超過100%破版
+                    
                     max_progress_pct = max(max_progress_pct, progress_pct)
                     
                     wafer_render_data.append({
@@ -610,7 +619,6 @@ with all_tabs[3]:
                         "status": status_html
                     })
                 
-                # 組合 HTML 列資料
                 for i, w_data in enumerate(wafer_render_data):
                     html_table += "<tr>"
                     
@@ -618,6 +626,7 @@ with all_tabs[3]:
                         html_table += f'<td class="merged-cell" rowspan="{rowspan_count}">{shuttle}</td>'
                         html_table += f'<td class="owner-team-cell" rowspan="{rowspan_count}">{rep_owner}</td>'
                         html_table += f'<td class="owner-team-cell" rowspan="{rowspan_count}">{rep_team}</td>'
+                        html_table += f'<td class="merged-cell" rowspan="{rowspan_count}">{shipped_count}</td>' # 顯示已出貨片數
                         
                     html_table += f"<td>{w_data['id']}</td>"
                     html_table += f"<td>{w_data['step']}</td>"
