@@ -514,8 +514,8 @@ with all_tabs[3]:
     df_route, conn_status = fetch_route_data_via_csv("route_template")
     
     if not df_route.empty:
-        # 💡 使用模糊匹配尋找正確的欄位名稱，避免因為隱藏空白而抓不到資料
-        wafer_col = next((c for c in df_route.columns if "wafer" in c.lower()), None)
+        # 動態尋找真實欄位名稱 (防呆：避免隱藏空白導致抓不到)
+        wafer_col = next((c for c in df_route.columns if "wafer" in c.lower()), "Wafer ID")
         step_col = next((c for c in df_route.columns if "step" in c.lower() and "no" in c.lower()), "Step No.")
         shuttle_col = next((c for c in df_route.columns if "shuttle" in c.lower()), "Shuttle Name")
         owner_col = next((c for c in df_route.columns if "owner" in c.lower()), "Stage Owner")
@@ -523,113 +523,84 @@ with all_tabs[3]:
         fco_col = next((c for c in df_route.columns if "check out" in c.lower()), "First Check Out")
         desc_col = next((c for c in df_route.columns if "description" in c.lower()), "Step Description")
         
-        if wafer_col:
-            # 建立客製化 HTML 表格樣式
-            html_table = """
-            <style>
-              .overview-table { width: 100%; border-collapse: collapse; font-family: sans-serif; font-size: 14px; margin-top: 10px; }
-              .overview-table th { background-color: #f8f9fa; padding: 12px 10px; border: 1px solid #dee2e6; text-align: left; font-weight: bold; color: #495057; }
-              .overview-table td { padding: 10px; border: 1px solid #dee2e6; text-align: left; vertical-align: middle; color: #212529; }
-              .overview-table .merged-cell { text-align: center; font-weight: bold; background-color: #f8f9fa; color: #0d6efd; }
-              .prog-wrapper { display: flex; align-items: center; width: 100%; }
-              .prog-container { background-color: #e9ecef; border-radius: 4px; flex-grow: 1; height: 16px; overflow: hidden; }
-              .prog-bar { background-color: #28a745; height: 100%; border-radius: 4px; transition: width 0.4s ease; }
-              .prog-text { margin-left: 10px; font-size: 13px; font-weight: 500; min-width: 35px; text-align: right; }
-              .status-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
-            </style>
-            <table class="overview-table">
-              <tr>
-                <th>Shuttle Name</th>
-                <th>Owner</th>
-                <th>團隊 (or split test)</th>
-                <th>ID (Wafer)</th>
-                <th>Step</th>
-                <th>Status</th>
-                <th style="width: 250px;">目前龍頭Wafer進度條</th>
-              </tr>
-            """
+        if wafer_col in df_route.columns:
+            summary_data = []
             
-            # 第一層分組：依照 Shuttle Name 進行群組化 (為了合併儲存格)
-            for shuttle_name, shuttle_group in df_route.groupby(shuttle_col, sort=False):
-                # 排除空白的 Shuttle
-                if str(shuttle_name).strip() == "":
-                    continue
-                    
-                # 第二層分組：在同一個 Shuttle 下，依照 Wafer ID 區分
-                wafer_groups = list(shuttle_group.groupby(wafer_col, sort=False))
-                rowspan_count = len(wafer_groups) # 計算合併儲存格的跨列數
+            # 將母表依照 Wafer ID 進行群組化計算
+            for wafer, group in df_route.groupby(wafer_col, sort=False):
+                group = group.reset_index(drop=True)
+                total_steps = len(group)
                 
-                for i, (wafer_id, group) in enumerate(wafer_groups):
-                    group = group.reset_index(drop=True)
-                    total_steps = len(group)
-                    
-                    has_scrap = False
-                    wip_idx = total_steps  
-                    wip_step_no = str(group.iloc[-1].get(step_col, "")).replace(".0", "") # 預設抓最後一站並去除小數點
-                    status_html = '<span class="status-dot" style="background-color: #0d6efd;"></span> Completed (已完工)'
-                    
-                    # 尋找報廢或在製狀態
+                has_scrap = False
+                wip_idx = total_steps  
+                
+                # 預設完工狀態的步數判定
+                raw_last_step = str(group.iloc[-1].get(step_col, "")).replace(".0", "").strip()
+                wip_step_no = str(total_steps) if raw_last_step in ["", "nan", "NaN", "None"] else raw_last_step
+                status_text = "🔵 Completed (已完工)"
+                
+                # 尋找是否報廢
+                for idx, row in group.iterrows():
+                    fco = str(row.get(fco_col, "")).strip().upper()
+                    if fco == "SCRP":
+                        has_scrap = True
+                        wip_idx = idx
+                        raw_step = str(row.get(step_col, "")).replace(".0", "").strip()
+                        # 🎯 關鍵修正：若欄位空白，自動以 (索引+1) 作為當前步數
+                        wip_step_no = str(idx + 1) if raw_step in ["", "nan", "NaN", "None"] else raw_step
+                        status_text = f"🔴 SCRAPPED: {row.get(desc_col, '')}"
+                        break
+                
+                # 若無報廢，尋找當前 WIP (在製) 站點
+                if not has_scrap:
                     for idx, row in group.iterrows():
                         fco = str(row.get(fco_col, "")).strip().upper()
-                        if fco == "SCRP":
-                            has_scrap = True
+                        if fco in ["", "NAN", "INPR", "HOLD"]:
                             wip_idx = idx
-                            wip_step_no = str(row.get(step_col, "")).replace(".0", "")
-                            status_html = f'<span class="status-dot" style="background-color: #dc3545;"></span> SCRAPPED: {row.get(desc_col, "")}'
-                            break
+                            raw_step = str(row.get(step_col, "")).replace(".0", "").strip()
+                            # 🎯 關鍵修正：若欄位空白，自動以 (索引+1) 作為當前步數
+                            wip_step_no = str(idx + 1) if raw_step in ["", "nan", "NaN", "None"] else raw_step
                             
-                    if not has_scrap:
-                        for idx, row in group.iterrows():
-                            fco = str(row.get(fco_col, "")).strip().upper()
-                            if fco in ["", "NAN", "INPR", "HOLD"]:
-                                wip_idx = idx
-                                wip_step_no = str(row.get(step_col, "")).replace(".0", "")
-                                if fco == "HOLD":
-                                    status_html = f'<span class="status-dot" style="background-color: #ffc107;"></span> HOLD: {row.get(desc_col, "")}'
-                                else:
-                                    status_html = f'<span class="status-dot" style="background-color: #198754;"></span> INPR: {row.get(desc_col, "")}'
-                                break
-                    
-                    # 計算進度與顯示字串
-                    progress_pct = int((wip_idx / total_steps) * 100) if total_steps > 0 else 0
-                    display_step = wip_step_no if str(wip_step_no).strip() != "" else "?"
-                    
-                    # 抓取通用資訊
-                    owner = str(group.iloc[0].get(owner_col, ""))
-                    team = str(group.iloc[0].get(team_col, ""))
-                    
-                    # 組合 HTML 列資料
-                    html_table += "<tr>"
-                    
-                    # 只在第一筆 Wafer 生成 rowspan 的 Shuttle 欄位
-                    if i == 0:
-                        html_table += f'<td class="merged-cell" rowspan="{rowspan_count}">{shuttle_name}</td>'
-                        
-                    html_table += f"<td>{owner}</td>"
-                    html_table += f"<td>{team}</td>"
-                    html_table += f"<td>{wafer_id}</td>"
-                    html_table += f"<td>{display_step}/92</td>"
-                    html_table += f"<td>{status_html}</td>"
-                    
-                    # 🟢 自訂綠色進度條
-                    html_table += f"""
-                    <td>
-                      <div class="prog-wrapper">
-                        <div class="prog-container">
-                          <div class="prog-bar" style="width: {progress_pct}%;"></div>
-                        </div>
-                        <div class="prog-text">{progress_pct}%</div>
-                      </div>
-                    </td>
-                    """
-                    html_table += "</tr>"
+                            if fco == "HOLD":
+                                status_text = f"🟡 HOLD: {row.get(desc_col, '')}"
+                            else:
+                                status_text = f"🟢 INPR: {row.get(desc_col, '')}"
+                            break
+                
+                # 計算進度條比例
+                progress_pct = int((wip_idx / total_steps) * 100) if total_steps > 0 else 0
+                
+                # 抓取第一列的通用資訊
+                first_row = group.iloc[0]
+                summary_data.append({
+                    "Shuttle Name": str(first_row.get(shuttle_col, "")),
+                    "Owner": str(first_row.get(owner_col, "")),
+                    "團隊 (or split test)": str(first_row.get(team_col, "")),
+                    "ID (Wafer)": str(wafer),
+                    "Step": f"{wip_step_no}/92",
+                    "Status": status_text,
+                    "目前龍頭Wafer進度條": progress_pct
+                })
             
-            html_table += "</table>"
+            summary_df = pd.DataFrame(summary_data)
             
-            # 使用 Streamlit 的 markdown 渲染原生 HTML
-            st.markdown(html_table, unsafe_allow_html=True)
-            
+            # 使用 Streamlit 原生表格渲染 (不開啟編輯模式)
+            st.dataframe(
+                summary_df,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "目前龍頭Wafer進度條": st.column_config.ProgressColumn(
+                        "目前龍頭Wafer進度條",
+                        format="%d%%",
+                        min_value=0,
+                        max_value=100,
+                    ),
+                    "Status": st.column_config.TextColumn("Status", width="large"),
+                    "Step": st.column_config.TextColumn("Step", width="small")
+                }
+            )
         else:
-            st.warning("⚠️ 母表中找不到 Wafer ID 欄位，無法計算總表。")
+            st.warning("⚠️ 母表中找不到 Wafer ID 欄位。")
     else:
         st.info("💡 目前雲端母表尚無資料可供計算。")
