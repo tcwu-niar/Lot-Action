@@ -14,7 +14,7 @@ MY_ORGANIZATION_GAS_URL = "https://script.google.com/macros/s/AKfycbxSpHeSlbCyMg
 SPREADSHEET_ID = "1RQt29KIb4rkVo4A-Y3GouMAezYEBakb1q283d1sgdZU"
 
 # 建立上方四大核心功能頁籤物件陣列 (確保存儲在單一變數中供後續解包)
-all_tabs = st.tabs(["📋 Full Route", "📜 Wafer History", "📤 Upload New Wafer", "📊 Wafer Overview"])
+all_tabs = st.tabs(["📋 Full Route", "📜 Wafer History", "📤 Upload New Wafer", "📊 Wafer Overview", "📦 Bank Wafers"])
 
 # 🔄 載入雲端最新資料的公用函數
 @st.cache_data(ttl=2)
@@ -91,36 +91,27 @@ with all_tabs[0]:
             
             # 💡 【熔斷機制 2】計算在製站點 (WIP Step)
             wip_step_no = "9999"
+            wip_row_idx = 9999
             if not has_scrap_occurred:
-                for idx, row in filtered_df.iterrows():
+                for idx, row in filtered_df.reset_index(drop=True).iterrows():
                     co_val = str(row.get("First Check Out", "")).strip().upper()
-                    if co_val in ["", "NAN", "INPR", "HOLD"]:
-                        wip_step_no = str(row.get("Step", "1"))
+                    # 🎯 關鍵修正：將 BANK 納入停站判斷，這樣才不會跳到下一站！
+                    if co_val in ["", "NAN", "INPR", "HOLD", "BANK"]:
+                        wip_row_idx = idx
+                        wip_step_no = str(row.get("Step No.", "1"))
                         break
-                        
-            # 尋找當前站點 (新增 "BANK")
-            if co_val in ["", "NAN", "INPR", "HOLD", "BANK"]:
-                wip_row_idx = idx
             
-            # 動態重組文字顯示欄位（實施 Scrap 後方站點清空空格機制與 HOLD 顯示）
+            # 動態重組文字顯示欄位
             display_df = filtered_df.copy().reset_index(drop=True)
             new_co_display = []
             for idx, r in display_df.iterrows():
-                s_val = str(r.get("Step", "")).strip()
-                co_val = str(r.get("First Check Out", "")).strip()
-                
-                if co_val.upper() == "SCRP":
-                    new_co_display.append("SCRP")
-                elif co_val.upper() == "HOLD":
-                    new_co_display.append("HOLD")
-                elif idx > scrap_step_index:
-                    new_co_display.append("")  # 🎯 報廢後方步驟強制清空
-                elif s_val == wip_step_no.strip():
-                    new_co_display.append("INPR")
-                elif co_val.upper() == "BANK":
-                    new_co_display.append("BANK")
-                else:
-                    new_co_display.append(co_val)
+                co_val = str(r.get("First Check Out", "")).strip().upper()
+                if co_val == "SCRP": new_co_display.append("SCRP")
+                elif co_val == "HOLD": new_co_display.append("HOLD")
+                elif co_val == "BANK": new_co_display.append("BANK")
+                elif idx > scrap_step_index: new_co_display.append("") 
+                elif idx == wip_row_idx: new_co_display.append("INPR")
+                else: new_co_display.append(co_val)
             display_df["First Check Out"] = new_co_display
 
             # 💡 【多色彩鋪滿底色引擎】紅 / 綠 / 黃 / 灰 完美分層
@@ -630,3 +621,72 @@ with all_tabs[3]:
             st.warning("⚠️ 母表中找不到 Wafer ID 欄位，無法計算總表。")
     else:
         st.info("💡 目前雲端母表尚無資料可供計算。")
+# =========================================================================
+# 📦 頁籤 5: Bank Wafers (入庫晶圓清單)
+# =========================================================================
+with all_tabs[4]:
+    st.subheader("📦 入庫晶圓清單 (Banked Wafers)")
+    st.markdown("集中顯示目前被標記為 Bank (暫停執行) 的所有晶圓。若要出庫，請至 Full Route 搜尋該晶圓並點擊 Kick off。")
+
+    # 沿用 Tab 4 的抓取邏輯 (確保抓到最新資料)
+    df_route_bank, conn_status_bank = fetch_route_data_via_csv("route_template")
+    
+    if not df_route_bank.empty:
+        wafer_col = next((c for c in df_route_bank.columns if str(c).strip().lower() in ["wafer id", "id", "wafer"]), "Wafer ID")
+        step_col = next((c for c in df_route_bank.columns if str(c).strip().lower() in ["step", "step no.", "step no"]), "Step")
+        shuttle_col = next((c for c in df_route_bank.columns if "shuttle" in str(c).lower()), "Shuttle Name")
+        owner_col = next((c for c in df_route_bank.columns if "owner" in str(c).lower()), "Stage Owner")
+        team_col = next((c for c in df_route_bank.columns if "customer" in str(c).lower()), "Customer")
+        fco_col = next((c for c in df_route_bank.columns if "check out" in str(c).lower()), "First Check Out")
+        comment_col = next((c for c in df_route_bank.columns if str(c).strip().lower() in ["comments", "備註", "comment"]), "Comments")
+        
+        if wafer_col in df_route_bank.columns:
+            banked_wafers = []
+            
+            # 依照 Wafer ID 進行分組檢查
+            for wid, w_group in df_route_bank.groupby(wafer_col, sort=False):
+                w_group = w_group.reset_index(drop=True)
+                
+                has_scrap = False
+                is_banked = False
+                bank_step_no = ""
+                bank_comment = ""
+                
+                # 檢查是否報廢
+                for idx, row in w_group.iterrows():
+                    fco = str(row.get(fco_col, "")).strip().upper()
+                    if fco == "SCRP":
+                        has_scrap = True
+                        break
+                        
+                # 若無報廢，尋找當前 WIP 站點狀態是否為 BANK
+                if not has_scrap:
+                    for idx, row in w_group.iterrows():
+                        fco = str(row.get(fco_col, "")).strip().upper()
+                        if fco in ["", "NAN", "INPR", "HOLD", "BANK"]:
+                            if fco == "BANK":
+                                is_banked = True
+                                bank_step_no = str(row.get(step_col, "")).replace(".0", "")
+                                bank_comment = str(row.get(comment_col, ""))
+                            break
+                            
+                # 若為 Bank，加入顯示清單
+                if is_banked:
+                    first_row = w_group.iloc[0]
+                    banked_wafers.append({
+                        "Shuttle Name": str(first_row.get(shuttle_col, "")),
+                        "Owner": str(first_row.get(owner_col, "")),
+                        "團隊 (or split test)": str(first_row.get(team_col, "")),
+                        "ID (Wafer)": str(wid),
+                        "Bank 停留站點": f"第 {bank_step_no} 步",
+                        "備註 (Bank Note)": bank_comment
+                    })
+                    
+            if banked_wafers:
+                st.dataframe(pd.DataFrame(banked_wafers), use_container_width=True, hide_index=True)
+            else:
+                st.success("🎉 目前產線上沒有任何晶圓處於 Bank (入庫) 狀態。")
+        else:
+            st.warning("⚠️ 母表中找不到 Wafer ID 欄位。")
+    else:
+        st.info("💡 目前雲端母表尚無資料。")
