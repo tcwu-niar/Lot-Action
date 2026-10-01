@@ -128,6 +128,8 @@ with all_tabs[0]:
             st.markdown("🟢 *綠列代表在製中 (INPR)* | 🔴 *紅列代表已報廢 (SCRP)* | 🟡 *黃列代表已暫停 (HOLD)* | 🧊 *藍列代表已入庫 (BANK)* | ⚪ *灰列代表因報廢已中斷鎖定*")
             
             fco_col = next((c for c in filtered_df.columns if "check out" in str(c).lower()), "First Check Out")
+            # 🎯 新增：動態尋找 Step 欄位，解決 KeyError
+            step_col = next((c for c in filtered_df.columns if str(c).strip().lower() in ["step", "step no.", "step no"]), "Step")
             
             has_scrap_occurred = False
             scrap_step_index = 9999
@@ -146,7 +148,8 @@ with all_tabs[0]:
                     co_val = str(row.get(fco_col, "")).strip().upper()
                     if co_val in ["", "NAN", "INPR", "HOLD", "BANK"]:
                         wip_row_idx = idx
-                        wip_step_no = str(row.get("Step No.", "1"))
+                        # 🎯 修正：使用動態的 step_col
+                        wip_step_no = str(row.get(step_col, "1"))
                         break
             
             display_df = filtered_df.copy().reset_index(drop=True)
@@ -178,7 +181,8 @@ with all_tabs[0]:
                 current_idx = selected_rows.selection.rows[0]
                 target_row = display_df.iloc[current_idx]
                 w_id = str(target_row.get(wafer_col, ""))
-                s_no = str(target_row.get("Step No.", ""))
+                # 🎯 修正：使用動態的 step_col
+                s_no = str(target_row.get(step_col, ""))
                 
                 st.markdown(f"### ⚙️ 針對 `{w_id}` - 第 {s_no} 步進行操作")
                 
@@ -188,7 +192,9 @@ with all_tabs[0]:
                 with c_edit3: edit_cp = st.text_input("Check point", value=str(target_row.get("Check point", "")), key=f"cp_{w_id}_{s_no}")
                 
                 user_comment = st.text_input("📝 填寫備註 (選填，將記錄於雲端母表):", key=f"comment_{w_id}_{s_no}")
-                step_list = display_df["Step No."].astype(str).tolist()
+                
+                # 🎯 修正：這裡就是引發報錯的第 191 行！已經改為動態 step_col
+                step_list = display_df[step_col].astype(str).tolist()
 
                 def execute_stage_action(action_name, target_w_id, target_s_no, custom_comment=None, target_jump_step=None):
                     tw_tz = datetime.timezone(datetime.timedelta(hours=8))
