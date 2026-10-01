@@ -503,8 +503,8 @@ with all_tabs[2]:
                         
         except Exception as e:
             st.error(f"❌ 檔案解析失敗: {str(e)}")
-# =========================================================================
-# 📊 頁籤 4: Wafer Overview (取代原本的 Upload R/C)
+了解！從您提供的截圖可以看到，因為之前的 Step No. 可能是空白的，所以畫面上只顯示了 / 92 甚至 / 75。   我們現在將 Step 欄位的顯示格式寫死，讓分母永遠固定為 92，分子則抓取上傳檔案中的站點編號（若抓不到則顯示 ? 防止排版跑掉）。同時，進度條的計算維持使用「目前實際的資料列數 / 真實的總資料列數」來計算比例。請將 Lot Action (半成品).py 中 with all_tabs[3]: 的整個區段，替換為以下更新後的程式碼：Python# =========================================================================
+# 📊 頁籤 4: Wafer Overview
 # =========================================================================
 with all_tabs[3]:
     st.subheader("📊 晶圓生產總表與進度追蹤 (Wafer Overview)")
@@ -522,11 +522,11 @@ with all_tabs[3]:
             # 將母表依照 Wafer ID 進行群組化計算
             for wafer, group in df_route.groupby(wafer_col, sort=False):
                 group = group.reset_index(drop=True)
-                total_steps = len(group)
+                total_steps = len(group) # 真實總步數
                 
                 has_scrap = False
-                wip_idx = total_steps  # 預設為全數完成
-                wip_step_no = str(group.iloc[-1].get("Step No.", total_steps))
+                wip_idx = total_steps  
+                wip_step_no = str(group.iloc[-1].get("Step No.", ""))
                 status_text = "🔵 Completed (已完工)"
                 
                 # 尋找是否報廢
@@ -552,8 +552,12 @@ with all_tabs[3]:
                                 status_text = f"🟢 INPR: {row.get('Step Description', '')}"
                             break
                 
-                # 計算進度百分比 (已完成站點數 / 總站點數)
+                # 🎯 計算進度條：使用「目前實際索引數 (代表已完成步數) / 真實總步數」
                 progress_pct = int((wip_idx / total_steps) * 100) if total_steps > 0 else 0
+                
+                # 🎯 處理顯示字串：分子為上傳的 Step No，分母強制寫死為 92
+                display_step_no = wip_step_no if wip_step_no.strip() != "" else "?"
+                step_display_str = f"{display_step_no}/92"
                 
                 # 抓取第一列的通用資訊作為總表顯示
                 first_row = group.iloc[0]
@@ -566,7 +570,7 @@ with all_tabs[3]:
                     "Owner": owner,
                     "團隊 (or split test)": team,
                     "ID (Wafer)": wafer,
-                    "Step": f"{wip_step_no} / {total_steps}",
+                    "Step": step_display_str,
                     "Status": status_text,
                     "目前龍頭Wafer進度條": progress_pct
                 })
@@ -581,7 +585,7 @@ with all_tabs[3]:
                 column_config={
                     "目前龍頭Wafer進度條": st.column_config.ProgressColumn(
                         "目前龍頭Wafer進度條",
-                        help="晶圓完成進度百分比",
+                        help="晶圓完成進度百分比 (目前實際站點 / 真實總站點數)",
                         format="%d%%",
                         min_value=0,
                         max_value=100,
