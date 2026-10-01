@@ -54,14 +54,14 @@ with all_tabs[0]:
     target_w_id = st.text_input("🔍 請輸入或掃描晶圓 ID (Wafer ID):", key="search_w_id")
     
     if target_w_id and not df_route.empty:
-        # 動態尋找真實欄位名稱
+        # 動態尋找真實欄位名稱 (防呆)
         wafer_col = next((c for c in df_route.columns if str(c).strip().lower() in ["wafer id", "id", "wafer"]), "Wafer ID")
         filtered_df = df_route[df_route[wafer_col].astype(str).str.strip().str.upper() == target_w_id.strip().upper()]
         
         if not filtered_df.empty:
             st.markdown("🟢 *綠列代表在製中 (INPR)* | 🔴 *紅列代表已報廢 (SCRP)* | 🟡 *黃列代表已暫停 (HOLD)* | 🧊 *藍列代表已入庫 (BANK)* | ⚪ *灰列代表因報廢已中斷鎖定*")
             
-            # 動態抓取 Check out 欄位名稱 (防呆)
+            # 動態抓取 Check out 欄位名稱 (防呆，相容 Check out Time)
             fco_col = next((c for c in filtered_df.columns if "check out" in str(c).lower()), "First Check Out")
             
             # 💡 【熔斷機制 1】尋找是否有任何一站已經被標記為 SCRP
@@ -81,6 +81,7 @@ with all_tabs[0]:
             if not has_scrap_occurred:
                 for idx, row in filtered_df.reset_index(drop=True).iterrows():
                     co_val = str(row.get(fco_col, "")).strip().upper()
+                    # 🎯 將 BANK 納入停站判斷，讓它停在當站反藍
                     if co_val in ["", "NAN", "INPR", "HOLD", "BANK"]:
                         wip_row_idx = idx
                         wip_step_no = str(row.get("Step No.", "1"))
