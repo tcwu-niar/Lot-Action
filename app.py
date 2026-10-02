@@ -217,8 +217,8 @@ with all_tabs[0]:
             with edit_col2: edit_recipe = st.text_input("🧪 變更機台配方:", value=str(target_row.get("Recipe", "")))
             with edit_col3: edit_cp = st.text_input("🎯 變更檢驗點:", value=str(target_row.get("Check point", "")))
             
-            st.markdown("📝 **批註 / 機台數據回填 (SPC Data / Comments):**")
-            user_comment = st.text_input("請在此輸入過站紀錄...", key="user_comment_input")
+            st.markdown("📸 **檢驗結果圖片上傳 (Result 欄位):**")
+            result_image = st.file_uploader("上傳機台截圖或顯微鏡照片 (支援 png/jpg)", type=["png", "jpg", "jpeg"], key=f"img_{w_id}_{s_no}")
             
             current_comment = str(target_row.get("Comments", "")).strip() or str(target_row.get("備註", "")).strip() or "暫無紀錄"
             current_hold_note = str(target_row.get("Hold Note", "")).strip() or "無"
@@ -235,8 +235,26 @@ with all_tabs[0]:
                 now_str = datetime.datetime.now(tw_tz).strftime("%Y-%m-%d %H:%M:%S")
                 urls_to_send = []
                 
+                # 🎯 處理圖片上傳 (轉為網址)
+                final_result_link = str(target_row.get("Result", "")).strip()
+                if result_image is not None and action_name in ["Check out", "Key in data"]:
+                    with st.spinner("⏳ 正在將圖片上傳至雲端..."):
+                        try:
+                            # 使用 Imgur 匿名 API 快速轉換圖片為網址
+                            headers = {"Authorization": "Client-ID 8d99818817a80df"}
+                            res = requests.post("https://api.imgur.com/3/image", headers=headers, files={'image': result_image.getvalue()})
+                            if res.status_code == 200:
+                                final_result_link = res.json()["data"]["link"]
+                            else:
+                                st.warning("⚠️ 圖片上傳失敗，僅儲存文字紀錄。")
+                        except Exception as e:
+                            st.error(f"圖片上傳錯誤: {e}")
+
                 if action_name in ["Check out", "Scrap", "Key in data"]:
                     fields = {"Process Tool": edit_tool, "Recipe": edit_recipe, "Check point": edit_cp}
+                    if final_result_link:
+                        fields["Result"] = final_result_link # 將圖片網址加入準備寫入的欄位清單
+                        
                     for f_name, f_val in fields.items():
                         if str(f_val).strip() != str(target_row.get(f_name, "")).strip():
                             urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&column_name={requests.utils.quote(f_name)}&new_value={requests.utils.quote(str(f_val).strip())}")
@@ -344,15 +362,29 @@ with all_tabs[1]:
                 
                 if not step_logs.empty:
                     html_parts = ['<div style="font-size: 12pt;"><table style="width: 100%; border-collapse: collapse; border: 1px solid #ddd;">']
-                    html_parts.append('<tr style="background-color: #f8f9fa; color: #333;"><th style="padding: 10px; border: 1px solid #ddd; text-align: center; width: 15%;">動作 (Action)</th><th style="padding: 10px; border: 1px solid #ddd; text-align: center; width: 25%;">日期與時間</th><th style="padding: 10px; border: 1px solid #ddd; text-align: left; width: 30%;">Hold Note (暫停原因)</th><th style="padding: 10px; border: 1px solid #ddd; text-align: left; width: 30%;">SPC data (過站備註)</th></tr>')
+                    # 🎯 新增 Result 圖片欄位標題
+                    html_parts.append('<tr style="background-color: #f8f9fa; color: #333;"><th style="padding: 10px; border: 1px solid #ddd; text-align: center; width: 10%;">動作</th><th style="padding: 10px; border: 1px solid #ddd; text-align: center; width: 20%;">日期與時間</th><th style="padding: 10px; border: 1px solid #ddd; text-align: left; width: 25%;">Hold Note</th><th style="padding: 10px; border: 1px solid #ddd; text-align: left; width: 25%;">SPC data</th><th style="padding: 10px; border: 1px solid #ddd; text-align: center; width: 20%;">Result (檢驗圖片)</th></tr>')
+                    
                     for _, log_row in step_logs.iterrows():
                         action_val = str(log_row.get("Action", "")).strip()
                         time_val = str(log_row.get("Check out Time", "")).strip()
                         hold_note_val = str(log_row.get("Hold Note", "")).strip()
                         spc_val = str(log_row.get("SPC data", "")).strip()
+                        
+                        # 🎯 偵測 Result 欄位是否有圖片網址
+                        result_val = str(log_row.get("Result", "")).strip()
+                        result_html = ""
+                        if result_val.startswith("http"):
+                            # 將網址轉換為可點擊放大觀看的縮圖
+                            result_html = f'<a href="{result_val}" target="_blank"><img src="{result_val}" style="max-height: 80px; border-radius: 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); cursor: zoom-in;"></a>'
+                        else:
+                            result_html = result_val
+                        
                         bg_color = "#fff3cd" if action_val.upper() == "HOLD" else "#ffffff"
                         text_color = "#d9534f" if action_val.upper() == "HOLD" else "#000000"
-                        html_parts.append(f'<tr style="background-color: {bg_color};"><td style="padding: 10px; border: 1px solid #ddd; text-align: center; font-weight: bold;">{action_val}</td><td style="padding: 10px; border: 1px solid #ddd; text-align: center;">{time_val}</td><td style="padding: 10px; border: 1px solid #ddd; text-align: left; color: {text_color}; font-weight: bold;">{hold_note_val}</td><td style="padding: 10px; border: 1px solid #ddd; text-align: left;">{spc_val}</td></tr>')
+                        
+                        html_parts.append(f'<tr style="background-color: {bg_color};"><td style="padding: 10px; border: 1px solid #ddd; text-align: center; font-weight: bold;">{action_val}</td><td style="padding: 10px; border: 1px solid #ddd; text-align: center;">{time_val}</td><td style="padding: 10px; border: 1px solid #ddd; text-align: left; color: {text_color}; font-weight: bold;">{hold_note_val}</td><td style="padding: 10px; border: 1px solid #ddd; text-align: left;">{spc_val}</td><td style="padding: 10px; border: 1px solid #ddd; text-align: center;">{result_html}</td></tr>')
+                    
                     html_parts.append('</table></div>')
                     st.markdown("".join(html_parts), unsafe_allow_html=True)
                 else:
