@@ -289,7 +289,7 @@ with all_tabs[0]:
                     if st.button("❌ 報廢處理 (Scrap)", type="secondary", use_container_width=True, disabled=is_wip_locked): show_scrap_dialog(w_id, s_no)
             with b3: 
                 if is_currently_held:
-                    if st.button("🟦 解除暫停 (Release Hold)", type="primary", use_container_width=True, disabled=is_btn_disabled): show_unhold_dialog(w_id, s_no)
+                    if st.button("🟦 解除暫停 (Release Hold)", type="primary", use_container_width=True, disabled=is_btn_disabled): execute_stage_action("Unhold", w_id, s_no, custom_comment="[UNHOLD] 恢復執行")
                 else:
                     if st.button("🟨 設定暫停 (Hold)", use_container_width=True, disabled=is_wip_locked): show_hold_dialog(w_id, s_no)
             with b4: 
