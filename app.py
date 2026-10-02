@@ -246,15 +246,23 @@ with all_tabs[0]:
                 if result_image is not None and action_name in ["Check out", "Key in data"]:
                     with st.spinner("⏳ 正在將圖片上傳至雲端..."):
                         try:
-                            # 使用 Imgur 匿名 API 快速轉換圖片為網址
-                            headers = {"Authorization": "Client-ID 8d99818817a80df"}
-                            res = requests.post("https://api.imgur.com/3/image", headers=headers, files={'image': result_image.getvalue()})
+                            # 準備 Freeimage.host 的公開 API 參數
+                            payload = {
+                                "key": "6d207e02198a847aa98d0a2a901485a5", # 免費公開的 API Key
+                                "action": "upload",
+                                "format": "json"
+                            }
+                            files = {"source": result_image.getvalue()}
+                            
+                            res = requests.post("https://freeimage.host/api/1/upload", data=payload, files=files)
+                            
                             if res.status_code == 200:
-                                final_result_link = res.json()["data"]["link"]
+                                # 成功取得網址
+                                final_result_link = res.json()["image"]["url"]
                             else:
-                                st.warning("⚠️ 圖片上傳失敗，僅儲存文字紀錄。")
+                                st.warning(f"⚠️ 圖片上傳失敗 (狀態碼: {res.status_code})，僅儲存文字紀錄。")
                         except Exception as e:
-                            st.error(f"圖片上傳錯誤: {e}")
+                            st.error(f"圖片上傳連線錯誤: {e}")
 
                 if action_name in ["Check out", "Scrap", "Key in data"]:
                     fields = {"Process Tool": edit_tool, "Recipe": edit_recipe, "Check point": edit_cp}
