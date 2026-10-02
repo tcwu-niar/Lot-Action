@@ -280,6 +280,10 @@ with all_tabs[0]:
                     enc_target_step = requests.utils.quote(str(target_jump_step))
                     urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&action=Skip&comment={enc_comment}&time={enc_time}&target_step={enc_target_step}")
                 
+                # 🎯 新增這兩行：讓「儲存修改/上傳圖片」也發送 Action 紀錄到歷史日誌
+                elif action_name == "Key in data":
+                    urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&action=Data%20Update&comment={enc_comment}&time={enc_time}")
+                
                 with st.spinner(f"🚀 正在同步 {action_name} 指令至雲端..."):
                     has_error = False
                     for url in urls_to_send:
@@ -354,7 +358,19 @@ with all_tabs[1]:
         if not filtered_route.empty:
             st.markdown(f"📊 晶圓 **{search_id}** 的母表生產路由全貌：")
             display_route = filtered_route.copy().reset_index(drop=True)
-            selected_route_row = st.dataframe(display_route, use_container_width=True, hide_index=True, on_select="rerun", selection_mode="single-row", key="history_route_table")
+            
+            # 🎯 新增 column_config，讓 Streamlit 將 Result 欄位的網址自動渲染成圖片
+            selected_route_row = st.dataframe(
+                display_route, 
+                use_container_width=True, 
+                hide_index=True, 
+                on_select="rerun", 
+                selection_mode="single-row", 
+                key="history_route_table",
+                column_config={
+                    "Result": st.column_config.ImageColumn("Result (預覽圖片)", help="上傳的檢驗圖片")
+                }
+            )
             
             if selected_route_row and selected_route_row.get("selection", {}).get("rows"):
                 selected_idx = selected_route_row["selection"]["rows"][0]
