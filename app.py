@@ -398,18 +398,17 @@ with all_tabs[1]:
                 log_wafer_col = [c for c in df_logs.columns if "Wafer" in c or "晶圓" in c][0]
                 step_logs = df_logs[(df_logs[log_wafer_col].astype(str).str.upper() == search_id.upper()) & (df_logs["Step"].astype(str).str.strip() == target_step_no)]
                 
+                mother_result_val = str(display_route.iloc[selected_idx].get("Result", "")).strip()
+                result_html = ""
+                if mother_result_val.startswith("http"):
+                    result_html = f'<a href="{mother_result_val}" target="_blank"><img src="{mother_result_val}" style="max-height: 80px; border-radius: 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); cursor: zoom-in;"></a>'
+                else:
+                    result_html = mother_result_val
+
                 if not step_logs.empty:
                     html_parts = ['<div style="font-size: 12pt;"><table style="width: 100%; border-collapse: collapse; border: 1px solid #ddd;">']
-                    html_parts.append('<tr style="background-color: #f8f9fa; color: #333;"><th style="padding: 10px; border: 1px solid #ddd; text-align: center; width: 10%;">動作</th><th style="padding: 10px; border: 1px solid #ddd; text-align: center; width: 20%;">日期與時間</th><th style="padding: 10px; border: 1px solid #ddd; text-align: left; width: 25%;">Hold Note</th><th style="padding: 10px; border: 1px solid #ddd; text-align: left; width: 25%;">SPC data</th><th style="padding: 10px; border: 1px solid #ddd; text-align: center; width: 20%;">Result (檢驗圖片)</th></tr>')
+                    html_parts.append('<tr style="background-color: #f8f9fa; color: #333;"><th style="padding: 10px; border: 1px solid #ddd; text-align: center; width: 10%;">動作 (Action)</th><th style="padding: 10px; border: 1px solid #ddd; text-align: center; width: 20%;">日期與時間</th><th style="padding: 10px; border: 1px solid #ddd; text-align: left; width: 25%;">Hold Note (暫停原因)</th><th style="padding: 10px; border: 1px solid #ddd; text-align: left; width: 25%;">SPC data (過站備註)</th><th style="padding: 10px; border: 1px solid #ddd; text-align: center; width: 20%;">Result (檢驗圖片)</th></tr>')
                     
-                    # 🎯 聰明解法：直接從母表 (display_route) 抓取這一步的圖片，避開 GAS 沒備份到的問題
-                    mother_result_val = str(display_route.iloc[selected_idx].get("Result", "")).strip()
-                    result_html = ""
-                    if mother_result_val.startswith("http"):
-                        result_html = f'<a href="{mother_result_val}" target="_blank"><img src="{mother_result_val}" style="max-height: 80px; border-radius: 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); cursor: zoom-in;"></a>'
-                    else:
-                        result_html = mother_result_val
-
                     for _, log_row in step_logs.iterrows():
                         action_val = str(log_row.get("Action", "")).strip()
                         time_val = str(log_row.get("Check out Time", "")).strip()
@@ -420,11 +419,18 @@ with all_tabs[1]:
                         text_color = "#d9534f" if action_val.upper() == "HOLD" else "#000000"
                         
                         html_parts.append(f'<tr style="background-color: {bg_color};"><td style="padding: 10px; border: 1px solid #ddd; text-align: center; font-weight: bold;">{action_val}</td><td style="padding: 10px; border: 1px solid #ddd; text-align: center;">{time_val}</td><td style="padding: 10px; border: 1px solid #ddd; text-align: left; color: {text_color}; font-weight: bold;">{hold_note_val}</td><td style="padding: 10px; border: 1px solid #ddd; text-align: left;">{spc_val}</td><td style="padding: 10px; border: 1px solid #ddd; text-align: center;">{result_html}</td></tr>')
-                    
                     html_parts.append('</table></div>')
                     st.markdown("".join(html_parts), unsafe_allow_html=True)
+                
                 else:
                     st.info(f"✅ 該晶圓的第 {target_step_no} 步目前無任何歷史紀錄。")
+                    # 🎯 就算沒有歷史紀錄，如果有上傳圖片，一樣在下方顯示出來！
+                    if mother_result_val.startswith("http"):
+                        st.markdown("---")
+                        st.markdown("📸 **目前已上傳的檢驗圖片：**")
+                        st.markdown(f"<a href='{mother_result_val}' target='_blank'><img src='{mother_result_val}' style='max-height: 250px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); cursor: zoom-in;'></a>", unsafe_allow_html=True)
+                    elif mother_result_val:
+                        st.markdown(f"**📝 目前已儲存的 Result 紀錄：** {mother_result_val}")
     else:
         st.info("請先於 Full Route 頁籤搜尋並選擇特定站點。")
 
