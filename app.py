@@ -508,10 +508,27 @@ with all_tabs[3]:
         if wafer_col in df_route.columns:
             html_table = """<style>.overview-table { width: 100%; border-collapse: collapse; font-family: sans-serif; font-size: 14px; margin-top: 10px; } .overview-table th { background-color: #f8f9fa; padding: 12px 10px; border: 1px solid #dee2e6; text-align: left; font-weight: bold; color: #495057; } .overview-table td { padding: 10px; border: 1px solid #dee2e6; text-align: left; vertical-align: middle; color: #212529; } .overview-table .merged-cell { text-align: center; vertical-align: middle; font-weight: bold; background-color: #ffffff; color: #0d6efd; } .overview-table .owner-team-cell { text-align: center; vertical-align: middle; background-color: #ffffff; } .prog-wrapper { display: flex; align-items: center; width: 100%; } .prog-container { background-color: #e9ecef; border-radius: 4px; flex-grow: 1; height: 16px; overflow: hidden; } .prog-bar { background-color: #28a745; height: 100%; border-radius: 4px; transition: width 0.4s ease; } .prog-text { margin-left: 10px; font-size: 13px; font-weight: 500; min-width: 35px; text-align: right; } .status-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }</style><table class="overview-table"><tr><th>Shuttle Name</th><th>Owner</th><th>團隊</th><th style="width: 90px; text-align: center;">已出貨片數</th><th>ID (Wafer)</th><th>Step</th><th>Status</th><th style="width: 200px;">進度條</th></tr>"""
             df_route[shuttle_col] = df_route[shuttle_col].fillna("")
+            df_route[shuttle_col] = df_route[shuttle_col].fillna("")
             df_route[team_col] = df_route[team_col].fillna("")
+            
+            # ==========================================
+            # 🎯 新增：智慧型 Lot 數字排序邏輯
+            # ==========================================
+            def get_lot_number(wid):
+                import re
+                # 尋找 ID 中 "lot" 後面的純數字
+                match = re.search(r'lot(\d+)', str(wid).lower())
+                # 如果有找到數字就轉為整數排序，沒找到就放最後面 (999999)
+                return int(match.group(1)) if match else 999999
+                
+            # 建立暫時的排序用欄位，並依照 Lot 數字大小 -> Wafer ID 字母順序 進行雙重排序
+            df_route['_lot_num'] = df_route[wafer_col].apply(get_lot_number)
+            df_route = df_route.sort_values(by=['_lot_num', wafer_col])
+            
             valid_shuttles = {}
 
-            for (shuttle, rep_team), s_group in df_route.groupby([shuttle_col, team_col]):
+            # 🎯 這裡務必加回 sort=False！這樣分組時才會完全依照上方排好的 Lot 順序往下畫表格
+            for (shuttle, rep_team), s_group in df_route.groupby([shuttle_col, team_col], sort=False):
                 if str(shuttle).strip() == "": continue
                 rep_owner = str(s_group.iloc[0].get(owner_col, ""))
                 team_valid_wafers = []
