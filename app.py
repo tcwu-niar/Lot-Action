@@ -217,6 +217,12 @@ with all_tabs[0]:
             with edit_col2: edit_recipe = st.text_input("🧪 變更機台配方:", value=str(target_row.get("Recipe", "")))
             with edit_col3: edit_cp = st.text_input("🎯 變更檢驗點:", value=str(target_row.get("Check point", "")))
             
+            w_id = str(target_row.get(actual_string_col, "")).strip()
+            s_no = str(target_row.get(step_col, "")).strip()
+
+            st.markdown("📝 **批註 / 機台數據回填 (SPC Data / Comments):**")
+            user_comment = st.text_input("請在此輸入過站紀錄...", key="user_comment_input")
+            
             st.markdown("📸 **檢驗結果圖片上傳 (Result 欄位):**")
             result_image = st.file_uploader("上傳機台截圖或顯微鏡照片 (支援 png/jpg)", type=["png", "jpg", "jpeg"], key=f"img_{w_id}_{s_no}")
             
