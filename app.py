@@ -304,7 +304,7 @@ with all_tabs[0]:
                     has_error = False
                     for url in urls_to_send:
                         try:
-                            res = requests.get(url, timeout=15)
+                            res = requests.get(url, timeout=15, allow_redirects=False)
                             if "Error" in res.text:
                                 st.error(f"❌ 雲端拒絕寫入: {res.text}")
                                 has_error = True
@@ -637,7 +637,7 @@ with all_tabs[4]:
                             has_err = False
                             for url in urls_to_send:
                                 try:
-                                    res = requests.get(url, timeout=15)
+                                    res = requests.get(url, timeout=15, allow_redirects=False)
                                     if "Error" in res.text:
                                         st.error(f"❌ 寫入失敗: {res.text}"); has_err = True
                                 except Exception as e:
