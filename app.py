@@ -511,7 +511,7 @@ with all_tabs[3]:
             df_route[team_col] = df_route[team_col].fillna("")
             valid_shuttles = {}
 
-            for (shuttle, rep_team), s_group in df_route.groupby([shuttle_col, team_col], sort=False):
+            for (shuttle, rep_team), s_group in df_route.groupby([shuttle_col, team_col]):
                 if str(shuttle).strip() == "": continue
                 rep_owner = str(s_group.iloc[0].get(owner_col, ""))
                 team_valid_wafers = []
