@@ -603,7 +603,7 @@ with all_tabs[4]:
         
         if wafer_col in df_route_bank.columns:
             banked_wafers = []
-            for wid, w_group in df_route_bank.groupby(wafer_col, sort=False):
+            for (shuttle, rep_team), s_group in df_route.groupby([shuttle_col, team_col]):
                 w_group = w_group.reset_index(drop=True)
                 has_scrap = False
                 is_banked = False
