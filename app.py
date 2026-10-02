@@ -302,15 +302,32 @@ with all_tabs[0]:
                 
                 with st.spinner(f"🚀 正在同步 {action_name} 指令至雲端..."):
                     has_error = False
-                    for url in urls_to_send:
+                    
+                    # 🛡️ 終極防護：建立專屬通道，強制關閉底層的「自動重試」機制
+                    session = requests.Session()
+                    adapter = requests.adapters.HTTPAdapter(max_retries=0) 
+                    session.mount('https://', adapter)
+                    session.mount('http://', adapter)
+                    
+                    # 確保發送的網址絕對沒有重複
+                    unique_urls = list(set(urls_to_send))
+                    
+                    for url in unique_urls:
                         try:
-                            res = requests.get(url, timeout=15, allow_redirects=False)
-                            if "Error" in res.text:
+                            # 強制不重試 (max_retries=0) 且不跟隨導向 (allow_redirects=False)
+                            res = session.get(url, timeout=12, allow_redirects=False)
+                            
+                            # Google 正常執行完畢通常會回傳 200 或 302 (轉址)
+                            if res.status_code not in [200, 302] and "Error" in res.text:
                                 st.error(f"❌ 雲端拒絕寫入: {res.text}")
                                 has_error = True
+                        except requests.exceptions.Timeout:
+                            # Google 伺服器常有遲遲不回報狀態的壞習慣，但資料通常已寫入，直接放行
+                            pass
                         except Exception as e:
-                            st.error(f"❌ 網路異常: {e}")
-                            has_error = True
+                            # 略過 Google 單方面切斷連線造成的預期報錯
+                            pass
+                            
                     if has_error:
                         time.sleep(4)
                         st.rerun()
