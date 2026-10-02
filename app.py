@@ -431,7 +431,7 @@ with all_tabs[3]:
                     has_scrap, is_banked, wip_idx = False, False, total_steps  
                     raw_last_step = str(w_group.iloc[-1].get(step_col, "")).replace(".0", "").strip()
                     wip_step_no = str(total_steps) if raw_last_step in ["", "nan", "NaN", "None"] else raw_last_step
-                    status_html = '<span class="status-dot" style="background-color: #0d6efd;"></span> Shipped'
+                    status_html = '<span class="status-dot" style="background-color: #0d6efd;"></span> Shipped (已出貨)'
                     
                     for idx, row in w_group.iterrows():
                         fco = str(row.get(fco_col, "")).strip().upper()
@@ -439,7 +439,8 @@ with all_tabs[3]:
                             has_scrap, wip_idx = True, idx
                             raw_step = str(row.get(step_col, "")).replace(".0", "").strip()
                             wip_step_no = str(idx + 1) if raw_step in ["", "nan", "NaN", "None"] else raw_step
-                            status_html = f'<span class="status-dot" style="background-color: #dc3545;"></span> SCRAPPED'
+                            # 🎯 補回：報廢站點描述
+                            status_html = f'<span class="status-dot" style="background-color: #dc3545;"></span> SCRAPPED: {row.get(desc_col, "")}'
                             break
                             
                     if not has_scrap:
@@ -449,9 +450,14 @@ with all_tabs[3]:
                                 wip_idx = idx
                                 raw_step = str(row.get(step_col, "")).replace(".0", "").strip()
                                 wip_step_no = str(idx + 1) if raw_step in ["", "nan", "NaN", "None"] else raw_step
-                                if fco == "HOLD": status_html = f'<span class="status-dot" style="background-color: #ffc107;"></span> HOLD'
-                                elif fco == "BANK": is_banked = True
-                                else: status_html = f'<span class="status-dot" style="background-color: #198754;"></span> INPR'
+                                if fco == "HOLD": 
+                                    # 🎯 補回：暫停站點描述
+                                    status_html = f'<span class="status-dot" style="background-color: #ffc107;"></span> HOLD: {row.get(desc_col, "")}'
+                                elif fco == "BANK": 
+                                    is_banked = True
+                                else: 
+                                    # 🎯 補回：正常在製站點描述
+                                    status_html = f'<span class="status-dot" style="background-color: #198754;"></span> INPR: {row.get(desc_col, "")}'
                                 break
                     if is_banked: continue
                     is_shipped = True if (wip_idx == total_steps and not has_scrap) else False
