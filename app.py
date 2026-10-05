@@ -608,6 +608,8 @@ with all_tabs[3]:
 # =========================================================================
 with all_tabs[4]:
     st.subheader("📦 入庫晶圓清單 (Banked Wafers)")
+    st.markdown("集中顯示目前被標記為 Bank (暫停執行/未下線) 的所有晶圓。**勾選左側框框並點擊下方按鈕，即可批次 Kick off (下貨出庫)**。")
+
     df_route_bank, conn_status_bank = fetch_route_data_via_csv("route_template")
     
     if not df_route_bank.empty:
@@ -621,7 +623,9 @@ with all_tabs[4]:
         
         if wafer_col in df_route_bank.columns:
             banked_wafers = []
-            for (shuttle, rep_team), s_group in df_route.groupby([shuttle_col, team_col]):
+            
+            # 🎯 嚴格按照 Wafer ID 獨立分組，確保每片晶圓只會被抓取一次
+            for wid, w_group in df_route_bank.groupby(wafer_col, sort=False):
                 w_group = w_group.reset_index(drop=True)
                 has_scrap = False
                 is_banked = False
@@ -638,20 +642,34 @@ with all_tabs[4]:
                         fco = str(row.get(fco_col, "")).strip().upper()
                         if fco in ["", "NAN", "INPR", "HOLD", "BANK"]:
                             if fco == "BANK":
-                                is_banked, bank_step_no, bank_comment = True, str(row.get(step_col, "")).replace(".0", ""), str(row.get(comment_col, ""))
+                                is_banked = True
+                                bank_step_no = str(row.get(step_col, "")).replace(".0", "")
+                                bank_comment = str(row.get(comment_col, ""))
                             break
                             
                 if is_banked:
                     first_row = w_group.iloc[0]
+                    # 獨立附加每一片晶圓的專屬資料
                     banked_wafers.append({
-                        "🚀 選取": False, "Shuttle Name": str(first_row.get(shuttle_col, "")), "Owner": str(first_row.get(owner_col, "")),
-                        "團隊": str(first_row.get(team_col, "")), "ID (Wafer)": str(wid),
-                        "Bank 停留站點": f"第 {bank_step_no} 步", "_Raw_Step": bank_step_no, "備註": bank_comment
+                        "🚀 選取": False, 
+                        "Shuttle Name": str(first_row.get(shuttle_col, "")), 
+                        "Owner": str(first_row.get(owner_col, "")),
+                        "團隊": str(first_row.get(team_col, "")), 
+                        "ID (Wafer)": str(wid).strip(),
+                        "Bank 停留站點": f"第 {bank_step_no} 步", 
+                        "_Raw_Step": bank_step_no, 
+                        "備註": bank_comment
                     })
                     
             if banked_wafers:
                 df_bank = pd.DataFrame(banked_wafers)
-                edited_bank_df = st.data_editor(df_bank.drop(columns=["_Raw_Step"]), hide_index=True, use_container_width=True, disabled=["Shuttle Name", "Owner", "團隊", "ID (Wafer)", "Bank 停留站點", "備註"])
+                edited_bank_df = st.data_editor(
+                    df_bank.drop(columns=["_Raw_Step"]), 
+                    hide_index=True, 
+                    use_container_width=True, 
+                    disabled=["Shuttle Name", "Owner", "團隊", "ID (Wafer)", "Bank 停留站點", "備註"]
+                )
+                
                 selected_flags = edited_bank_df["🚀 選取"].tolist()
                 selected_wids = [banked_wafers[i]["ID (Wafer)"] for i, flag in enumerate(selected_flags) if flag]
                 selected_steps = [banked_wafers[i]["_Raw_Step"] for i, flag in enumerate(selected_flags) if flag]
@@ -670,15 +688,30 @@ with all_tabs[4]:
                             
                         with st.spinner(f"⏳ 正在為 {len(selected_wids)} 片晶圓執行 Kick off..."):
                             has_err = False
+                            # 🛡️ 套用終極防護，強制關閉底層的自動重試
+                            session = requests.Session()
+                            adapter = requests.adapters.HTTPAdapter(max_retries=0)
+                            session.mount('https://', adapter)
+                            
                             for url in urls_to_send:
                                 try:
-                                    res = requests.get(url, timeout=15, allow_redirects=False)
-                                    if "Error" in res.text:
-                                        st.error(f"❌ 寫入失敗: {res.text}"); has_err = True
-                                except Exception as e:
-                                    st.error(f"❌ 網路連線異常: {e}"); has_err = True
-                            if has_err: time.sleep(3)
+                                    res = session.get(url, timeout=12, allow_redirects=False)
+                                    if res.status_code not in [200, 302] and "Error" in res.text:
+                                        st.error(f"❌ 寫入失敗: {res.text}")
+                                        has_err = True
+                                except Exception:
+                                    pass # 略過 Google 單方面切斷連線造成的報錯
+                                    
+                            if has_err: 
+                                time.sleep(3)
                             else:
                                 st.success("✅ 批次 Kick off 成功！")
                                 time.sleep(1.5)
-                            st.cache_data.clear(); st.rerun()
+                            st.cache_data.clear()
+                            st.rerun()
+            else:
+                st.success("🎉 目前產線上沒有任何晶圓處於 Bank (入庫) 狀態。")
+        else:
+            st.warning("⚠️ 母表中找不到 Wafer ID 欄位。")
+    else:
+        st.info("💡 目前雲端母表尚無資料。")
