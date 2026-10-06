@@ -711,11 +711,8 @@ with all_tabs[4]:
                             st.rerun()
             else:
                 st.success("🎉 目前產線上沒有任何晶圓處於 Bank (入庫) 狀態。")
-        else:
-            st.warning("⚠️ 母表中找不到 Wafer ID 欄位。")
-    else:
-        st.info("💡 目前雲端母表尚無資料。")
-        # ==========================================
+                
+            # ==========================================
             # 🎯 新增：各 Shuttle 狀態統計總表 (與上方的 if banked_wafers: 對齊)
             # ==========================================
             st.markdown("---")
@@ -774,4 +771,5 @@ with all_tabs[4]:
         else:
             st.warning("⚠️ 母表中找不到 Wafer ID 欄位。")
     else:
+        st.info("💡 目前雲端母表尚無資料。")
         st.info("💡 目前雲端母表尚無資料。")
