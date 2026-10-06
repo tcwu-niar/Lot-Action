@@ -479,7 +479,7 @@ with all_tabs[2]:
                 with st.spinner("⏳ 正在寫入..."):
                     payload = {"action": "bulk_upload", "data": edited_df.to_dict(orient="records")}
                     try:
-                        res = requests.post(MY_ORGANIZATION_GAS_URL, json=payload, timeout=30)
+                        res = requests.post(MY_ORGANIZATION_GAS_URL, json=payload, timeout=300)
                         if res.status_code == 200 and "Success" in res.text:
                             st.success("✅ 批量寫入成功！全新晶圓已入庫。")
                             time.sleep(2)
