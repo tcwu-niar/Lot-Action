@@ -715,3 +715,72 @@ with all_tabs[4]:
             st.warning("⚠️ 母表中找不到 Wafer ID 欄位。")
     else:
         st.info("💡 目前雲端母表尚無資料。")
+        # ==========================================
+        # 🎯 新增：各 Shuttle 狀態統計總表
+        # ==========================================
+        st.markdown("---")
+        st.subheader("📊 各 Shuttle 狀態統計總表")
+        
+        if wafer_col in df_route_bank.columns:
+            summary_data = []
+            
+            # 以 Shuttle 為單位進行分組計算
+            for shuttle, s_group in df_route_bank.groupby(shuttle_col, sort=False):
+                if str(shuttle).strip() == "": continue
+                
+                inpr_count = 0
+                bank_count = 0
+                shipped_count = 0
+                
+                # 掃描該 Shuttle 下的每一片晶圓
+                for wid in s_group[wafer_col].unique():
+                    w_group = s_group[s_group[wafer_col] == wid].reset_index(drop=True)
+                    total_steps = len(w_group)
+                    
+                    has_scrap = False
+                    is_banked = False
+                    wip_idx = total_steps
+                    
+                    # 1. 檢查是否報廢
+                    for idx, row in w_group.iterrows():
+                        fco = str(row.get(fco_col, "")).strip().upper()
+                        if fco == "SCRP":
+                            has_scrap = True
+                            break
+                            
+                    # 2. 判斷當前狀態 (在製、Bank、或出貨)
+                    if not has_scrap:
+                        for idx, row in w_group.iterrows():
+                            fco = str(row.get(fco_col, "")).strip().upper()
+                            if fco in ["", "NAN", "INPR", "HOLD", "BANK"]:
+                                wip_idx = idx
+                                if fco == "BANK":
+                                    is_banked = True
+                                break
+                    
+                    # 3. 進行分類計數
+                    if has_scrap:
+                        continue # 報廢不計入此三類
+                    elif is_banked:
+                        bank_count += 1
+                    elif wip_idx == total_steps:
+                        shipped_count += 1
+                    else:
+                        inpr_count += 1 # 包含 INPR 與 HOLD
+                
+                # 若該 Shuttle 有任何有效晶圓，則加入統計表
+                if (inpr_count + bank_count + shipped_count) > 0:
+                    summary_data.append({
+                        "Shuttle Name": shuttle,
+                        "INPR (在製中)": inpr_count,
+                        "Bank (入庫)": bank_count,
+                        "Shipped (已出貨)": shipped_count,
+                        "Total (總計)": inpr_count + bank_count + shipped_count
+                    })
+            
+            if summary_data:
+                df_summary = pd.DataFrame(summary_data)
+                # 使用 st.dataframe 呈現，支援自動排序與全寬度顯示
+                st.dataframe(df_summary, hide_index=True, use_container_width=True)
+            else:
+                st.info("尚無有效的 Shuttle 統計資料。")
