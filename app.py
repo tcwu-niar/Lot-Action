@@ -714,6 +714,18 @@ with all_tabs[4]:
             
             summary_data = []
             
+            # 🎯 新增：套用智慧型 Lot 數字排序邏輯
+            def get_lot_number(wid):
+                import re
+                # 尋找 ID 中 "lot" 後面的純數字
+                match = re.search(r'lot(\d+)', str(wid).lower())
+                # 如果有找到數字就轉為整數排序，沒找到就放最後面 (999999)
+                return int(match.group(1)) if match else 999999
+                
+            # 在進行 Shuttle 分組前，先將整份資料庫按 Lot 數字大小排序
+            df_route_bank['_lot_num'] = df_route_bank[wafer_col].apply(get_lot_number)
+            df_route_bank = df_route_bank.sort_values(by=['_lot_num', wafer_col])
+            
             for shuttle, s_group in df_route_bank.groupby(shuttle_col, sort=False):
                 if str(shuttle).strip() == "": continue
                 
