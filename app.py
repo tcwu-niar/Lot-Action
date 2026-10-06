@@ -378,6 +378,10 @@ with all_tabs[1]:
             st.markdown(f"📊 晶圓 **{search_id}** 的母表生產路由全貌：")
             display_route = filtered_route.copy().reset_index(drop=True)
             
+            # 🎯 修正 1：清除畫面上母表 Step 欄位的 .0 尾數，讓表格看起來更乾淨
+            if "Step" in display_route.columns:
+                display_route["Step"] = display_route["Step"].astype(str).str.replace(".0", "", regex=False)
+            
             # 🎯 新增 column_config，讓 Streamlit 將 Result 欄位的網址自動渲染成圖片
             selected_route_row = st.dataframe(
                 display_route, 
@@ -393,13 +397,18 @@ with all_tabs[1]:
             
             if selected_route_row and selected_route_row.get("selection", {}).get("rows"):
                 selected_idx = selected_route_row["selection"]["rows"][0]
-                target_step_no = str(display_route.iloc[selected_idx].get("Step", "")).strip()
+                
+                # 🎯 修正 2：確保取出來的目標步驟絕對沒有 .0
+                target_step_no = str(display_route.iloc[selected_idx].get("Step", "")).replace(".0", "").strip()
                 
                 st.markdown("---")
                 st.markdown(f"### 🛑 第 {target_step_no} 步 - 歷史動作完整紀錄 (Action History)")
                 
                 log_wafer_col = [c for c in df_logs.columns if "Wafer" in c or "晶圓" in c][0]
-                step_logs = df_logs[(df_logs[log_wafer_col].astype(str).str.upper() == search_id.upper()) & (df_logs["Step"].astype(str).str.strip() == target_step_no)]
+                
+                # 🎯 修正 3：確保歷史資料庫 (df_logs) 裡的 Step 也清掉 .0，兩邊才能完美比對成功！
+                clean_log_steps = df_logs["Step"].astype(str).str.replace(".0", "", regex=False).str.strip()
+                step_logs = df_logs[(df_logs[log_wafer_col].astype(str).str.upper() == search_id.upper()) & (clean_log_steps == target_step_no)]
                 
                 mother_result_val = str(display_route.iloc[selected_idx].get("Result", "")).strip()
                 result_html = ""
