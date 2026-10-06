@@ -148,7 +148,7 @@ with all_tabs[0]:
                     has_scrap_occurred, scrap_step_index = True, idx
                     break
             
-            wip_step_no, wip_row_idx = "9999", 9999
+            wip_step_no, wip_rox = "9999", 9999
             fco_col = next((c for c in filtered_df.columns if "check out" in str(c).lower()), "Check out Time")
             # 🎯 提取動態 Step 欄位
             step_col = next((c for c in filtered_df.columns if str(c).strip().lower() in ["step", "step no.", "step no"]), "Step")
@@ -219,7 +219,7 @@ with all_tabs[0]:
             with edit_col3: edit_cp = st.text_input("🎯 變更檢驗點:", value=str(target_row.get("Check point", "")))
             
             w_id = str(target_row.get(actual_string_col, "")).strip()
-            s_no = str(target_row.get(step_col, "")).strip()
+            s_no = str(target_row.get(step_col, "")).replace(".0", "").strip()
 
             st.markdown("📝 **批註 / 機台數據回填 (SPC Data / Comments):**")
             user_comment = st.text_input("請在此輸入過站紀錄...", key="user_comment_input")
@@ -235,71 +235,56 @@ with all_tabs[0]:
 
             st.markdown("⚠️ **流程變更權限指令**")
             b1, b2, b3, b4, b5, b6 = st.columns(6)
-            w_id, s_no = str(target_row.get(actual_string_col, "")).strip(), str(target_row.get(step_col, "")).strip()
 
             def execute_stage_action(action_name, target_w_id, target_s_no, custom_comment=None, target_jump_step=None):
                 tw_tz = datetime.timezone(datetime.timedelta(hours=8))
                 now_str = datetime.datetime.now(tw_tz).strftime("%Y-%m-%d %H:%M:%S")
                 urls_to_send = []
                 
-                # 🎯 處理圖片上傳 (轉為網址)
+                # 🎯 網址安全編碼：避免特殊字元或空格導致斷線
+                enc_w_id = requests.utils.quote(str(target_w_id))
+                enc_s_no = requests.utils.quote(str(target_s_no))
+                
+                # 處理圖片上傳 (轉為網址)
                 final_result_link = str(target_row.get("Result", "")).strip()
                 if result_image is not None and action_name in ["Check out", "Key in data"]:
                     with st.spinner("⏳ 正在將圖片上傳至雲端..."):
                         try:
-                            # 準備 Freeimage.host 的公開 API 參數
-                            payload = {
-                                "key": "6d207e02198a847aa98d0a2a901485a5", # 免費公開的 API Key
-                                "action": "upload",
-                                "format": "json"
-                            }
+                            payload = {"key": "6d207e02198a847aa98d0a2a901485a5", "action": "upload", "format": "json"}
                             files = {"source": result_image.getvalue()}
-                            
                             res = requests.post("https://freeimage.host/api/1/upload", data=payload, files=files)
-                            
                             if res.status_code == 200:
-                                # 成功取得網址
                                 final_result_link = res.json()["image"]["url"]
                             else:
                                 st.warning(f"⚠️ 圖片上傳失敗 (狀態碼: {res.status_code})，僅儲存文字紀錄。")
                         except Exception as e:
                             st.error(f"圖片上傳連線錯誤: {e}")
 
+                # 準備更新的欄位
                 if action_name in ["Check out", "Scrap", "Key in data"]:
                     fields = {"Process Tool": edit_tool, "Recipe": edit_recipe, "Check point": edit_cp}
                     if final_result_link:
-                        fields["Result"] = final_result_link # 將圖片網址加入準備寫入的欄位清單
+                        fields["Result"] = final_result_link 
                         
                     for f_name, f_val in fields.items():
                         if str(f_val).strip() != str(target_row.get(f_name, "")).strip():
-                            urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&column_name={requests.utils.quote(f_name)}&new_value={requests.utils.quote(str(f_val).strip())}")
+                            urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&column_name={requests.utils.quote(f_name)}&new_value={requests.utils.quote(str(f_val).strip())}")
                 
                 final_comment = custom_comment if custom_comment is not None else user_comment.strip()
                 enc_comment = requests.utils.quote(final_comment)
                 enc_time = requests.utils.quote(now_str)
                 
-                if action_name == "Check out": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&action=Check out&comment={enc_comment}&time={enc_time}")
-                elif action_name == "Scrap": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&action=Scrap&comment={enc_comment}&time={enc_time}")
-                elif action_name == "Unscrap": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&action=Unscrap&comment={enc_comment}&time={enc_time}")
-                elif action_name == "Hold": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&action=Hold&comment={enc_comment}&time={enc_time}")
-                elif action_name == "Unhold": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&action=Unhold&comment={enc_comment}&time={enc_time}")
-                elif action_name == "Bank": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&action=Bank&comment={enc_comment}&time={enc_time}")
-                elif action_name == "Kick off": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&action=Kick off&comment={enc_comment}&time={enc_time}")
+                # 動作指令 (已刪除您原本程式碼中重複的區塊)
+                if action_name == "Check out": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Check out&comment={enc_comment}&time={enc_time}")
+                elif action_name == "Scrap": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Scrap&comment={enc_comment}&time={enc_time}")
+                elif action_name == "Unscrap": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Unscrap&comment={enc_comment}&time={enc_time}")
+                elif action_name == "Hold": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Hold&comment={enc_comment}&time={enc_time}")
+                elif action_name == "Unhold": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Unhold&comment={enc_comment}&time={enc_time}")
+                elif action_name == "Bank": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Bank&comment={enc_comment}&time={enc_time}")
+                elif action_name == "Kick off": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Kick off&comment={enc_comment}&time={enc_time}")
                 elif action_name == "Skip":
                     enc_target_step = requests.utils.quote(str(target_jump_step))
-                    urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&action=Skip&comment={enc_comment}&time={enc_time}&target_step={enc_target_step}")
-                
-                # 🎯 新增這兩行：讓「儲存修改/上傳圖片」也發送 Action 紀錄到歷史日誌
-                if action_name == "Check out": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&action=Check out&comment={enc_comment}&time={enc_time}")
-                elif action_name == "Scrap": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&action=Scrap&comment={enc_comment}&time={enc_time}")
-                elif action_name == "Unscrap": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&action=Unscrap&comment={enc_comment}&time={enc_time}")
-                elif action_name == "Hold": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&action=Hold&comment={enc_comment}&time={enc_time}")
-                elif action_name == "Unhold": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&action=Unhold&comment={enc_comment}&time={enc_time}")
-                elif action_name == "Bank": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&action=Bank&comment={enc_comment}&time={enc_time}")
-                elif action_name == "Kick off": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&action=Kick off&comment={enc_comment}&time={enc_time}")
-                elif action_name == "Skip":
-                    enc_target_step = requests.utils.quote(str(target_jump_step))
-                    urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={target_w_id}&step_no={target_s_no}&action=Skip&comment={enc_comment}&time={enc_time}&target_step={enc_target_step}")
+                    urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Skip&comment={enc_comment}&time={enc_time}&target_step={enc_target_step}")
                 
                 with st.spinner(f"🚀 正在同步 {action_name} 指令至雲端..."):
                     has_error = False
