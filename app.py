@@ -148,9 +148,8 @@ with all_tabs[0]:
                     has_scrap_occurred, scrap_step_index = True, idx
                     break
             
-            wip_step_no, wip_rox = "9999", 9999
+            wip_step_no, wip_row_idx = "9999", 9999
             fco_col = next((c for c in filtered_df.columns if "check out" in str(c).lower()), "Check out Time")
-            # 🎯 提取動態 Step 欄位
             step_col = next((c for c in filtered_df.columns if str(c).strip().lower() in ["step", "step no.", "step no"]), "Step")
             
             if not has_scrap_occurred:
