@@ -503,26 +503,19 @@ with all_tabs[3]:
         if wafer_col in df_route.columns:
             html_table = """<style>.overview-table { width: 100%; border-collapse: collapse; font-family: sans-serif; font-size: 14px; margin-top: 10px; } .overview-table th { background-color: #f8f9fa; padding: 12px 10px; border: 1px solid #dee2e6; text-align: left; font-weight: bold; color: #495057; } .overview-table td { padding: 10px; border: 1px solid #dee2e6; text-align: left; vertical-align: middle; color: #212529; } .overview-table .merged-cell { text-align: center; vertical-align: middle; font-weight: bold; background-color: #ffffff; color: #0d6efd; } .overview-table .owner-team-cell { text-align: center; vertical-align: middle; background-color: #ffffff; } .prog-wrapper { display: flex; align-items: center; width: 100%; } .prog-container { background-color: #e9ecef; border-radius: 4px; flex-grow: 1; height: 16px; overflow: hidden; } .prog-bar { background-color: #28a745; height: 100%; border-radius: 4px; transition: width 0.4s ease; } .prog-text { margin-left: 10px; font-size: 13px; font-weight: 500; min-width: 35px; text-align: right; } .status-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }</style><table class="overview-table"><tr><th>Shuttle Name</th><th>Owner</th><th>團隊</th><th style="width: 90px; text-align: center;">已出貨片數</th><th>ID (Wafer)</th><th>Step</th><th>Status</th><th style="width: 200px;">進度條</th></tr>"""
             df_route[shuttle_col] = df_route[shuttle_col].fillna("")
-            df_route[shuttle_col] = df_route[shuttle_col].fillna("")
             df_route[team_col] = df_route[team_col].fillna("")
             
-            # ==========================================
-            # 🎯 新增：智慧型 Lot 數字排序邏輯
-            # ==========================================
             def get_lot_number(wid):
                 import re
-                # 尋找 ID 中 "lot" 後面的純數字
                 match = re.search(r'lot(\d+)', str(wid).lower())
-                # 如果有找到數字就轉為整數排序，沒找到就放最後面 (999999)
                 return int(match.group(1)) if match else 999999
                 
-            # 建立暫時的排序用欄位，並依照 Lot 數字大小 -> Wafer ID 字母順序 進行雙重排序
             df_route['_lot_num'] = df_route[wafer_col].apply(get_lot_number)
             df_route = df_route.sort_values(by=['_lot_num', wafer_col])
             
             valid_shuttles = {}
+            all_shipped_data = [] # 🎯 新增：獨立收集已出貨晶圓的清單
 
-            # 🎯 這裡務必加回 sort=False！這樣分組時才會完全依照上方排好的 Lot 順序往下畫表格
             for (shuttle, rep_team), s_group in df_route.groupby([shuttle_col, team_col], sort=False):
                 if str(shuttle).strip() == "": continue
                 rep_owner = str(s_group.iloc[0].get(owner_col, ""))
@@ -542,7 +535,6 @@ with all_tabs[3]:
                             has_scrap, wip_idx = True, idx
                             raw_step = str(row.get(step_col, "")).replace(".0", "").strip()
                             wip_step_no = str(idx + 1) if raw_step in ["", "nan", "NaN", "None"] else raw_step
-                            # 🎯 補回：報廢站點描述
                             status_html = f'<span class="status-dot" style="background-color: #dc3545;"></span> SCRAPPED: {row.get(desc_col, "")}'
                             break
                             
@@ -553,39 +545,55 @@ with all_tabs[3]:
                                 wip_idx = idx
                                 raw_step = str(row.get(step_col, "")).replace(".0", "").strip()
                                 wip_step_no = str(idx + 1) if raw_step in ["", "nan", "NaN", "None"] else raw_step
-                                if fco == "HOLD": 
-                                    # 🎯 補回：暫停站點描述
-                                    status_html = f'<span class="status-dot" style="background-color: #ffc107;"></span> HOLD: {row.get(desc_col, "")}'
-                                elif fco == "BANK": 
-                                    is_banked = True
-                                else: 
-                                    # 🎯 補回：正常在製站點描述
-                                    status_html = f'<span class="status-dot" style="background-color: #198754;"></span> INPR: {row.get(desc_col, "")}'
+                                if fco == "HOLD": status_html = f'<span class="status-dot" style="background-color: #ffc107;"></span> HOLD: {row.get(desc_col, "")}'
+                                elif fco == "BANK": is_banked = True
+                                else: status_html = f'<span class="status-dot" style="background-color: #198754;"></span> INPR: {row.get(desc_col, "")}'
                                 break
+                                
                     if is_banked: continue
                     is_shipped = True if (wip_idx == total_steps and not has_scrap) else False
                     nums = re.findall(r'\d+', str(wip_step_no))
                     progress_pct = min(int((int(nums[0]) if nums else 0) / 92 * 100), 100)
+                    
                     team_valid_wafers.append({"id": wid, "step": f"{wip_step_no}/92", "status": status_html, "is_shipped": is_shipped, "progress_pct": progress_pct})
+                    
+                    # 🎯 提取已出貨的晶圓，準備畫在下方獨立表格
+                    if is_shipped:
+                        all_shipped_data.append({
+                            "Shuttle Name": shuttle,
+                            "Owner": rep_owner,
+                            "團隊": rep_team,
+                            "ID (Wafer)": wid,
+                            "Step": f"{wip_step_no}/92",
+                            "Status": "🟢 Shipped (已出貨)",
+                            "📝 出貨備註 / 追蹤碼 (可編輯)": ""
+                        })
                 
                 if team_valid_wafers:
                     if shuttle not in valid_shuttles: valid_shuttles[shuttle] = {"owner": rep_owner, "teams": []}
                     valid_shuttles[shuttle]["teams"].append({"team_name": rep_team, "wafers": team_valid_wafers})
             
+            # 🎯 繪製主表 HTML (排除已出貨行，但保留出貨數量統計)
+            has_inpr_wafers = False
             for shuttle, s_data in valid_shuttles.items():
-                shuttle_rowspan = sum(len(t["wafers"]) for t in s_data["teams"])
+                shuttle_inpr_count = sum(1 for t in s_data["teams"] for w in t["wafers"] if not w["is_shipped"])
+                if shuttle_inpr_count == 0: continue # 若整個 Shuttle 都出貨，主表不顯示
+                has_inpr_wafers = True
+                
                 is_first_in_shuttle = True
                 for t_data in s_data["teams"]:
-                    team_rowspan = len(t_data["wafers"])
+                    inpr_wafers = [w for w in t_data["wafers"] if not w["is_shipped"]]
+                    team_rowspan = len(inpr_wafers)
+                    if team_rowspan == 0: continue
+                    
                     is_first_in_team = True
                     shipped_count = sum(1 for w in t_data["wafers"] if w["is_shipped"])
-                    max_progress_pct = max([w["progress_pct"] for w in t_data["wafers"] if not w["is_shipped"]] + [0])
-                    if shipped_count > 0 and shipped_count == team_rowspan: max_progress_pct = 100
+                    max_progress_pct = max([w["progress_pct"] for w in inpr_wafers] + [0])
 
-                    for w_data in t_data["wafers"]:
+                    for w_data in inpr_wafers:
                         html_table += "<tr>"
                         if is_first_in_shuttle:
-                            html_table += f'<td class="merged-cell" rowspan="{shuttle_rowspan}">{shuttle}</td><td class="owner-team-cell" rowspan="{shuttle_rowspan}">{s_data["owner"]}</td>'
+                            html_table += f'<td class="merged-cell" rowspan="{shuttle_inpr_count}">{shuttle}</td><td class="owner-team-cell" rowspan="{shuttle_inpr_count}">{s_data["owner"]}</td>'
                             is_first_in_shuttle = False
                         if is_first_in_team:
                             html_table += f'<td class="owner-team-cell" rowspan="{team_rowspan}">{t_data["team_name"]}</td><td class="merged-cell" rowspan="{team_rowspan}">{shipped_count}</td>'
@@ -595,7 +603,30 @@ with all_tabs[3]:
                             is_first_in_team = False
                         html_table += "</tr>"
             html_table += "</table>"
-            st.markdown(html_table, unsafe_allow_html=True)
+            
+            if has_inpr_wafers:
+                st.markdown(html_table, unsafe_allow_html=True)
+            else:
+                st.info("目前產線上沒有任何進行中 (INPR) 的晶圓。")
+                
+            # ==========================================
+            # 🎯 新增：下方獨立的「已出貨晶圓」編輯表格
+            # ==========================================
+            st.markdown("---")
+            st.subheader("📦 已出貨晶圓清單 (Shipped Wafers)")
+            if all_shipped_data:
+                df_shipped = pd.DataFrame(all_shipped_data)
+                st.data_editor(
+                    df_shipped,
+                    hide_index=True,
+                    use_container_width=True,
+                    disabled=["Shuttle Name", "Owner", "團隊", "ID (Wafer)", "Step", "Status"] # 鎖定基本資訊，僅開放備註欄位編輯
+                )
+            else:
+                st.success("目前無已出貨的晶圓。")
+                
+        else:
+            st.warning("⚠️ 母表中找不到 Wafer ID 欄位。")
 
 # =========================================================================
 # 📦 頁籤 5: Bank Wafers 
