@@ -597,10 +597,10 @@ with all_tabs[3]:
                             is_first_in_shuttle = False
                         if is_first_in_team:
                             html_table += f'<td class="owner-team-cell" rowspan="{team_rowspan}">{t_data["team_name"]}</td><td class="merged-cell" rowspan="{team_rowspan}">{shipped_count}</td>'
-                        html_table += f"<td>{w_data['id']}</td><td>{w_data['step']}</td><td>{w_data['status']}</td>"
+                            html_table += f"<td>{w_data['id']}</td><td>{w_data['step']}</td><td>{w_data['status']}</td>"
                         if is_first_in_team:
                             # 🎯 這裡加上 style='text-align: left;' 讓狀態燈號與進度條完美靠左對齊
-                        html_table += f"<td>{w_data['id']}</td><td>{w_data['step']}</td><td style='text-align: left;'>{w_data['status']}</td>"
+                            html_table += f"<td>{w_data['id']}</td><td>{w_data['step']}</td><td style='text-align: left;'>{w_data['status']}</td>"
                         if is_first_in_team:
                             html_table += f'<td rowspan="{team_rowspan}" style="text-align: left;"><div class="prog-wrapper"><div class="prog-container"><div class="prog-bar" style="width: {max_progress_pct}%;"></div></div><div class="prog-text">{max_progress_pct}%</div></div></td>'
                             is_first_in_team = False
