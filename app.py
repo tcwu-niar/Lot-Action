@@ -112,11 +112,10 @@ def show_skip_dialog(tw_id, ts_no, avail_steps):
         st.rerun()
     if c_cancel.button("❌ 取消", use_container_width=True): st.rerun()
 
-# 🎯 修改點 1：調整 all_tabs 的名稱順序
 all_tabs = st.tabs(["📊 Wafer Overview", "📋 Full Route", "📜 Wafer History", "📤 Upload New Wafer", "📦 Bank Wafers"])
 
 # =========================================================================
-# 📊 頁籤 1: Wafer Overview (原本的 4)
+# 📊 頁籤 1: Wafer Overview 
 # =========================================================================
 with all_tabs[0]:
     st.subheader("📊 晶圓生產總表與進度追蹤 (Wafer Overview)")
@@ -132,7 +131,8 @@ with all_tabs[0]:
         desc_col = next((c for c in df_route.columns if "description" in str(c).lower()), "Step description")
         
         if wafer_col in df_route.columns:
-            html_table = """<style>.overview-table { width: 100%; border-collapse: collapse; font-family: sans-serif; font-size: 14px; margin-top: 10px; } .overview-table th { background-color: #f8f9fa; padding: 12px 10px; border: 1px solid #dee2e6; text-align: left; font-weight: bold; color: #495057; } .overview-table td { padding: 10px; border: 1px solid #dee2e6; text-align: left; vertical-align: middle; color: #212529; } .overview-table .merged-cell { text-align: center; vertical-align: middle; font-weight: bold; background-color: #ffffff; color: #0d6efd; } .overview-table .owner-team-cell { text-align: center; vertical-align: middle; background-color: #ffffff; } .prog-wrapper { display: flex; align-items: center; width: 100%; } .prog-container { background-color: #e9ecef; border-radius: 4px; flex-grow: 1; height: 16px; overflow: hidden; } .prog-bar { background-color: #28a745; height: 100%; border-radius: 4px; transition: width 0.4s ease; } .prog-text { margin-left: 10px; font-size: 13px; font-weight: 500; min-width: 35px; text-align: right; } .status-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }</style><table class="overview-table"><tr><th>Shuttle Name</th><th>Owner</th><th>團隊</th><th style="width: 90px; text-align: center;">已出貨片數</th><th>ID (Wafer)</th><th>Step</th><th>Status</th><th style="width: 200px;">進度條</th></tr>"""
+            # 🎯 這裡新增了 <th>Stage Owner</th>
+            html_table = """<style>.overview-table { width: 100%; border-collapse: collapse; font-family: sans-serif; font-size: 14px; margin-top: 10px; } .overview-table th { background-color: #f8f9fa; padding: 12px 10px; border: 1px solid #dee2e6; text-align: left; font-weight: bold; color: #495057; } .overview-table td { padding: 10px; border: 1px solid #dee2e6; text-align: left; vertical-align: middle; color: #212529; } .overview-table .merged-cell { text-align: center; vertical-align: middle; font-weight: bold; background-color: #ffffff; color: #0d6efd; } .overview-table .owner-team-cell { text-align: center; vertical-align: middle; background-color: #ffffff; } .prog-wrapper { display: flex; align-items: center; width: 100%; } .prog-container { background-color: #e9ecef; border-radius: 4px; flex-grow: 1; height: 16px; overflow: hidden; } .prog-bar { background-color: #28a745; height: 100%; border-radius: 4px; transition: width 0.4s ease; } .prog-text { margin-left: 10px; font-size: 13px; font-weight: 500; min-width: 35px; text-align: right; } .status-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }</style><table class="overview-table"><tr><th>Shuttle Name</th><th>Owner</th><th>團隊</th><th style="width: 90px; text-align: center;">已出貨片數</th><th>ID (Wafer)</th><th>Step</th><th>Stage Owner</th><th>Status</th><th style="width: 200px;">進度條</th></tr>"""
             df_route[shuttle_col] = df_route[shuttle_col].fillna("")
             df_route[team_col] = df_route[team_col].fillna("")
             
@@ -145,7 +145,7 @@ with all_tabs[0]:
             df_route = df_route.sort_values(by=['_lot_num', wafer_col])
             
             valid_shuttles = {}
-            all_shipped_data = [] # 🎯 新增：獨立收集已出貨晶圓的清單
+            all_shipped_data = [] 
 
             for (shuttle, rep_team), s_group in df_route.groupby([shuttle_col, team_col], sort=False):
                 if str(shuttle).strip() == "": continue
@@ -160,6 +160,9 @@ with all_tabs[0]:
                     wip_step_no = str(total_steps) if raw_last_step in ["", "nan", "NaN", "None"] else raw_last_step
                     status_html = '<span class="status-dot" style="background-color: #0d6efd;"></span> Shipped (已出貨)'
                     
+                    # 預設：如果已出貨，就取最後一站的 Owner
+                    current_stage_owner = str(w_group.iloc[-1].get(owner_col, ""))
+                    
                     for idx, row in w_group.iterrows():
                         fco = str(row.get(fco_col, "")).strip().upper()
                         if fco == "SCRP":
@@ -167,6 +170,7 @@ with all_tabs[0]:
                             raw_step = str(row.get(step_col, "")).replace(".0", "").strip()
                             wip_step_no = str(idx + 1) if raw_step in ["", "nan", "NaN", "None"] else raw_step
                             status_html = f'<span class="status-dot" style="background-color: #dc3545;"></span> SCRAPPED: {row.get(desc_col, "")}'
+                            current_stage_owner = str(row.get(owner_col, "")) # 🎯 抓取報廢當下的 Owner
                             break
                             
                     if not has_scrap:
@@ -179,6 +183,7 @@ with all_tabs[0]:
                                 if fco == "HOLD": status_html = f'<span class="status-dot" style="background-color: #ffc107;"></span> HOLD: {row.get(desc_col, "")}'
                                 elif fco == "BANK": is_banked = True
                                 else: status_html = f'<span class="status-dot" style="background-color: #198754;"></span> INPR: {row.get(desc_col, "")}'
+                                current_stage_owner = str(row.get(owner_col, "")) # 🎯 抓取目前卡住的站點 Owner
                                 break
                                 
                     if is_banked: continue
@@ -186,9 +191,9 @@ with all_tabs[0]:
                     nums = re.findall(r'\d+', str(wip_step_no))
                     progress_pct = min(int((int(nums[0]) if nums else 0) / 92 * 100), 100)
                     
-                    team_valid_wafers.append({"id": wid, "step": f"{wip_step_no}/92", "status": status_html, "is_shipped": is_shipped, "progress_pct": progress_pct})
+                    # 🎯 把 current_stage_owner 包進去
+                    team_valid_wafers.append({"id": wid, "step": f"{wip_step_no}/92", "stage_owner": current_stage_owner, "status": status_html, "is_shipped": is_shipped, "progress_pct": progress_pct})
                     
-                    # 🎯 提取已出貨的晶圓，準備畫在下方獨立表格
                     if is_shipped:
                         all_shipped_data.append({
                             "Shuttle Name": shuttle,
@@ -196,6 +201,7 @@ with all_tabs[0]:
                             "團隊": rep_team,
                             "ID (Wafer)": wid,
                             "Step": f"{wip_step_no}/92",
+                            "Stage Owner": current_stage_owner, # 🎯 寫入已出貨清單
                             "Status": "🟢 Shipped (已出貨)",
                             "📝 出貨備註 / 追蹤碼 (可編輯)": ""
                         })
@@ -204,11 +210,10 @@ with all_tabs[0]:
                     if shuttle not in valid_shuttles: valid_shuttles[shuttle] = {"owner": rep_owner, "teams": []}
                     valid_shuttles[shuttle]["teams"].append({"team_name": rep_team, "wafers": team_valid_wafers})
             
-            # 🎯 繪製主表 HTML (排除已出貨行，但保留出貨數量統計)
             has_inpr_wafers = False
             for shuttle, s_data in valid_shuttles.items():
                 shuttle_inpr_count = sum(1 for t in s_data["teams"] for w in t["wafers"] if not w["is_shipped"])
-                if shuttle_inpr_count == 0: continue # 若整個 Shuttle 都出貨，主表不顯示
+                if shuttle_inpr_count == 0: continue 
                 has_inpr_wafers = True
                 
                 is_first_in_shuttle = True
@@ -228,7 +233,10 @@ with all_tabs[0]:
                             is_first_in_shuttle = False
                         if is_first_in_team:
                             html_table += f'<td class="owner-team-cell" rowspan="{team_rowspan}">{t_data["team_name"]}</td><td class="merged-cell" rowspan="{team_rowspan}">{shipped_count}</td>'
-                        html_table += f"<td>{w_data['id']}</td><td>{w_data['step']}</td><td>{w_data['status']}</td>"
+                        
+                        # 🎯 這裡把 w_data['stage_owner'] 加到 HTML 的對應位置 (Step 和 Status 之間)
+                        html_table += f"<td>{w_data['id']}</td><td>{w_data['step']}</td><td>{w_data['stage_owner']}</td><td>{w_data['status']}</td>"
+                        
                         if is_first_in_team:
                             html_table += f'<td rowspan="{team_rowspan}"><div class="prog-wrapper"><div class="prog-container"><div class="prog-bar" style="width: {max_progress_pct}%;"></div></div><div class="prog-text">{max_progress_pct}%</div></div></td>'
                             is_first_in_team = False
@@ -240,9 +248,6 @@ with all_tabs[0]:
             else:
                 st.info("目前產線上沒有任何進行中 (INPR) 的晶圓。")
                 
-            # ==========================================
-            # 🎯 新增：下方獨立的「已出貨晶圓」編輯表格
-            # ==========================================
             st.markdown("---")
             st.subheader("📦 已出貨晶圓清單 (Shipped Wafers)")
             if all_shipped_data:
@@ -251,7 +256,7 @@ with all_tabs[0]:
                     df_shipped,
                     hide_index=True,
                     use_container_width=True,
-                    disabled=["Shuttle Name", "Owner", "團隊", "ID (Wafer)", "Step", "Status"] # 鎖定基本資訊，僅開放備註欄位編輯
+                    disabled=["Shuttle Name", "Owner", "團隊", "ID (Wafer)", "Step", "Stage Owner", "Status"] # 🎯 鎖定 Stage Owner 欄位
                 )
             else:
                 st.success("目前無已出貨的晶圓。")
@@ -260,7 +265,7 @@ with all_tabs[0]:
             st.warning("⚠️ 母表中找不到 Wafer ID 欄位。")
 
 # =========================================================================
-# 📋 頁籤 2: Full Route (原本的 1)
+# 📋 頁籤 2: Full Route 
 # =========================================================================
 with all_tabs[1]:  
     st.subheader("HETEROGENEOUS INTEGRATION & MANUFACTURING DIVISION")
@@ -385,11 +390,9 @@ with all_tabs[1]:
                 now_str = datetime.datetime.now(tw_tz).strftime("%Y-%m-%d %H:%M:%S")
                 urls_to_send = []
                 
-                # 🎯 網址安全編碼：避免特殊字元或空格導致斷線
                 enc_w_id = requests.utils.quote(str(target_w_id))
                 enc_s_no = requests.utils.quote(str(target_s_no))
                 
-                # 處理圖片上傳 (轉為網址)
                 final_result_link = str(target_row.get("Result", "")).strip()
                 if result_image is not None and action_name in ["Check out", "Key in data"]:
                     with st.spinner("⏳ 正在將圖片上傳至雲端..."):
@@ -404,7 +407,6 @@ with all_tabs[1]:
                         except Exception as e:
                             st.error(f"圖片上傳連線錯誤: {e}")
 
-                # 準備更新的欄位
                 if action_name in ["Check out", "Scrap", "Key in data"]:
                     fields = {"Process Tool": edit_tool, "Recipe": edit_recipe, "Check point": edit_cp}
                     if final_result_link:
@@ -418,7 +420,6 @@ with all_tabs[1]:
                 enc_comment = requests.utils.quote(final_comment)
                 enc_time = requests.utils.quote(now_str)
                 
-                # 動作指令 (已刪除您原本程式碼中重複的區塊)
                 if action_name == "Check out": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Check out&comment={enc_comment}&time={enc_time}")
                 elif action_name == "Scrap": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Scrap&comment={enc_comment}&time={enc_time}")
                 elif action_name == "Unscrap": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Unscrap&comment={enc_comment}&time={enc_time}")
@@ -432,30 +433,21 @@ with all_tabs[1]:
                 
                 with st.spinner(f"🚀 正在同步 {action_name} 指令至雲端..."):
                     has_error = False
-                    
-                    # 🛡️ 終極防護：建立專屬通道，強制關閉底層的「自動重試」機制
                     session = requests.Session()
                     adapter = requests.adapters.HTTPAdapter(max_retries=0) 
                     session.mount('https://', adapter)
                     session.mount('http://', adapter)
-                    
-                    # 確保發送的網址絕對沒有重複
                     unique_urls = list(set(urls_to_send))
                     
                     for url in unique_urls:
                         try:
-                            # 強制不重試 (max_retries=0) 且不跟隨導向 (allow_redirects=False)
                             res = session.get(url, timeout=12, allow_redirects=False)
-                            
-                            # Google 正常執行完畢通常會回傳 200 或 302 (轉址)
                             if res.status_code not in [200, 302] and "Error" in res.text:
                                 st.error(f"❌ 雲端拒絕寫入: {res.text}")
                                 has_error = True
                         except requests.exceptions.Timeout:
-                            # Google 伺服器常有遲遲不回報狀態的壞習慣，但資料通常已寫入，直接放行
                             pass
                         except Exception as e:
-                            # 略過 Google 單方面切斷連線造成的預期報錯
                             pass
                             
                     if has_error:
@@ -496,14 +488,13 @@ with all_tabs[1]:
                 else:
                     if st.button("📦 Bank (入庫隱藏)", use_container_width=True, disabled=is_wip_locked): show_bank_dialog(w_id, s_no)
             
-            # 🎯 統一攔截全域視窗傳回來的指令並執行
             if "pending_action" in st.session_state:
                 pa = st.session_state.pending_action
                 del st.session_state["pending_action"]
                 execute_stage_action(pa["name"], pa["w_id"], pa["s_no"], custom_comment=pa.get("comment"), target_jump_step=pa.get("jump_step"))
 
 # =========================================================================
-# 📜 頁籤 3: Wafer History (原本的 2)
+# 📜 頁籤 3: Wafer History 
 # =========================================================================
 with all_tabs[2]:
     st.subheader("📜 晶圓歷史過站追蹤足跡 (Wafer History 日誌)")
@@ -522,11 +513,9 @@ with all_tabs[2]:
             st.markdown(f"📊 晶圓 **{search_id}** 的母表生產路由全貌：")
             display_route = filtered_route.copy().reset_index(drop=True)
             
-            # 🎯 修正 1：清除畫面上母表 Step 欄位的 .0 尾數，讓表格看起來更乾淨
             if "Step" in display_route.columns:
                 display_route["Step"] = display_route["Step"].astype(str).str.replace(".0", "", regex=False)
             
-            # 🎯 新增 column_config，讓 Streamlit 將 Result 欄位的網址自動渲染成圖片
             selected_route_row = st.dataframe(
                 display_route, 
                 use_container_width=True, 
@@ -541,16 +530,12 @@ with all_tabs[2]:
             
             if selected_route_row and selected_route_row.get("selection", {}).get("rows"):
                 selected_idx = selected_route_row["selection"]["rows"][0]
-                
-                # 🎯 修正 2：確保取出來的目標步驟絕對沒有 .0
                 target_step_no = str(display_route.iloc[selected_idx].get("Step", "")).replace(".0", "").strip()
                 
                 st.markdown("---")
                 st.markdown(f"### 🛑 第 {target_step_no} 步 - 歷史動作完整紀錄 (Action History)")
                 
                 log_wafer_col = [c for c in df_logs.columns if "Wafer" in c or "晶圓" in c][0]
-                
-                # 🎯 修正 3：確保歷史資料庫 (df_logs) 裡的 Step 也清掉 .0，兩邊才能完美比對成功！
                 clean_log_steps = df_logs["Step"].astype(str).str.replace(".0", "", regex=False).str.strip()
                 step_logs = df_logs[(df_logs[log_wafer_col].astype(str).str.upper() == search_id.upper()) & (clean_log_steps == target_step_no)]
                 
@@ -580,7 +565,6 @@ with all_tabs[2]:
                 
                 else:
                     st.info(f"✅ 該晶圓的第 {target_step_no} 步目前無任何歷史紀錄。")
-                    # 🎯 就算沒有歷史紀錄，如果有上傳圖片，一樣在下方顯示出來！
                     if mother_result_val.startswith("http"):
                         st.markdown("---")
                         st.markdown("📸 **目前已上傳的檢驗圖片：**")
@@ -591,7 +575,7 @@ with all_tabs[2]:
         st.info("請先於 Full Route 頁籤搜尋並選擇特定站點。")
 
 # =========================================================================
-# 📤 頁籤 4: Upload New Wafer (原本的 3)
+# 📤 頁籤 4: Upload New Wafer 
 # =========================================================================
 with all_tabs[3]:
     st.subheader("📤 上傳新晶圓路由母表 (Upload New Wafer)")
@@ -649,7 +633,6 @@ with all_tabs[4]:
         if wafer_col in df_route_bank.columns:
             banked_wafers = []
             
-            # 🎯 嚴格按照 Wafer ID 獨立分組，確保每片晶圓只會被抓取一次
             for wid, w_group in df_route_bank.groupby(wafer_col, sort=False):
                 w_group = w_group.reset_index(drop=True)
                 has_scrap = False
@@ -674,7 +657,6 @@ with all_tabs[4]:
                             
                 if is_banked:
                     first_row = w_group.iloc[0]
-                    # 獨立附加每一片晶圓的專屬資料
                     banked_wafers.append({
                         "🚀 選取": False, 
                         "Shuttle Name": str(first_row.get(shuttle_col, "")), 
@@ -713,7 +695,6 @@ with all_tabs[4]:
                             
                         with st.spinner(f"⏳ 正在為 {len(selected_wids)} 片晶圓執行 Kick off..."):
                             has_err = False
-                            # 🛡️ 套用終極防護，強制關閉底層的自動重試
                             session = requests.Session()
                             adapter = requests.adapters.HTTPAdapter(max_retries=0)
                             session.mount('https://', adapter)
@@ -725,7 +706,7 @@ with all_tabs[4]:
                                         st.error(f"❌ 寫入失敗: {res.text}")
                                         has_err = True
                                 except Exception:
-                                    pass # 略過 Google 單方面切斷連線造成的報錯
+                                    pass 
                                     
                             if has_err: 
                                 time.sleep(3)
@@ -737,23 +718,16 @@ with all_tabs[4]:
             else:
                 st.success("🎉 目前產線上沒有任何晶圓處於 Bank (入庫) 狀態。")
                 
-            # ==========================================
-            # 🎯 新增：各 Shuttle 狀態統計總表 (與上方的 if banked_wafers: 對齊)
-            # ==========================================
             st.markdown("---")
             st.subheader("📊 各 Shuttle 狀態統計總表")
             
             summary_data = []
             
-            # 🎯 新增：套用智慧型 Lot 數字排序邏輯
             def get_lot_number(wid):
                 import re
-                # 尋找 ID 中 "lot" 後面的純數字
                 match = re.search(r'lot(\d+)', str(wid).lower())
-                # 如果有找到數字就轉為整數排序，沒找到就放最後面 (999999)
                 return int(match.group(1)) if match else 999999
                 
-            # 在進行 Shuttle 分組前，先將整份資料庫按 Lot 數字大小排序
             df_route_bank['_lot_num'] = df_route_bank[wafer_col].apply(get_lot_number)
             df_route_bank = df_route_bank.sort_values(by=['_lot_num', wafer_col])
             
@@ -808,5 +782,4 @@ with all_tabs[4]:
         else:
             st.warning("⚠️ 母表中找不到 Wafer ID 欄位。")
     else:
-        st.info("💡 目前雲端母表尚無資料。")
         st.info("💡 目前雲端母表尚無資料。")
