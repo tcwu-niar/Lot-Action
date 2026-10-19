@@ -112,7 +112,6 @@ def show_skip_dialog(tw_id, ts_no, avail_steps):
         st.rerun()
     if c_cancel.button("❌ 取消", use_container_width=True): st.rerun()
 
-# 🎯 更新了所有 Tab 的順序：Ongoing Wafer 第一，Wafer Overview 最後
 all_tabs = st.tabs(["🔍 Ongoing Wafer", "📋 Full Route", "📜 Wafer History", "📤 Upload New Wafer", "📦 Bank Wafers", "📊 Wafer Overview"])
 
 # =========================================================================
@@ -133,7 +132,15 @@ with all_tabs[0]:
         recipe_col = next((c for c in df_route.columns if "recipe" in str(c).lower()), "Recipe")
         
         if wafer_col in df_route.columns:
-            # 🎯 這裡將 text-align 設定為 center 以將字置中
+            # 🎯 新增：依照 Lot 數字進行智慧排序
+            def get_lot_number(wid):
+                import re
+                match = re.search(r'lot(\d+)', str(wid).lower())
+                return int(match.group(1)) if match else 999999
+                
+            df_route['_lot_num'] = df_route[wafer_col].apply(get_lot_number)
+            df_route = df_route.sort_values(by=['_lot_num', wafer_col])
+
             html_table_wip = """<style>.wip-table { width: 100%; border-collapse: collapse; font-family: sans-serif; font-size: 14px; margin-top: 10px; } .wip-table th { background-color: #f8f9fa; padding: 12px 10px; border: 1px solid #dee2e6; text-align: center; font-weight: bold; color: #495057; } .wip-table td { padding: 10px; border: 1px solid #dee2e6; text-align: center; vertical-align: middle; color: #212529; } .wip-table tr:hover { background-color: #f1f3f5; } </style><table class="wip-table"><tr><th style="width: 12%;">ID (Wafer)</th><th style="width: 8%;">Step</th><th style="width: 12%;">Stage Owner</th><th style="width: 38%;">Step Description</th><th style="width: 15%;">Process Tool</th><th style="width: 15%;">Recipe</th></tr>"""
             
             has_wip_wafers = False
@@ -162,7 +169,6 @@ with all_tabs[0]:
                                 is_banked = True
                             break
                 
-                # 排除入庫 (BANK) 與已出貨 (Shipped) 的晶圓，只顯示活躍中的
                 if is_banked: continue
                 if wip_idx == total_steps and not has_scrap: continue 
                 
@@ -176,7 +182,6 @@ with all_tabs[0]:
                     s_tool = str(active_row.get(tool_col, active_row.get("Process Tool", "")))
                     s_recipe = str(active_row.get(recipe_col, active_row.get("Recipe", "")))
                     
-                    # 🎯 已經將這裡的分母固定為 92
                     html_table_wip += f"<tr><td><b>{wid}</b></td><td>{wip_step_no}/92</td><td>{s_owner}</td><td>{s_desc}</td><td>{s_tool}</td><td>{s_recipe}</td></tr>"
             
             html_table_wip += "</table>"
