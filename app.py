@@ -17,6 +17,7 @@ SPREADSHEET_ID = "1HIcyPgjoHWA3Wgj8gohyEN2s-kF5A6OGEWuR0wDqULU"
 @st.cache_data(ttl=15)
 def fetch_route_data_via_csv(sheet_name="route_template"):
     if sheet_name == "route_template":
+        # 🎯 請將 123456789 替換成您在網址列看到的真實 gid 數字！
         csv_url = "https://docs.google.com/spreadsheets/d/1HIcyPgjoHWA3Wgj8gohyEN2s-kF5A6OGEWuR0wDqULU/export?format=csv&gid=0"
     else:
         csv_url = f"https://docs.google.com/spreadsheets/d/1HIcyPgjoHWA3Wgj8gohyEN2s-kF5A6OGEWuR0wDqULU/gviz/tq?tqx=out:csv&sheet={sheet_name}"
@@ -124,6 +125,38 @@ def show_ongoing_action_dialog(tw_id, ts_no, target_row_dict, avail_steps):
             "img": result_image, 
             "jump_step": jump_target, 
             "comment": comment,
+            "tool": edit_tool,
+            "recipe": edit_recipe,
+            "cp": edit_cp,
+            "orig_row": target_row_dict
+        }
+        st.rerun()
+
+# 🎯 新增：專為 Wafer History 設計的歷史資料編輯視窗
+@st.dialog("✏️ 修改歷史站點資料", width="large")
+def show_history_edit_dialog(tw_id, ts_no, target_row_dict):
+    st.markdown(f"**晶圓 ID:** `{tw_id}` | **修改站點:** 第 `{ts_no}` 步")
+    st.info("💡 提示：在此修改的資料將會覆寫母表 (Route Template) 中的歷史紀錄。")
+    
+    st.markdown("✏️ **參數修改區**")
+    c1, c2, c3 = st.columns(3)
+    with c1: edit_tool = st.text_input("🔧 製程機台 (Process Tool):", value=str(target_row_dict.get("Process Tool", "")))
+    with c2: edit_recipe = st.text_input("🧪 機台配方 (Recipe):", value=str(target_row_dict.get("Recipe", "")))
+    with c3: edit_cp = st.text_input("🎯 檢驗點 (Check point):", value=str(target_row_dict.get("Check point", "")))
+    
+    current_comment = str(target_row_dict.get("Comments", "")).strip() or str(target_row_dict.get("備註", "")).strip()
+    st.markdown("📝 **批註 / 機台數據修改 (Result Data / Comments):**")
+    spc_data = st.text_input("修改過站紀錄 (將同步更新 Comments 與 SPC data 欄位):", value=current_comment)
+    
+    st.markdown("📸 **重新上傳檢驗結果圖片 (Result 欄位):**")
+    result_image = st.file_uploader("若需更改圖片請上傳新檔 (支援 png/jpg，不更改請留白)", type=["png", "jpg", "jpeg"], key=f"hist_img_{tw_id}_{ts_no}")
+    
+    if st.button("💾 確認修改並寫入雲端", type="primary", use_container_width=True):
+        st.session_state.history_edit_action = {
+            "w_id": tw_id,
+            "s_no": ts_no,
+            "spc": spc_data,
+            "img": result_image,
             "tool": edit_tool,
             "recipe": edit_recipe,
             "cp": edit_cp,
@@ -323,10 +356,76 @@ with all_tabs[0]:
             st.warning("⚠️ 母表中找不到 Wafer ID 欄位。")
 
 # =========================================================================
-# 📜 頁籤 2: Wafer History (含獨立搜尋功能)
+# 📜 頁籤 2: Wafer History (含獨立搜尋與修改功能)
 # =========================================================================
 with all_tabs[1]:
     st.subheader("📜 晶圓歷史過站追蹤足跡 (Wafer History 日誌)")
+    
+    # 🎯 攔截並處理「修改歷史資料」的寫入邏輯
+    if "history_edit_action" in st.session_state:
+        pa = st.session_state.history_edit_action
+        del st.session_state["history_edit_action"]
+        
+        urls_to_send = []
+        enc_w_id = requests.utils.quote(str(pa["w_id"]))
+        enc_s_no = requests.utils.quote(str(pa["s_no"]))
+        
+        # 1. 處理新圖片上傳
+        final_result_link = ""
+        if pa["img"] is not None:
+            with st.spinner("⏳ 正在將新圖片上傳至雲端..."):
+                try:
+                    payload = {"key": "6d207e02198a847aa98d0a2a901485a5", "action": "upload", "format": "json"}
+                    files = {"source": pa["img"].getvalue()}
+                    res = requests.post("https://freeimage.host/api/1/upload", data=payload, files=files)
+                    if res.status_code == 200:
+                        final_result_link = res.json()["image"]["url"]
+                    else:
+                        st.warning(f"⚠️ 圖片上傳失敗 (狀態碼: {res.status_code})")
+                except Exception as e:
+                    st.error(f"圖片上傳連線錯誤: {e}")
+        
+        # 2. 比對欄位是否有變更
+        orig_comment = str(pa["orig_row"].get("Comments", "")).strip() or str(pa["orig_row"].get("備註", "")).strip()
+        if str(pa["spc"]).strip() != orig_comment:
+            urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&column_name=Comments&new_value={requests.utils.quote(str(pa['spc']).strip())}")
+            urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&column_name=SPC%20data&new_value={requests.utils.quote(str(pa['spc']).strip())}")
+
+        if final_result_link:
+            urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&column_name=Result&new_value={requests.utils.quote(final_result_link)}")
+
+        fields = {"Process Tool": pa["tool"], "Recipe": pa["recipe"], "Check point": pa["cp"]}
+        for f_name, f_val in fields.items():
+            orig_val = str(pa["orig_row"].get(f_name, "")).strip()
+            if str(f_val).strip() != orig_val:
+                urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&column_name={requests.utils.quote(f_name)}&new_value={requests.utils.quote(str(f_val).strip())}")
+
+        if urls_to_send:
+            with st.spinner("🚀 正在同步修改資料至雲端..."):
+                has_error = False
+                session = requests.Session()
+                adapter = requests.adapters.HTTPAdapter(max_retries=0)
+                session.mount('https://', adapter)
+
+                for url in set(urls_to_send):
+                    try:
+                        res = session.get(url, timeout=12, allow_redirects=False)
+                        if res.status_code not in [200, 302] and "Error" in res.text:
+                            st.error(f"❌ 雲端拒絕寫入: {res.text}")
+                            has_error = True
+                    except:
+                        pass
+                if has_error:
+                    time.sleep(3)
+                else:
+                    st.success("✅ 歷史資料修改成功寫入！")
+                    time.sleep(1.2)
+                st.cache_data.clear()
+                st.rerun()
+        else:
+            st.info("無偵測到資料變更。")
+            time.sleep(1)
+            st.rerun()
     
     col_input1, col_input2 = st.columns(2)
     with col_input1: 
@@ -369,9 +468,15 @@ with all_tabs[1]:
             if selected_route_row and selected_route_row.get("selection", {}).get("rows"):
                 selected_idx = selected_route_row["selection"]["rows"][0]
                 target_step_no = str(display_route.iloc[selected_idx].get("Step", "")).replace(".0", "").strip()
+                target_row_data = display_route.iloc[selected_idx].to_dict()
                 
                 st.markdown("---")
-                st.markdown(f"### 🛑 第 {target_step_no} 步 - 歷史動作完整紀錄 (Action History)")
+                
+                # 🎯 在這裡加入「修改歷史資料」的按鈕
+                hc1, hc2 = st.columns([4, 1])
+                hc1.markdown(f"### 🛑 第 {target_step_no} 步 - 歷史動作完整紀錄 (Action History)")
+                if hc2.button("✏️ 修改此站點資料", use_container_width=True, type="secondary"):
+                    show_history_edit_dialog(search_id, target_step_no, target_row_data)
                 
                 log_wafer_col = [c for c in df_logs.columns if "Wafer" in c or "晶圓" in c][0]
                 clean_log_steps = df_logs["Step"].astype(str).str.replace(".0", "", regex=False).str.strip()
@@ -639,7 +744,6 @@ with all_tabs[4]:
         desc_col = next((c for c in df_route.columns if "description" in str(c).lower()), "Step description")
         
         if wafer_col in df_route.columns:
-            # 🎯 已從表頭移除 <th>Stage Owner</th>
             html_table = """<style>.overview-table { width: 100%; border-collapse: collapse; font-family: sans-serif; font-size: 14px; margin-top: 10px; } .overview-table th { background-color: #f8f9fa; padding: 12px 10px; border: 1px solid #dee2e6; text-align: left; font-weight: bold; color: #495057; } .overview-table td { padding: 10px; border: 1px solid #dee2e6; text-align: left; vertical-align: middle; color: #212529; } .overview-table .merged-cell { text-align: center; vertical-align: middle; font-weight: bold; background-color: #ffffff; color: #0d6efd; } .overview-table .owner-team-cell { text-align: center; vertical-align: middle; background-color: #ffffff; } .prog-wrapper { display: flex; align-items: center; width: 100%; } .prog-container { background-color: #e9ecef; border-radius: 4px; flex-grow: 1; height: 16px; overflow: hidden; } .prog-bar { background-color: #28a745; height: 100%; border-radius: 4px; transition: width 0.4s ease; } .prog-text { margin-left: 10px; font-size: 13px; font-weight: 500; min-width: 35px; text-align: right; } .status-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }</style><table class="overview-table"><tr><th>Shuttle Name</th><th>Owner</th><th>團隊</th><th style="width: 90px; text-align: center;">已出貨片數</th><th>ID (Wafer)</th><th>Step</th><th>Status</th><th style="width: 200px;">進度條</th></tr>"""
             df_route[shuttle_col] = df_route[shuttle_col].fillna("")
             df_route[team_col] = df_route[team_col].fillna("")
@@ -734,7 +838,6 @@ with all_tabs[4]:
                         if is_first_in_team:
                             html_table += f'<td class="owner-team-cell" rowspan="{team_rowspan}">{t_data["team_name"]}</td><td class="merged-cell" rowspan="{team_rowspan}">{shipped_count}</td>'
                         
-                        # 🎯 已從這列中移除 <td>{w_data['stage_owner']}</td>
                         html_table += f"<td>{w_data['id']}</td><td>{w_data['step']}</td><td>{w_data['status']}</td>"
                         
                         if is_first_in_team:
