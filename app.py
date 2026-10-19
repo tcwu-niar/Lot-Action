@@ -336,13 +336,15 @@ with all_tabs[0]:
                 
                 df_wip = pd.DataFrame(wip_data_list)
                 
-                # 🎯 這裡將 st.dataframe 的內容置中
-                df_wip = df_wip.style.set_properties(**{'text-align': 'center'})
-                
+                # 🎯 先選定要顯示的乾淨欄位
                 display_df = df_wip[["ID (Wafer)", "Step", "Stage Owner", "Step Description", "Process Tool", "Recipe"]]
                 
+                # 🎯 再針對顯示用的 DataFrame 套用置中樣式 (解決先前的 TypeError 報錯)
+                styled_df = display_df.style.set_properties(**{'text-align': 'center'})
+                
+                # 套用 Selection 事件，點擊 Row 即觸發彈出視窗
                 selection = st.dataframe(
-                    display_df,
+                    styled_df,
                     use_container_width=True,
                     hide_index=True,
                     on_select="rerun",
@@ -352,6 +354,7 @@ with all_tabs[0]:
                 if selection and selection.get("selection", {}).get("rows"):
                     selected_idx = selection["selection"]["rows"][0]
                     selected_item = wip_data_list[selected_idx]
+                    # 觸發彈出視窗
                     show_ongoing_action_dialog(
                         selected_item['ID (Wafer)'], 
                         selected_item['_raw_step'], 
