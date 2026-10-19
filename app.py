@@ -176,7 +176,8 @@ with all_tabs[0]:
                     s_tool = str(active_row.get(tool_col, active_row.get("Process Tool", "")))
                     s_recipe = str(active_row.get(recipe_col, active_row.get("Recipe", "")))
                     
-                    html_table_wip += f"<tr><td><b>{wid}</b></td><td>{wip_step_no}/{total_steps}</td><td>{s_owner}</td><td>{s_desc}</td><td>{s_tool}</td><td>{s_recipe}</td></tr>"
+                    # 🎯 已經將這裡的分母固定為 92
+                    html_table_wip += f"<tr><td><b>{wid}</b></td><td>{wip_step_no}/92</td><td>{s_owner}</td><td>{s_desc}</td><td>{s_tool}</td><td>{s_recipe}</td></tr>"
             
             html_table_wip += "</table>"
             
@@ -784,7 +785,6 @@ with all_tabs[5]:
                     
                     team_valid_wafers.append({"id": wid, "step": f"{wip_step_no}/92", "stage_owner": current_stage_owner, "status": status_html, "is_shipped": is_shipped, "progress_pct": progress_pct})
                     
-                    # 🎯 已出貨清單重新加回 Wafer Overview 底部 (純資料表格，無備註欄位)
                     if is_shipped:
                         all_shipped_data.append({
                             "Shuttle Name": shuttle,
