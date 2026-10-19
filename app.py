@@ -188,7 +188,7 @@ all_tabs = st.tabs(["🔍 Ongoing Wafer", "📋 Full Route", "📜 Wafer History
 with all_tabs[0]:
     st.subheader("🔍 當前站點設備與配方資訊 (Ongoing Wafer)")
     
-    # 🎯 處理 Ongoing Wafer 專屬的動作指令寫入 (來自彈出視窗)
+    # 🎯 處理 Ongoing Wafer 專屬的動作指令寫入
     if "ongoing_action" in st.session_state:
         pa = st.session_state.ongoing_action
         del st.session_state["ongoing_action"]
@@ -200,7 +200,6 @@ with all_tabs[0]:
         enc_w_id = requests.utils.quote(str(pa["w_id"]))
         enc_s_no = requests.utils.quote(str(pa["s_no"]))
         
-        # 1. 處理圖片上傳
         final_result_link = ""
         if pa["img"] is not None:
             with st.spinner("⏳ 正在將圖片上傳至雲端..."):
@@ -215,20 +214,17 @@ with all_tabs[0]:
                 except Exception as e:
                     st.error(f"圖片上傳連線錯誤: {e}")
                     
-        # 2. 寫入 SPC data 與 Result 欄位
         if str(pa["spc"]).strip():
             urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&column_name=SPC%20data&new_value={requests.utils.quote(str(pa['spc']).strip())}")
         if final_result_link:
             urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&column_name=Result&new_value={requests.utils.quote(final_result_link)}")
             
-        # 3. 寫入變更的參數欄位 (Process Tool, Recipe, Check point)
         fields = {"Process Tool": pa["tool"], "Recipe": pa["recipe"], "Check point": pa["cp"]}
         for f_name, f_val in fields.items():
             orig_val = str(pa["orig_row"].get(f_name, "")).strip()
             if str(f_val).strip() != orig_val:
                 urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&column_name={requests.utils.quote(f_name)}&new_value={requests.utils.quote(str(f_val).strip())}")
                 
-        # 4. 發送核心動作 (過站/跳站/報廢等)
         enc_time = requests.utils.quote(now_str)
         enc_comment = requests.utils.quote(pa.get("comment", ""))
         
@@ -241,7 +237,6 @@ with all_tabs[0]:
             enc_target = requests.utils.quote(str(pa["jump_step"]))
             urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Skip&comment={enc_comment}&time={enc_time}&target_step={enc_target}")
             
-        # 5. 批次發送 Requests
         if urls_to_send:
             with st.spinner(f"🚀 正在將資料與 {act} 指令同步至雲端..."):
                 has_error = False
@@ -337,13 +332,15 @@ with all_tabs[0]:
                     })
             
             if wip_data_list:
-                st.markdown("💡 **點擊列表中的欲操作的資料列 (Row)，即可開啟該晶圓的資料填寫與動作面板。**")
+                st.markdown("💡 **點擊列表中的欲操作的資料列 (Row)，即可開啟該晶圓的資料填寫與動作面板。** (完全支援手機版操作)")
                 
-                # 🎯 改回使用 st.dataframe，避免手機版 st.columns 強制換行斷版的問題
                 df_wip = pd.DataFrame(wip_data_list)
+                
+                # 🎯 這裡將 st.dataframe 的內容置中
+                df_wip = df_wip.style.set_properties(**{'text-align': 'center'})
+                
                 display_df = df_wip[["ID (Wafer)", "Step", "Stage Owner", "Step Description", "Process Tool", "Recipe"]]
                 
-                # 套用 Selection 事件，點擊 Row 即觸發彈出視窗
                 selection = st.dataframe(
                     display_df,
                     use_container_width=True,
@@ -355,7 +352,6 @@ with all_tabs[0]:
                 if selection and selection.get("selection", {}).get("rows"):
                     selected_idx = selection["selection"]["rows"][0]
                     selected_item = wip_data_list[selected_idx]
-                    # 觸發彈出視窗
                     show_ongoing_action_dialog(
                         selected_item['ID (Wafer)'], 
                         selected_item['_raw_step'], 
