@@ -43,6 +43,34 @@ def fetch_route_data_via_csv(sheet_name="route_template"):
 # =========================================================================
 # 2. 🎯 將所有彈出視窗定義在全域 (解決 Streamlit 作用域報錯)
 # =========================================================================
+
+# --- 🎯 新增：專為 Ongoing Wafer 設計的獨立填寫與動作視窗 ---
+@st.dialog("🚀 填寫站點資料與執行動作")
+def show_ongoing_action_dialog(tw_id, ts_no, avail_steps):
+    st.markdown(f"**晶圓 ID:** `{tw_id}` | **當前站點:** 第 `{ts_no}` 步")
+    
+    spc_data = st.text_input("📝 Result data (將填入 SPC data 欄位):")
+    result_image = st.file_uploader("📸 Image (上傳結果截圖，將填入 Result 欄位)", type=["png", "jpg", "jpeg"])
+    
+    st.markdown("---")
+    action_type = st.radio("選擇執行動作:", ["🟢 過站 (Check out)", "⏭️ 跳站 (Skip)", "❌ 報廢 (Scrap)"], horizontal=True)
+    
+    jump_target, comment = None, ""
+    if "Skip" in action_type:
+        jump_target = st.selectbox("跳至步驟：", options=avail_steps)
+        comment = st.text_input("跳站原因：")
+    elif "Scrap" in action_type:
+        comment = st.text_input("報廢原因：")
+        
+    if st.button("確認並寫入雲端", type="primary", use_container_width=True):
+        action_name = "Check out" if "Check out" in action_type else "Skip" if "Skip" in action_type else "Scrap"
+        st.session_state.ongoing_action = {
+            "name": action_name, "w_id": tw_id, "s_no": ts_no, 
+            "spc": spc_data, "img": result_image, 
+            "jump_step": jump_target, "comment": comment
+        }
+        st.rerun()
+
 @st.dialog("📋 輸入 Hold Note")
 def show_hold_dialog(tw_id, ts_no):
     r = st.text_input("暫停原因：")
@@ -120,6 +148,75 @@ all_tabs = st.tabs(["🔍 Ongoing Wafer", "📋 Full Route", "📜 Wafer History
 with all_tabs[0]:
     st.subheader("🔍 當前站點設備與配方資訊 (Ongoing Wafer)")
     
+    # 🎯 處理 Ongoing Wafer 專屬的動作指令寫入 (來自彈出視窗)
+    if "ongoing_action" in st.session_state:
+        pa = st.session_state.ongoing_action
+        del st.session_state["ongoing_action"]
+        
+        tw_tz = datetime.timezone(datetime.timedelta(hours=8))
+        now_str = datetime.datetime.now(tw_tz).strftime("%Y-%m-%d %H:%M:%S")
+        urls_to_send = []
+        
+        enc_w_id = requests.utils.quote(str(pa["w_id"]))
+        enc_s_no = requests.utils.quote(str(pa["s_no"]))
+        
+        # 1. 處理圖片上傳
+        final_result_link = ""
+        if pa["img"] is not None:
+            with st.spinner("⏳ 正在將圖片上傳至雲端..."):
+                try:
+                    payload = {"key": "6d207e02198a847aa98d0a2a901485a5", "action": "upload", "format": "json"}
+                    files = {"source": pa["img"].getvalue()}
+                    res = requests.post("https://freeimage.host/api/1/upload", data=payload, files=files)
+                    if res.status_code == 200:
+                        final_result_link = res.json()["image"]["url"]
+                    else:
+                        st.warning(f"⚠️ 圖片上傳失敗 (狀態碼: {res.status_code})")
+                except Exception as e:
+                    st.error(f"圖片上傳連線錯誤: {e}")
+                    
+        # 2. 寫入 SPC data 與 Result 欄位
+        if str(pa["spc"]).strip():
+            urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&column_name=SPC%20data&new_value={requests.utils.quote(str(pa['spc']).strip())}")
+        if final_result_link:
+            urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&column_name=Result&new_value={requests.utils.quote(final_result_link)}")
+            
+        # 3. 發送核心動作 (過站/跳站/報廢)
+        enc_time = requests.utils.quote(now_str)
+        enc_comment = requests.utils.quote(pa.get("comment", ""))
+        
+        if pa["name"] == "Check out":
+            urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Check out&comment={enc_comment}&time={enc_time}")
+        elif pa["name"] == "Scrap":
+            urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Scrap&comment={enc_comment}&time={enc_time}")
+        elif pa["name"] == "Skip":
+            enc_target = requests.utils.quote(str(pa["jump_step"]))
+            urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Skip&comment={enc_comment}&time={enc_time}&target_step={enc_target}")
+            
+        # 4. 批次發送 Requests
+        with st.spinner(f"🚀 正在將資料與 {pa['name']} 指令同步至雲端..."):
+            has_error = False
+            session = requests.Session()
+            adapter = requests.adapters.HTTPAdapter(max_retries=0) 
+            session.mount('https://', adapter)
+            
+            for url in set(urls_to_send):
+                try:
+                    res = session.get(url, timeout=12, allow_redirects=False)
+                    if res.status_code not in [200, 302] and "Error" in res.text:
+                        st.error(f"❌ 雲端拒絕寫入: {res.text}")
+                        has_error = True
+                except:
+                    pass
+            if has_error:
+                time.sleep(3)
+            else:
+                st.success("✅ 操作成功寫入！")
+                time.sleep(1.2)
+            st.cache_data.clear()
+            st.rerun()
+
+    # --- 以下為表格繪製邏輯 ---
     df_route, conn_status = fetch_route_data_via_csv("route_template")
     
     if not df_route.empty:
@@ -132,7 +229,6 @@ with all_tabs[0]:
         recipe_col = next((c for c in df_route.columns if "recipe" in str(c).lower()), "Recipe")
         
         if wafer_col in df_route.columns:
-            # 🎯 新增：依照 Lot 數字進行智慧排序
             def get_lot_number(wid):
                 import re
                 match = re.search(r'lot(\d+)', str(wid).lower())
@@ -140,10 +236,9 @@ with all_tabs[0]:
                 
             df_route['_lot_num'] = df_route[wafer_col].apply(get_lot_number)
             df_route = df_route.sort_values(by=['_lot_num', wafer_col])
-
-            html_table_wip = """<style>.wip-table { width: 100%; border-collapse: collapse; font-family: sans-serif; font-size: 14px; margin-top: 10px; } .wip-table th { background-color: #f8f9fa; padding: 12px 10px; border: 1px solid #dee2e6; text-align: center; font-weight: bold; color: #495057; } .wip-table td { padding: 10px; border: 1px solid #dee2e6; text-align: center; vertical-align: middle; color: #212529; } .wip-table tr:hover { background-color: #f1f3f5; } </style><table class="wip-table"><tr><th style="width: 12%;">ID (Wafer)</th><th style="width: 8%;">Step</th><th style="width: 12%;">Stage Owner</th><th style="width: 38%;">Step Description</th><th style="width: 15%;">Process Tool</th><th style="width: 15%;">Recipe</th></tr>"""
             
-            has_wip_wafers = False
+            wip_data_list = []
+
             for wid, w_group in df_route.groupby(wafer_col, sort=False):
                 w_group = w_group.reset_index(drop=True)
                 total_steps = len(w_group)
@@ -173,7 +268,6 @@ with all_tabs[0]:
                 if wip_idx == total_steps and not has_scrap: continue 
                 
                 if active_row is not None:
-                    has_wip_wafers = True
                     raw_step = str(active_row.get(step_col, "")).replace(".0", "").strip()
                     wip_step_no = str(wip_idx + 1) if raw_step in ["", "nan", "NaN", "None"] else raw_step
                     
@@ -182,12 +276,47 @@ with all_tabs[0]:
                     s_tool = str(active_row.get(tool_col, active_row.get("Process Tool", "")))
                     s_recipe = str(active_row.get(recipe_col, active_row.get("Recipe", "")))
                     
-                    html_table_wip += f"<tr><td><b>{wid}</b></td><td>{wip_step_no}/92</td><td>{s_owner}</td><td>{s_desc}</td><td>{s_tool}</td><td>{s_recipe}</td></tr>"
+                    wip_data_list.append({
+                        "ID (Wafer)": wid,
+                        "Step": f"{wip_step_no}/92",
+                        "Stage Owner": s_owner,
+                        "Step Description": s_desc,
+                        "Process Tool": s_tool,
+                        "Recipe": s_recipe,
+                        "_raw_step": raw_step,
+                        "_avail_steps": [str(x).strip() for x in w_group[step_col].tolist()]
+                    })
             
-            html_table_wip += "</table>"
-            
-            if has_wip_wafers:
-                st.markdown(html_table_wip, unsafe_allow_html=True)
+            if wip_data_list:
+                st.markdown("💡 **點擊列表中的 Wafer ID 按鈕，即可開啟該晶圓的資料填寫與動作面板。**")
+                st.markdown("<style>.centered-text { text-align: center; margin-top: 8px; font-size: 14px; }</style>", unsafe_allow_html=True)
+                
+                # 表頭排版 (置中對齊)
+                h_cols = st.columns([1.2, 0.8, 1.2, 3.8, 1.5, 1.5])
+                h_cols[0].markdown("<div style='text-align: center; font-weight: bold; color: #495057; font-size: 15px;'>ID (Wafer)</div>", unsafe_allow_html=True)
+                h_cols[1].markdown("<div style='text-align: center; font-weight: bold; color: #495057; font-size: 15px;'>Step</div>", unsafe_allow_html=True)
+                h_cols[2].markdown("<div style='text-align: center; font-weight: bold; color: #495057; font-size: 15px;'>Stage Owner</div>", unsafe_allow_html=True)
+                h_cols[3].markdown("<div style='text-align: center; font-weight: bold; color: #495057; font-size: 15px;'>Step Description</div>", unsafe_allow_html=True)
+                h_cols[4].markdown("<div style='text-align: center; font-weight: bold; color: #495057; font-size: 15px;'>Process Tool</div>", unsafe_allow_html=True)
+                h_cols[5].markdown("<div style='text-align: center; font-weight: bold; color: #495057; font-size: 15px;'>Recipe</div>", unsafe_allow_html=True)
+                st.markdown("<hr style='margin-top: 5px; margin-bottom: 5px;'/>", unsafe_allow_html=True)
+                
+                # 逐列產生網格與互動按鈕
+                for item in wip_data_list:
+                    cols = st.columns([1.2, 0.8, 1.2, 3.8, 1.5, 1.5])
+                    
+                    # 🎯 這裡將 Wafer ID 變成實體按鈕
+                    if cols[0].button(f"{item['ID (Wafer)']}", key=f"btn_{item['ID (Wafer)']}", use_container_width=True):
+                        show_ongoing_action_dialog(item['ID (Wafer)'], item['_raw_step'], item['_avail_steps'])
+                        
+                    # 其餘欄位強制置中
+                    cols[1].markdown(f"<div class='centered-text'>{item['Step']}</div>", unsafe_allow_html=True)
+                    cols[2].markdown(f"<div class='centered-text'>{item['Stage Owner']}</div>", unsafe_allow_html=True)
+                    cols[3].markdown(f"<div class='centered-text'>{item['Step Description']}</div>", unsafe_allow_html=True)
+                    cols[4].markdown(f"<div class='centered-text'>{item['Process Tool']}</div>", unsafe_allow_html=True)
+                    cols[5].markdown(f"<div class='centered-text'>{item['Recipe']}</div>", unsafe_allow_html=True)
+                    st.markdown("<hr style='margin-top: 5px; margin-bottom: 5px; border-top: 1px solid #f1f3f5;'/>", unsafe_allow_html=True)
+                    
             else:
                 st.info("目前產線上沒有任何進行中的晶圓。")
         else:
