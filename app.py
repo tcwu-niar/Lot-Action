@@ -324,9 +324,7 @@ with all_tabs[0]:
                     s_tool = str(active_row.get(tool_col, active_row.get("Process Tool", "")))
                     s_recipe = str(active_row.get(recipe_col, active_row.get("Recipe", "")))
                     
-                    # 打包資料，並新增視覺化的動作提示欄位
                     wip_data_list.append({
-                        "🔧 動作": "👆 點擊此列開啟",
                         "ID (Wafer)": wid,
                         "Step": f"{wip_step_no}/92",
                         "Stage Owner": s_owner,
@@ -339,13 +337,12 @@ with all_tabs[0]:
                     })
             
             if wip_data_list:
-                st.markdown("💡 **點擊列表中的欲操作的資料列 (Row)，即可完美開啟該晶圓的資料填寫與動作面板。** (完全支援手機版)")
+                st.markdown("💡 **點擊列表中的欲操作的資料列 (Row)，即可開啟該晶圓的資料填寫與動作面板。** (完全支援手機版操作)")
                 
                 df_wip = pd.DataFrame(wip_data_list)
-                # 重新選定要在畫面上顯示的欄位，確保 "🔧 動作" 排在第一個
-                display_df = df_wip[["🔧 動作", "ID (Wafer)", "Step", "Stage Owner", "Step Description", "Process Tool", "Recipe"]]
+                # 🎯 移除了醜醜的動作欄位，只留下最純淨的資料
+                display_df = df_wip[["ID (Wafer)", "Step", "Stage Owner", "Step Description", "Process Tool", "Recipe"]]
                 
-                # 🎯 利用單列選取觸發 Dialog，保證手機上不跑版
                 selection = st.dataframe(
                     display_df,
                     use_container_width=True,
