@@ -324,7 +324,6 @@ with all_tabs[0]:
                     s_tool = str(active_row.get(tool_col, active_row.get("Process Tool", "")))
                     s_recipe = str(active_row.get(recipe_col, active_row.get("Recipe", "")))
                     
-                    # 將該列資料打包，以便傳入 Dialog 中顯示預設值
                     wip_data_list.append({
                         "ID (Wafer)": wid,
                         "Step": f"{wip_step_no}/92",
@@ -338,31 +337,31 @@ with all_tabs[0]:
                     })
             
             if wip_data_list:
-                st.markdown("💡 **點擊列表中的 Wafer ID 按鈕，即可開啟該晶圓的資料填寫與動作面板。**")
-                st.markdown("<style>.centered-text { text-align: center; margin-top: 8px; font-size: 14px; }</style>", unsafe_allow_html=True)
+                st.markdown("💡 **點擊列表中的欲操作的資料列 (Row)，即可開啟該晶圓的資料填寫與動作面板。**")
                 
-                h_cols = st.columns([1.2, 0.8, 1.2, 3.8, 1.5, 1.5])
-                h_cols[0].markdown("<div style='text-align: center; font-weight: bold; color: #495057; font-size: 15px;'>ID (Wafer)</div>", unsafe_allow_html=True)
-                h_cols[1].markdown("<div style='text-align: center; font-weight: bold; color: #495057; font-size: 15px;'>Step</div>", unsafe_allow_html=True)
-                h_cols[2].markdown("<div style='text-align: center; font-weight: bold; color: #495057; font-size: 15px;'>Stage Owner</div>", unsafe_allow_html=True)
-                h_cols[3].markdown("<div style='text-align: center; font-weight: bold; color: #495057; font-size: 15px;'>Step Description</div>", unsafe_allow_html=True)
-                h_cols[4].markdown("<div style='text-align: center; font-weight: bold; color: #495057; font-size: 15px;'>Process Tool</div>", unsafe_allow_html=True)
-                h_cols[5].markdown("<div style='text-align: center; font-weight: bold; color: #495057; font-size: 15px;'>Recipe</div>", unsafe_allow_html=True)
-                st.markdown("<hr style='margin-top: 5px; margin-bottom: 5px;'/>", unsafe_allow_html=True)
+                # 🎯 改回使用 st.dataframe，避免手機版 st.columns 強制換行斷版的問題
+                df_wip = pd.DataFrame(wip_data_list)
+                display_df = df_wip[["ID (Wafer)", "Step", "Stage Owner", "Step Description", "Process Tool", "Recipe"]]
                 
-                for item in wip_data_list:
-                    cols = st.columns([1.2, 0.8, 1.2, 3.8, 1.5, 1.5])
-                    
-                    # 🎯 點擊按鈕開啟完整編輯視窗
-                    if cols[0].button(f"{item['ID (Wafer)']}", key=f"btn_{item['ID (Wafer)']}", use_container_width=True):
-                        show_ongoing_action_dialog(item['ID (Wafer)'], item['_raw_step'], item['_row_dict'], item['_avail_steps'])
-                        
-                    cols[1].markdown(f"<div class='centered-text'>{item['Step']}</div>", unsafe_allow_html=True)
-                    cols[2].markdown(f"<div class='centered-text'>{item['Stage Owner']}</div>", unsafe_allow_html=True)
-                    cols[3].markdown(f"<div class='centered-text'>{item['Step Description']}</div>", unsafe_allow_html=True)
-                    cols[4].markdown(f"<div class='centered-text'>{item['Process Tool']}</div>", unsafe_allow_html=True)
-                    cols[5].markdown(f"<div class='centered-text'>{item['Recipe']}</div>", unsafe_allow_html=True)
-                    st.markdown("<hr style='margin-top: 5px; margin-bottom: 5px; border-top: 1px solid #f1f3f5;'/>", unsafe_allow_html=True)
+                # 套用 Selection 事件，點擊 Row 即觸發彈出視窗
+                selection = st.dataframe(
+                    display_df,
+                    use_container_width=True,
+                    hide_index=True,
+                    on_select="rerun",
+                    selection_mode="single-row"
+                )
+                
+                if selection and selection.get("selection", {}).get("rows"):
+                    selected_idx = selection["selection"]["rows"][0]
+                    selected_item = wip_data_list[selected_idx]
+                    # 觸發彈出視窗
+                    show_ongoing_action_dialog(
+                        selected_item['ID (Wafer)'], 
+                        selected_item['_raw_step'], 
+                        selected_item['_row_dict'], 
+                        selected_item['_avail_steps']
+                    )
                     
             else:
                 st.info("目前產線上沒有任何進行中的晶圓。")
