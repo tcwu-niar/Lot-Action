@@ -132,7 +132,6 @@ def show_ongoing_action_dialog(tw_id, ts_no, target_row_dict, avail_steps):
         }
         st.rerun()
 
-# 🎯 新增：專為 Wafer History 設計的歷史資料編輯視窗
 @st.dialog("✏️ 修改歷史站點資料", width="large")
 def show_history_edit_dialog(tw_id, ts_no, target_row_dict):
     st.markdown(f"**晶圓 ID:** `{tw_id}` | **修改站點:** 第 `{ts_no}` 步")
@@ -144,7 +143,11 @@ def show_history_edit_dialog(tw_id, ts_no, target_row_dict):
     with c2: edit_recipe = st.text_input("🧪 機台配方 (Recipe):", value=str(target_row_dict.get("Recipe", "")))
     with c3: edit_cp = st.text_input("🎯 檢驗點 (Check point):", value=str(target_row_dict.get("Check point", "")))
     
-    current_comment = str(target_row_dict.get("Comments", "")).strip() or str(target_row_dict.get("備註", "")).strip()
+    # 嘗試抓取各種 SPC data / Comments 欄位名稱
+    current_comment = str(target_row_dict.get("SPC data", "")).strip()
+    if not current_comment: current_comment = str(target_row_dict.get("Comments", "")).strip()
+    if not current_comment: current_comment = str(target_row_dict.get("備註", "")).strip()
+    
     st.markdown("📝 **批註 / 機台數據修改 (Result Data / Comments):**")
     spc_data = st.text_input("修改過站紀錄 (將同步更新 Comments 與 SPC data 欄位):", value=current_comment)
     
@@ -361,7 +364,6 @@ with all_tabs[0]:
 with all_tabs[1]:
     st.subheader("📜 晶圓歷史過站追蹤足跡 (Wafer History 日誌)")
     
-    # 🎯 攔截並處理「修改歷史資料」的寫入邏輯
     if "history_edit_action" in st.session_state:
         pa = st.session_state.history_edit_action
         del st.session_state["history_edit_action"]
@@ -370,7 +372,6 @@ with all_tabs[1]:
         enc_w_id = requests.utils.quote(str(pa["w_id"]))
         enc_s_no = requests.utils.quote(str(pa["s_no"]))
         
-        # 1. 處理新圖片上傳
         final_result_link = ""
         if pa["img"] is not None:
             with st.spinner("⏳ 正在將新圖片上傳至雲端..."):
@@ -385,7 +386,6 @@ with all_tabs[1]:
                 except Exception as e:
                     st.error(f"圖片上傳連線錯誤: {e}")
         
-        # 2. 比對欄位是否有變更
         orig_comment = str(pa["orig_row"].get("Comments", "")).strip() or str(pa["orig_row"].get("備註", "")).strip()
         if str(pa["spc"]).strip() != orig_comment:
             urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&column_name=Comments&new_value={requests.utils.quote(str(pa['spc']).strip())}")
@@ -472,7 +472,6 @@ with all_tabs[1]:
                 
                 st.markdown("---")
                 
-                # 🎯 在這裡加入「修改歷史資料」的按鈕
                 hc1, hc2 = st.columns([4, 1])
                 hc1.markdown(f"### 🛑 第 {target_step_no} 步 - 歷史動作完整紀錄 (Action History)")
                 if hc2.button("✏️ 修改此站點資料", use_container_width=True, type="secondary"):
@@ -489,6 +488,11 @@ with all_tabs[1]:
                 else:
                     result_html = mother_result_val
 
+                # 🎯 智慧撈取 SPC data：先找歷史紀錄表(wafer_status)，若無則撈母表(route_template)
+                mother_spc_val = str(display_route.iloc[selected_idx].get("SPC data", "")).strip()
+                if not mother_spc_val: mother_spc_val = str(display_route.iloc[selected_idx].get("Comments", "")).strip()
+                if not mother_spc_val: mother_spc_val = str(display_route.iloc[selected_idx].get("備註", "")).strip()
+
                 if not step_logs.empty:
                     html_parts = ['<div style="font-size: 12pt;"><table style="width: 100%; border-collapse: collapse; border: 1px solid #ddd;">']
                     html_parts.append('<tr style="background-color: #f8f9fa; color: #333;"><th style="padding: 10px; border: 1px solid #ddd; text-align: center; width: 10%;">動作 (Action)</th><th style="padding: 10px; border: 1px solid #ddd; text-align: center; width: 20%;">日期與時間</th><th style="padding: 10px; border: 1px solid #ddd; text-align: left; width: 25%;">Hold Note (暫停原因)</th><th style="padding: 10px; border: 1px solid #ddd; text-align: left; width: 25%;">SPC data (過站備註)</th><th style="padding: 10px; border: 1px solid #ddd; text-align: center; width: 20%;">Result (檢驗圖片)</th></tr>')
@@ -497,7 +501,12 @@ with all_tabs[1]:
                         action_val = str(log_row.get("Action", "")).strip()
                         time_val = str(log_row.get("Check out Time", "")).strip()
                         hold_note_val = str(log_row.get("Hold Note", "")).strip()
+                        
+                        # 🎯 這裡加上智慧撈取邏輯
                         spc_val = str(log_row.get("SPC data", "")).strip()
+                        if not spc_val: spc_val = str(log_row.get("Comments", "")).strip()
+                        if not spc_val: spc_val = str(log_row.get("備註", "")).strip()
+                        if not spc_val: spc_val = mother_spc_val # 歷史沒紀錄，拿母表墊背
                         
                         bg_color = "#fff3cd" if action_val.upper() == "HOLD" else "#ffffff"
                         text_color = "#d9534f" if action_val.upper() == "HOLD" else "#000000"
@@ -771,6 +780,8 @@ with all_tabs[4]:
                     raw_last_step = str(w_group.iloc[-1].get(step_col, "")).replace(".0", "").strip()
                     wip_step_no = str(total_steps) if raw_last_step in ["", "nan", "NaN", "None"] else raw_last_step
                     status_html = '<span class="status-dot" style="background-color: #0d6efd;"></span> Shipped (已出貨)'
+                    
+                    current_stage_owner = str(w_group.iloc[-1].get(owner_col, ""))
                     
                     for idx, row in w_group.iterrows():
                         fco = str(row.get(fco_col, "")).strip().upper()
