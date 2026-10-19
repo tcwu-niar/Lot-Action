@@ -337,12 +337,13 @@ with all_tabs[0]:
                     })
             
             if wip_data_list:
-                st.markdown("💡 **點擊列表中的欲操作的資料列 (Row)，即可開啟該晶圓的資料填寫與動作面板。** (完全支援手機版操作)")
+                st.markdown("💡 **點擊列表中的欲操作的資料列 (Row)，即可開啟該晶圓的資料填寫與動作面板。**")
                 
+                # 🎯 改回使用 st.dataframe，避免手機版 st.columns 強制換行斷版的問題
                 df_wip = pd.DataFrame(wip_data_list)
-                # 🎯 移除了醜醜的動作欄位，只留下最純淨的資料
                 display_df = df_wip[["ID (Wafer)", "Step", "Stage Owner", "Step Description", "Process Tool", "Recipe"]]
                 
+                # 套用 Selection 事件，點擊 Row 即觸發彈出視窗
                 selection = st.dataframe(
                     display_df,
                     use_container_width=True,
@@ -354,6 +355,7 @@ with all_tabs[0]:
                 if selection and selection.get("selection", {}).get("rows"):
                     selected_idx = selection["selection"]["rows"][0]
                     selected_item = wip_data_list[selected_idx]
+                    # 觸發彈出視窗
                     show_ongoing_action_dialog(
                         selected_item['ID (Wafer)'], 
                         selected_item['_raw_step'], 
