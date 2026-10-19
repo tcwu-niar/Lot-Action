@@ -488,7 +488,7 @@ with all_tabs[1]:
                 else:
                     result_html = mother_result_val
 
-                # 🎯 智慧撈取 SPC data：先找歷史紀錄表(wafer_status)，若無則撈母表(route_template)
+                # 🎯 智慧撈取 SPC data：先找母表(route_template)，若無則找歷史紀錄表(wafer_status)
                 mother_spc_val = str(display_route.iloc[selected_idx].get("SPC data", "")).strip()
                 if not mother_spc_val: mother_spc_val = str(display_route.iloc[selected_idx].get("Comments", "")).strip()
                 if not mother_spc_val: mother_spc_val = str(display_route.iloc[selected_idx].get("備註", "")).strip()
@@ -502,11 +502,11 @@ with all_tabs[1]:
                         time_val = str(log_row.get("Check out Time", "")).strip()
                         hold_note_val = str(log_row.get("Hold Note", "")).strip()
                         
-                        # 🎯 這裡加上智慧撈取邏輯
-                        spc_val = str(log_row.get("SPC data", "")).strip()
+                        # 🎯 優先顯示母表的資料，若母表無資料才拿歷史紀錄
+                        spc_val = mother_spc_val
+                        if not spc_val: spc_val = str(log_row.get("SPC data", "")).strip()
                         if not spc_val: spc_val = str(log_row.get("Comments", "")).strip()
                         if not spc_val: spc_val = str(log_row.get("備註", "")).strip()
-                        if not spc_val: spc_val = mother_spc_val # 歷史沒紀錄，拿母表墊背
                         
                         bg_color = "#fff3cd" if action_val.upper() == "HOLD" else "#ffffff"
                         text_color = "#d9534f" if action_val.upper() == "HOLD" else "#000000"
@@ -780,8 +780,6 @@ with all_tabs[4]:
                     raw_last_step = str(w_group.iloc[-1].get(step_col, "")).replace(".0", "").strip()
                     wip_step_no = str(total_steps) if raw_last_step in ["", "nan", "NaN", "None"] else raw_last_step
                     status_html = '<span class="status-dot" style="background-color: #0d6efd;"></span> Shipped (已出貨)'
-                    
-                    current_stage_owner = str(w_group.iloc[-1].get(owner_col, ""))
                     
                     for idx, row in w_group.iterrows():
                         fco = str(row.get(fco_col, "")).strip().upper()
