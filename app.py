@@ -112,7 +112,8 @@ def show_skip_dialog(tw_id, ts_no, avail_steps):
         st.rerun()
     if c_cancel.button("❌ 取消", use_container_width=True): st.rerun()
 
-all_tabs = st.tabs(["📊 Wafer Overview", "📋 Full Route", "📜 Wafer History", "📤 Upload New Wafer", "📦 Bank Wafers"])
+# 🎯 這裡新增了第六個 Tab：🔍 WIP Details
+all_tabs = st.tabs(["📊 Wafer Overview", "🔍 WIP Details", "📋 Full Route", "📜 Wafer History", "📤 Upload New Wafer", "📦 Bank Wafers"])
 
 # =========================================================================
 # 📊 頁籤 1: Wafer Overview 
@@ -144,7 +145,6 @@ with all_tabs[0]:
             df_route = df_route.sort_values(by=['_lot_num', wafer_col])
             
             valid_shuttles = {}
-            all_shipped_data = [] 
 
             for (shuttle, rep_team), s_group in df_route.groupby([shuttle_col, team_col], sort=False):
                 if str(shuttle).strip() == "": continue
@@ -190,17 +190,6 @@ with all_tabs[0]:
                     progress_pct = min(int((int(nums[0]) if nums else 0) / 92 * 100), 100)
                     
                     team_valid_wafers.append({"id": wid, "step": f"{wip_step_no}/92", "stage_owner": current_stage_owner, "status": status_html, "is_shipped": is_shipped, "progress_pct": progress_pct})
-                    
-                    # 🎯 修改點：已出貨清單只保留必要的欄位 (移除了 Stage Owner 與 備註)
-                    if is_shipped:
-                        all_shipped_data.append({
-                            "Shuttle Name": shuttle,
-                            "Owner": rep_owner,
-                            "團隊": rep_team,
-                            "ID (Wafer)": wid,
-                            "Step": f"{wip_step_no}/92",
-                            "Status": "🟢 Shipped (已出貨)"
-                        })
                 
                 if team_valid_wafers:
                     if shuttle not in valid_shuttles: valid_shuttles[shuttle] = {"owner": rep_owner, "teams": []}
@@ -243,26 +232,83 @@ with all_tabs[0]:
             else:
                 st.info("目前產線上沒有任何進行中 (INPR) 的晶圓。")
                 
-            st.markdown("---")
-            st.subheader("📦 已出貨晶圓清單 (Shipped Wafers)")
-            if all_shipped_data:
-                df_shipped = pd.DataFrame(all_shipped_data)
-                # 🎯 修改點：改用 st.dataframe 顯示純表格即可，無需編輯功能
-                st.dataframe(
-                    df_shipped,
-                    hide_index=True,
-                    use_container_width=True
-                )
-            else:
-                st.success("目前無已出貨的晶圓。")
-                
         else:
             st.warning("⚠️ 母表中找不到 Wafer ID 欄位。")
 
 # =========================================================================
-# 📋 頁籤 2: Full Route 
+# 🔍 頁籤 2: WIP Details (新增的客製化欄位 Tab)
 # =========================================================================
-with all_tabs[1]:  
+with all_tabs[1]:
+    st.subheader("🔍 當前站點設備與配方資訊 (WIP Details)")
+    
+    if not df_route.empty:
+        wafer_col = next((c for c in df_route.columns if str(c).strip().lower() in ["wafer id", "id", "wafer"]), "Wafer ID")
+        step_col = next((c for c in df_route.columns if str(c).strip().lower() in ["step", "step no.", "step no"]), "Step")
+        owner_col = next((c for c in df_route.columns if "owner" in str(c).lower()), "Stage Owner")
+        desc_col = next((c for c in df_route.columns if "description" in str(c).lower()), "Step description")
+        fco_col = next((c for c in df_route.columns if "check out" in str(c).lower()), "Check out Time")
+        tool_col = next((c for c in df_route.columns if "tool" in str(c).lower()), "Process Tool")
+        recipe_col = next((c for c in df_route.columns if "recipe" in str(c).lower()), "Recipe")
+        
+        if wafer_col in df_route.columns:
+            # 使用一樣的 HTML 樣式表，並套用懸停效果 (tr:hover)
+            html_table_wip = """<style>.overview-table { width: 100%; border-collapse: collapse; font-family: sans-serif; font-size: 14px; margin-top: 10px; } .overview-table th { background-color: #f8f9fa; padding: 12px 10px; border: 1px solid #dee2e6; text-align: left; font-weight: bold; color: #495057; } .overview-table td { padding: 10px; border: 1px solid #dee2e6; text-align: left; vertical-align: middle; color: #212529; } .overview-table tr:hover { background-color: #f1f3f5; } </style><table class="overview-table"><tr><th style="width: 12%;">ID (Wafer)</th><th style="width: 8%;">Step</th><th style="width: 12%;">Stage Owner</th><th style="width: 38%;">Step Description</th><th style="width: 15%;">Process Tool</th><th style="width: 15%;">Recipe</th></tr>"""
+            
+            has_wip_wafers = False
+            for wid, w_group in df_route.groupby(wafer_col, sort=False):
+                w_group = w_group.reset_index(drop=True)
+                total_steps = len(w_group)
+                has_scrap, is_banked, is_shipped = False, False, False
+                wip_idx = total_steps
+                active_row = None
+                
+                for idx, row in w_group.iterrows():
+                    fco = str(row.get(fco_col, "")).strip().upper()
+                    if fco == "SCRP":
+                        has_scrap = True
+                        wip_idx = idx
+                        active_row = row
+                        break
+                        
+                if not has_scrap:
+                    for idx, row in w_group.iterrows():
+                        fco = str(row.get(fco_col, "")).strip().upper()
+                        if fco in ["", "NAN", "INPR", "HOLD", "BANK"]:
+                            wip_idx = idx
+                            active_row = row
+                            if fco == "BANK":
+                                is_banked = True
+                            break
+                
+                # 排除入庫 (BANK) 與已出貨 (Shipped) 的晶圓，只顯示活躍中的
+                if is_banked: continue
+                if wip_idx == total_steps and not has_scrap: continue 
+                
+                if active_row is not None:
+                    has_wip_wafers = True
+                    raw_step = str(active_row.get(step_col, "")).replace(".0", "").strip()
+                    wip_step_no = str(wip_idx + 1) if raw_step in ["", "nan", "NaN", "None"] else raw_step
+                    
+                    s_owner = str(active_row.get(owner_col, ""))
+                    s_desc = str(active_row.get(desc_col, ""))
+                    s_tool = str(active_row.get(tool_col, active_row.get("Process Tool", "")))
+                    s_recipe = str(active_row.get(recipe_col, active_row.get("Recipe", "")))
+                    
+                    html_table_wip += f"<tr><td><b>{wid}</b></td><td>{wip_step_no}/{total_steps}</td><td>{s_owner}</td><td>{s_desc}</td><td>{s_tool}</td><td>{s_recipe}</td></tr>"
+            
+            html_table_wip += "</table>"
+            
+            if has_wip_wafers:
+                st.markdown(html_table_wip, unsafe_allow_html=True)
+            else:
+                st.info("目前產線上沒有任何進行中的晶圓。")
+        else:
+            st.warning("⚠️ 母表中找不到 Wafer ID 欄位。")
+
+# =========================================================================
+# 📋 頁籤 3: Full Route 
+# =========================================================================
+with all_tabs[2]:  
     st.subheader("HETEROGENEOUS INTEGRATION & MANUFACTURING DIVISION")
     
     df, conn_status = fetch_route_data_via_csv("route_template")
@@ -489,9 +535,9 @@ with all_tabs[1]:
                 execute_stage_action(pa["name"], pa["w_id"], pa["s_no"], custom_comment=pa.get("comment"), target_jump_step=pa.get("jump_step"))
 
 # =========================================================================
-# 📜 頁籤 3: Wafer History 
+# 📜 頁籤 4: Wafer History 
 # =========================================================================
-with all_tabs[2]:
+with all_tabs[3]:
     st.subheader("📜 晶圓歷史過站追蹤足跡 (Wafer History 日誌)")
     df_route, route_status = fetch_route_data_via_csv("route_template")
     df_logs, log_status = fetch_route_data_via_csv("wafer_status")
@@ -570,9 +616,9 @@ with all_tabs[2]:
         st.info("請先於 Full Route 頁籤搜尋並選擇特定站點。")
 
 # =========================================================================
-# 📤 頁籤 4: Upload New Wafer 
+# 📤 頁籤 5: Upload New Wafer 
 # =========================================================================
-with all_tabs[3]:
+with all_tabs[4]:
     st.subheader("📤 上傳新晶圓路由母表 (Upload New Wafer)")
     uploaded_file = st.file_uploader("選擇全新批次生產路由檔案 (.csv 或 .xlsx)", type=["csv", "xlsx"])
     if uploaded_file is not None:
@@ -608,9 +654,9 @@ with all_tabs[3]:
             st.error(f"❌ 檔案解析失敗: {str(e)}")
 
 # =========================================================================
-# 📦 頁籤 5: Bank Wafers 
+# 📦 頁籤 6: Bank Wafers 
 # =========================================================================
-with all_tabs[4]:
+with all_tabs[5]:
     st.subheader("📦 入庫晶圓清單 (Banked Wafers)")
     st.markdown("集中顯示目前被標記為 Bank (暫停執行/未下線) 的所有晶圓。**勾選左側框框並點擊下方按鈕，即可批次 Kick off (下貨出庫)**。")
 
