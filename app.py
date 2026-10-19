@@ -11,16 +11,16 @@ import re
 st.set_page_config(layout="wide", page_title="TSRI Lot Tracing System")
 st.title("🏭 晶圓生產路由與狀態追蹤系統 (TSRI Lot Tracing System)")
 
-MY_ORGANIZATION_GAS_URL = "https://script.google.com/macros/s/AKfycbxSpHeSlbCyMgn0cH60fh62eM_nYoaCwkSCZF1UJMTeC-3z1wQJ1RVLXge1kvzadmKM/exec"
-SPREADSHEET_ID = "1RQt29KIb4rkVo4A-Y3GouMAezYEBakb1q283d1sgdZU"
+MY_ORGANIZATION_GAS_URL = "https://script.google.com/macros/s/AKfycbx9pptKpV0dUDtGifGCbQnO33d42eUbbODnjVq_g4yitOviXtq6_8TdMo7VT7HL9dC-6w/exec"
+SPREADSHEET_ID = "1HIcyPgjoHWA3Wgj8gohyEN2s-kF5A6OGEWuR0wDqULU"
 
 @st.cache_data(ttl=15)
 def fetch_route_data_via_csv(sheet_name="route_template"):
     if sheet_name == "route_template":
         # 🎯 請將 123456789 替換成您在網址列看到的真實 gid 數字！
-        csv_url = "https://docs.google.com/spreadsheets/d/1RQt29KIb4rkVo4A-Y3GouMAezYEBakb1q283d1sgdZU/export?format=csv&gid=0"
+        csv_url = "https://docs.google.com/spreadsheets/d/1HIcyPgjoHWA3Wgj8gohyEN2s-kF5A6OGEWuR0wDqULU/export?format=csv&gid=0"
     else:
-        csv_url = f"https://docs.google.com/spreadsheets/d/1RQt29KIb4rkVo4A-Y3GouMAezYEBakb1q283d1sgdZU/gviz/tq?tqx=out:csv&sheet={sheet_name}"
+        csv_url = f"https://docs.google.com/spreadsheets/d/1HIcyPgjoHWA3Wgj8gohyEN2s-kF5A6OGEWuR0wDqULU/gviz/tq?tqx=out:csv&sheet={sheet_name}"
         
     try:
         response = requests.get(csv_url, timeout=8)
