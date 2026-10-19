@@ -44,30 +44,70 @@ def fetch_route_data_via_csv(sheet_name="route_template"):
 # 2. 🎯 將所有彈出視窗定義在全域 (解決 Streamlit 作用域報錯)
 # =========================================================================
 
-# --- 🎯 新增：專為 Ongoing Wafer 設計的獨立填寫與動作視窗 ---
-@st.dialog("🚀 填寫站點資料與執行動作")
-def show_ongoing_action_dialog(tw_id, ts_no, avail_steps):
+# 🎯 升級版的 Ongoing Wafer 專屬填寫視窗 (整合所有編輯與動作功能)
+@st.dialog("🚀 填寫站點資料與執行動作", width="large")
+def show_ongoing_action_dialog(tw_id, ts_no, target_row_dict, avail_steps):
     st.markdown(f"**晶圓 ID:** `{tw_id}` | **當前站點:** 第 `{ts_no}` 步")
     
-    spc_data = st.text_input("📝 Result data (將填入 SPC data 欄位):")
-    result_image = st.file_uploader("📸 Image (上傳結果截圖，將填入 Result 欄位)", type=["png", "jpg", "jpeg"])
+    st.markdown("✏️ **本站參數快速修改區（若不需變更請保持預設）**")
+    c1, c2, c3 = st.columns(3)
+    with c1: edit_tool = st.text_input("🔧 變更製程機台:", value=target_row_dict.get("Process Tool", ""))
+    with c2: edit_recipe = st.text_input("🧪 變更機台配方:", value=target_row_dict.get("Recipe", ""))
+    with c3: edit_cp = st.text_input("🎯 變更檢驗點:", value=target_row_dict.get("Check point", ""))
+    
+    st.markdown("📝 **批註 / 機台數據回填 (Result Data / Comments):**")
+    spc_data = st.text_input("請在此輸入過站紀錄 (將填入 SPC data 欄位)...")
+    
+    st.markdown("📸 **檢驗結果圖片上傳 (Result 欄位):**")
+    result_image = st.file_uploader("上傳機台截圖或顯微鏡照片 (支援 png/jpg)", type=["png", "jpg", "jpeg"])
+    
+    current_comment = str(target_row_dict.get("Comments", "")).strip() or str(target_row_dict.get("備註", "")).strip() or "暫無紀錄"
+    st.markdown(f"ℹ️ **目前此站點之歷史批註：** `{current_comment}`")
     
     st.markdown("---")
-    action_type = st.radio("選擇執行動作:", ["🟢 過站 (Check out)", "⏭️ 跳站 (Skip)", "❌ 報廢 (Scrap)"], horizontal=True)
+    st.markdown("⚠️ **選擇執行指令並送出**")
+    
+    action_type = st.radio("流程變更選項:", [
+        "🟢 正常出站 (Check out)", 
+        "💾 僅儲存修改參數 (Save Data)", 
+        "🟦 跳過此站 (Skip)", 
+        "🟨 設定暫停 (Hold)", 
+        "📦 入庫隱藏 (Bank)", 
+        "❌ 報廢處理 (Scrap)"
+    ], horizontal=True)
     
     jump_target, comment = None, ""
+    
     if "Skip" in action_type:
         jump_target = st.selectbox("跳至步驟：", options=avail_steps)
-        comment = st.text_input("跳站原因：")
+        comment = st.text_input("請輸入跳站原因：")
+    elif "Hold" in action_type:
+        comment = st.text_input("請輸入暫停原因：")
+    elif "Bank" in action_type:
+        comment = st.text_input("請輸入入庫原因：")
     elif "Scrap" in action_type:
-        comment = st.text_input("報廢原因：")
+        comment = st.text_input("請輸入報廢原因：")
         
-    if st.button("確認並寫入雲端", type="primary", use_container_width=True):
-        action_name = "Check out" if "Check out" in action_type else "Skip" if "Skip" in action_type else "Scrap"
+    if st.button("🚀 確認並寫入雲端", type="primary", use_container_width=True):
+        if "Check out" in action_type: action_name = "Check out"
+        elif "Save Data" in action_type: action_name = "Key in data"
+        elif "Skip" in action_type: action_name = "Skip"
+        elif "Hold" in action_type: action_name = "Hold"
+        elif "Bank" in action_type: action_name = "Bank"
+        elif "Scrap" in action_type: action_name = "Scrap"
+        
         st.session_state.ongoing_action = {
-            "name": action_name, "w_id": tw_id, "s_no": ts_no, 
-            "spc": spc_data, "img": result_image, 
-            "jump_step": jump_target, "comment": comment
+            "name": action_name, 
+            "w_id": tw_id, 
+            "s_no": ts_no, 
+            "spc": spc_data, 
+            "img": result_image, 
+            "jump_step": jump_target, 
+            "comment": comment,
+            "tool": edit_tool,
+            "recipe": edit_recipe,
+            "cp": edit_cp,
+            "orig_row": target_row_dict
         }
         st.rerun()
 
@@ -181,42 +221,50 @@ with all_tabs[0]:
         if final_result_link:
             urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&column_name=Result&new_value={requests.utils.quote(final_result_link)}")
             
-        # 3. 發送核心動作 (過站/跳站/報廢)
+        # 3. 寫入變更的參數欄位 (Process Tool, Recipe, Check point)
+        fields = {"Process Tool": pa["tool"], "Recipe": pa["recipe"], "Check point": pa["cp"]}
+        for f_name, f_val in fields.items():
+            orig_val = str(pa["orig_row"].get(f_name, "")).strip()
+            if str(f_val).strip() != orig_val:
+                urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&column_name={requests.utils.quote(f_name)}&new_value={requests.utils.quote(str(f_val).strip())}")
+                
+        # 4. 發送核心動作 (過站/跳站/報廢等)
         enc_time = requests.utils.quote(now_str)
         enc_comment = requests.utils.quote(pa.get("comment", ""))
         
-        if pa["name"] == "Check out":
-            urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Check out&comment={enc_comment}&time={enc_time}")
-        elif pa["name"] == "Scrap":
-            urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Scrap&comment={enc_comment}&time={enc_time}")
-        elif pa["name"] == "Skip":
+        act = pa["name"]
+        if act == "Check out": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Check out&comment={enc_comment}&time={enc_time}")
+        elif act == "Scrap": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Scrap&comment={enc_comment}&time={enc_time}")
+        elif act == "Hold": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Hold&comment={enc_comment}&time={enc_time}")
+        elif act == "Bank": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Bank&comment={enc_comment}&time={enc_time}")
+        elif act == "Skip":
             enc_target = requests.utils.quote(str(pa["jump_step"]))
             urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Skip&comment={enc_comment}&time={enc_time}&target_step={enc_target}")
             
-        # 4. 批次發送 Requests
-        with st.spinner(f"🚀 正在將資料與 {pa['name']} 指令同步至雲端..."):
-            has_error = False
-            session = requests.Session()
-            adapter = requests.adapters.HTTPAdapter(max_retries=0) 
-            session.mount('https://', adapter)
-            
-            for url in set(urls_to_send):
-                try:
-                    res = session.get(url, timeout=12, allow_redirects=False)
-                    if res.status_code not in [200, 302] and "Error" in res.text:
-                        st.error(f"❌ 雲端拒絕寫入: {res.text}")
-                        has_error = True
-                except:
-                    pass
-            if has_error:
-                time.sleep(3)
-            else:
-                st.success("✅ 操作成功寫入！")
-                time.sleep(1.2)
-            st.cache_data.clear()
-            st.rerun()
+        # 5. 批次發送 Requests
+        if urls_to_send:
+            with st.spinner(f"🚀 正在將資料與 {act} 指令同步至雲端..."):
+                has_error = False
+                session = requests.Session()
+                adapter = requests.adapters.HTTPAdapter(max_retries=0) 
+                session.mount('https://', adapter)
+                
+                for url in set(urls_to_send):
+                    try:
+                        res = session.get(url, timeout=12, allow_redirects=False)
+                        if res.status_code not in [200, 302] and "Error" in res.text:
+                            st.error(f"❌ 雲端拒絕寫入: {res.text}")
+                            has_error = True
+                    except:
+                        pass
+                if has_error:
+                    time.sleep(3)
+                else:
+                    st.success("✅ 操作成功寫入！")
+                    time.sleep(1.2)
+                st.cache_data.clear()
+                st.rerun()
 
-    # --- 以下為表格繪製邏輯 ---
     df_route, conn_status = fetch_route_data_via_csv("route_template")
     
     if not df_route.empty:
@@ -276,6 +324,7 @@ with all_tabs[0]:
                     s_tool = str(active_row.get(tool_col, active_row.get("Process Tool", "")))
                     s_recipe = str(active_row.get(recipe_col, active_row.get("Recipe", "")))
                     
+                    # 將該列資料打包，以便傳入 Dialog 中顯示預設值
                     wip_data_list.append({
                         "ID (Wafer)": wid,
                         "Step": f"{wip_step_no}/92",
@@ -284,14 +333,14 @@ with all_tabs[0]:
                         "Process Tool": s_tool,
                         "Recipe": s_recipe,
                         "_raw_step": raw_step,
-                        "_avail_steps": [str(x).strip() for x in w_group[step_col].tolist()]
+                        "_avail_steps": [str(x).strip() for x in w_group[step_col].tolist()],
+                        "_row_dict": active_row.to_dict()
                     })
             
             if wip_data_list:
                 st.markdown("💡 **點擊列表中的 Wafer ID 按鈕，即可開啟該晶圓的資料填寫與動作面板。**")
                 st.markdown("<style>.centered-text { text-align: center; margin-top: 8px; font-size: 14px; }</style>", unsafe_allow_html=True)
                 
-                # 表頭排版 (置中對齊)
                 h_cols = st.columns([1.2, 0.8, 1.2, 3.8, 1.5, 1.5])
                 h_cols[0].markdown("<div style='text-align: center; font-weight: bold; color: #495057; font-size: 15px;'>ID (Wafer)</div>", unsafe_allow_html=True)
                 h_cols[1].markdown("<div style='text-align: center; font-weight: bold; color: #495057; font-size: 15px;'>Step</div>", unsafe_allow_html=True)
@@ -301,15 +350,13 @@ with all_tabs[0]:
                 h_cols[5].markdown("<div style='text-align: center; font-weight: bold; color: #495057; font-size: 15px;'>Recipe</div>", unsafe_allow_html=True)
                 st.markdown("<hr style='margin-top: 5px; margin-bottom: 5px;'/>", unsafe_allow_html=True)
                 
-                # 逐列產生網格與互動按鈕
                 for item in wip_data_list:
                     cols = st.columns([1.2, 0.8, 1.2, 3.8, 1.5, 1.5])
                     
-                    # 🎯 這裡將 Wafer ID 變成實體按鈕
+                    # 🎯 點擊按鈕開啟完整編輯視窗
                     if cols[0].button(f"{item['ID (Wafer)']}", key=f"btn_{item['ID (Wafer)']}", use_container_width=True):
-                        show_ongoing_action_dialog(item['ID (Wafer)'], item['_raw_step'], item['_avail_steps'])
+                        show_ongoing_action_dialog(item['ID (Wafer)'], item['_raw_step'], item['_row_dict'], item['_avail_steps'])
                         
-                    # 其餘欄位強制置中
                     cols[1].markdown(f"<div class='centered-text'>{item['Step']}</div>", unsafe_allow_html=True)
                     cols[2].markdown(f"<div class='centered-text'>{item['Stage Owner']}</div>", unsafe_allow_html=True)
                     cols[3].markdown(f"<div class='centered-text'>{item['Step Description']}</div>", unsafe_allow_html=True)
