@@ -446,16 +446,21 @@ with all_tabs[1]:
             filtered_route = df_route
             
         if not filtered_route.empty:
-            st.markdown(f"📊 晶圓 **{search_id}** 的母表生產路由全貌：")
+            # 🎯 母表標題置中
+            st.markdown(f"<h4 style='text-align: center;'>📊 晶圓 <b>{search_id}</b> 的母表生產路由全貌：</h4>", unsafe_allow_html=True)
             display_route = filtered_route.copy().reset_index(drop=True)
             
             if "Step" in display_route.columns:
                 display_route["Step"] = display_route["Step"].astype(str).str.replace(".0", "", regex=False)
             
+            # 🎯 動態展開完整高度，不截斷
+            dynamic_height = (len(display_route) + 1) * 36 + 10
+            
             selected_route_row = st.dataframe(
                 display_route, 
                 use_container_width=True, 
                 hide_index=True, 
+                height=dynamic_height,
                 on_select="rerun", 
                 selection_mode="single-row", 
                 key="history_route_table", 
@@ -471,9 +476,10 @@ with all_tabs[1]:
                 
                 st.markdown("---")
                 
-                hc1, hc2 = st.columns([4, 1])
-                hc1.markdown(f"### 🛑 第 {target_step_no} 步 - 歷史動作完整紀錄 (Action History)")
-                if hc2.button("✏️ 修改此站點資料", use_container_width=True, type="secondary"):
+                # 🎯 歷史動作標題置中
+                col_spacer, col_title, col_btn = st.columns([1, 4, 1])
+                col_title.markdown(f"<h3 style='text-align: center; margin-top: 0;'>🛑 第 {target_step_no} 步 - 歷史動作完整紀錄 (Action History)</h3>", unsafe_allow_html=True)
+                if col_btn.button("✏️ 修改此站點資料", use_container_width=True, type="secondary"):
                     show_history_edit_dialog(search_id, target_step_no, target_row_data)
                 
                 log_wafer_col = [c for c in df_logs.columns if "Wafer" in c or "晶圓" in c][0]
@@ -493,6 +499,7 @@ with all_tabs[1]:
 
                 if not step_logs.empty:
                     html_parts = ['<div style="font-size: 12pt;"><table style="width: 100%; border-collapse: collapse; border: 1px solid #ddd;">']
+                    # 🎯 更新表頭命名
                     html_parts.append('<tr style="background-color: #f8f9fa; color: #333;"><th style="padding: 10px; border: 1px solid #ddd; text-align: center; width: 10%;">動作 (Action)</th><th style="padding: 10px; border: 1px solid #ddd; text-align: center; width: 20%;">日期與時間</th><th style="padding: 10px; border: 1px solid #ddd; text-align: left; width: 25%;">Action Record</th><th style="padding: 10px; border: 1px solid #ddd; text-align: left; width: 25%;">SPC data</th><th style="padding: 10px; border: 1px solid #ddd; text-align: center; width: 20%;">Result (檢驗圖片)</th></tr>')
                     
                     for _, log_row in step_logs.iterrows():
