@@ -446,38 +446,23 @@ with all_tabs[1]:
             filtered_route = df_route
             
         if not filtered_route.empty:
-            # 🎯 母表標題置中
-            st.markdown(f"<h4 style='text-align: center;'>📊 晶圓 <b>{search_id}</b> 的母表生產路由全貌：</h4>", unsafe_allow_html=True)
+            # 🎯 移除大標題 (已刪除 "母表生產路由全貌：" 標題)
             display_route = filtered_route.copy().reset_index(drop=True)
             
             if "Step" in display_route.columns:
                 display_route["Step"] = display_route["Step"].astype(str).str.replace(".0", "", regex=False)
             
-            # 🎯 針對不同欄位設定適當的寬度，避免 Wafer ID 太寬，並讓長文字完整顯示
-            col_cfg = {}
-            for col_name in display_route.columns:
-                lower_col = str(col_name).strip().lower()
-                if lower_col in ["wafer id", "id", "wafer", "step", "step no.", "module", "q time"]:
-                    col_cfg[col_name] = st.column_config.TextColumn(width="small")
-                elif lower_col in ["step description", "recipe", "check point", "customer", "product type", "comments", "備註", "spc data"]:
-                    col_cfg[col_name] = st.column_config.TextColumn(width="large")
-                else:
-                    col_cfg[col_name] = st.column_config.TextColumn(width="medium")
-            
-            col_cfg["Result"] = st.column_config.ImageColumn("Result (預覽圖片)", help="上傳的檢驗圖片")
-
-            # 🎯 動態展開完整高度，不截斷
-            dynamic_height = (len(display_route) + 1) * 36 + 10
-            
+            # 🎯 恢復原本不鎖定長寬的乾淨設定，讓 Streamlit 原生自動適應，並具備垂直滾動功能
             selected_route_row = st.dataframe(
                 display_route, 
                 use_container_width=True, 
                 hide_index=True, 
-                height=dynamic_height,
                 on_select="rerun", 
                 selection_mode="single-row", 
                 key="history_route_table", 
-                column_config=col_cfg
+                column_config={
+                    "Result": st.column_config.ImageColumn("Result (預覽圖片)", help="上傳的檢驗圖片")
+                }
             )
             
             if selected_route_row and selected_route_row.get("selection", {}).get("rows"):
@@ -487,7 +472,7 @@ with all_tabs[1]:
                 
                 st.markdown("---")
                 
-                # 🎯 歷史動作標題靠左對齊，按鈕靠右
+                # 🎯 歷史動作標題恢復靠左對齊
                 hc1, hc2 = st.columns([4, 1])
                 hc1.markdown(f"### 🛑 第 {target_step_no} 步 - 歷史動作完整紀錄 (Action History)")
                 if hc2.button("✏️ 修改此站點資料", use_container_width=True, type="secondary"):
@@ -525,7 +510,7 @@ with all_tabs[1]:
                         bg_color = "#fff3cd" if action_val.upper() == "HOLD" else "#ffffff"
                         text_color = "#d9534f" if action_val.upper() == "HOLD" else "#000000"
                         
-                        # 🎯 將 Action Record 與 SPC data 內容置中
+                        # 🎯 確保所有資料內容皆置中 (text-align: center)
                         html_parts.append(f'<tr style="background-color: {bg_color};"><td style="padding: 10px; border: 1px solid #ddd; text-align: center; font-weight: bold;">{action_val}</td><td style="padding: 10px; border: 1px solid #ddd; text-align: center;">{time_val}</td><td style="padding: 10px; border: 1px solid #ddd; text-align: center; color: {text_color}; font-weight: bold;">{hold_note_val}</td><td style="padding: 10px; border: 1px solid #ddd; text-align: center;">{spc_val}</td><td style="padding: 10px; border: 1px solid #ddd; text-align: center;">{result_html}</td></tr>')
                     html_parts.append('</table></div>')
                     st.markdown("".join(html_parts), unsafe_allow_html=True)
