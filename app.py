@@ -446,8 +446,10 @@ with all_tabs[1]:
             if "Step" in display_route.columns:
                 display_route["Step"] = display_route["Step"].astype(str).str.replace(".0", "", regex=False)
             
+            # 🎯 隱藏 Wafer ID 欄位
             col_cfg = {
-                "Result": st.column_config.ImageColumn("Result (預覽圖片)", help="上傳的檢驗圖片")
+                "Result": st.column_config.ImageColumn("Result (預覽圖片)", help="上傳的檢驗圖片"),
+                actual_string_col: None
             }
             for col_name in display_route.columns:
                 c_lower = str(col_name).lower().strip()
@@ -752,7 +754,6 @@ with all_tabs[4]:
         desc_col = next((c for c in df_route.columns if "description" in str(c).lower()), "Step description")
         
         if wafer_col in df_route.columns:
-            # 🎯 這裡的已出貨片數也同步修改為「已出貨」
             html_table = """<style>.overview-table { width: 100%; border-collapse: collapse; font-family: sans-serif; font-size: 14px; margin-top: 10px; } .overview-table th { background-color: #f8f9fa; padding: 12px 10px; border: 1px solid #dee2e6; text-align: left; font-weight: bold; color: #495057; } .overview-table td { padding: 10px; border: 1px solid #dee2e6; text-align: left; vertical-align: middle; color: #212529; } .overview-table .merged-cell { text-align: center; vertical-align: middle; font-weight: bold; background-color: #ffffff; color: #0d6efd; } .overview-table .owner-team-cell { text-align: center; vertical-align: middle; background-color: #ffffff; } .prog-wrapper { display: flex; align-items: center; width: 100%; } .prog-container { background-color: #e9ecef; border-radius: 4px; flex-grow: 1; height: 16px; overflow: hidden; } .prog-bar { background-color: #28a745; height: 100%; border-radius: 4px; transition: width 0.4s ease; } .prog-text { margin-left: 10px; font-size: 13px; font-weight: 500; min-width: 35px; text-align: right; } .status-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }</style><table class="overview-table"><tr><th>Shuttle Name</th><th>Owner</th><th>團隊</th><th style="width: 90px; text-align: center;">已出貨</th><th>ID (Wafer)</th><th>Step</th><th>Status</th><th style="width: 200px;">進度條</th></tr>"""
             df_route[shuttle_col] = df_route[shuttle_col].fillna("")
             df_route[team_col] = df_route[team_col].fillna("")
