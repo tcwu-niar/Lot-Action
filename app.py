@@ -19,7 +19,6 @@ SPREADSHEET_ID = "1HIcyPgjoHWA3Wgj8gohyEN2s-kF5A6OGEWuR0wDqULU"
 @st.cache_data(ttl=15)
 def fetch_route_data_via_csv(sheet_name="route_template"):
     if sheet_name == "route_template":
-        # 🎯 請將 123456789 替換成您在網址列看到的真實 gid 數字！
         csv_url = "https://docs.google.com/spreadsheets/d/1HIcyPgjoHWA3Wgj8gohyEN2s-kF5A6OGEWuR0wDqULU/export?format=csv&gid=0"
     else:
         csv_url = f"https://docs.google.com/spreadsheets/d/1HIcyPgjoHWA3Wgj8gohyEN2s-kF5A6OGEWuR0wDqULU/gviz/tq?tqx=out:csv&sheet={sheet_name}"
@@ -46,7 +45,8 @@ def fetch_route_data_via_csv(sheet_name="route_template"):
 # 2. 🎯 將所有彈出視窗定義在全域
 # =========================================================================
 
-@st.dialog("🚀 填寫站點資料與執行動作", width="large")
+# 🎯 Ongoing Wafer 專屬填寫視窗
+@st.dialog(" ", width="large")
 def show_ongoing_action_dialog(tw_id, ts_no, target_row_dict, avail_steps):
     st.markdown(f"**晶圓 ID:** `{tw_id}` | **當前站點:** 第 `{ts_no}` 步")
     
@@ -54,70 +54,64 @@ def show_ongoing_action_dialog(tw_id, ts_no, target_row_dict, avail_steps):
     is_held = (current_status == "HOLD")
     is_scrap = (current_status == "SCRP")
     
-    if is_scrap: st.error("🚫 此晶圓目前已報廢 (SCRAPPED)。")
-    elif is_held: st.warning("⚠️ 此晶圓目前處於暫停 (HOLD) 狀態。")
+    if is_scrap: st.error("此晶圓目前已報廢 (SCRAPPED)。")
+    elif is_held: st.warning("此晶圓目前處於暫停 (HOLD) 狀態。")
     
-    st.markdown("✏️ **本站參數快速修改區（若不需變更請保持預設）**")
+    st.markdown("**Process Parameters**")
     c1, c2, c3 = st.columns(3)
-    with c1: edit_tool = st.text_input("🔧 變更製程機台:", value=target_row_dict.get("Process Tool", ""))
-    with c2: edit_recipe = st.text_input("🧪 變更機台配方:", value=target_row_dict.get("Recipe", ""))
-    with c3: edit_cp = st.text_input("🎯 變更檢驗點:", value=target_row_dict.get("Check point", ""))
+    with c1: edit_tool = st.text_input("Process Tool", value=target_row_dict.get("Process Tool", ""))
+    with c2: edit_recipe = st.text_input("Process Recipe", value=target_row_dict.get("Recipe", ""))
+    with c3: edit_cp = st.text_input("Check Point", value=target_row_dict.get("Check point", ""))
     
-    st.markdown("📝 **批註 / 機台數據回填 (Result Data / Comments):**")
-    spc_data = st.text_input("請在此輸入過站紀錄 (將填入 SPC data 欄位)...")
-    
-    st.markdown("📸 **檢驗結果圖片上傳 (Result 欄位):**")
-    result_image = st.file_uploader("上傳機台截圖或顯微鏡照片 (支援 png/jpg)", type=["png", "jpg", "jpeg"], key=f"img_{tw_id}_{ts_no}")
-    
-    current_comment = str(target_row_dict.get("Comments", "")).strip() or str(target_row_dict.get("備註", "")).strip() or "暫無紀錄"
-    st.markdown(f"ℹ️ **目前此站點之歷史批註：** `{current_comment}`")
+    spc_data = st.text_input("**Result Data**")
+    result_image = st.file_uploader("**Result Image**", type=["png", "jpg", "jpeg"], key=f"img_{tw_id}_{ts_no}")
     
     st.markdown("---")
-    st.markdown("⚠️ **選擇執行指令並送出**")
+    st.markdown("**Wafer Action**")
     
     options = []
     if is_scrap:
-        options = ["🔄 復原報廢 (Unscrap)"]
+        options = ["Unscrap"]
     elif is_held:
-        options = ["🟦 解除暫停 (Release Hold)"]
+        options = ["Release Hold"]
     else:
         options = [
-            "🟢 正常出站 (Check out)", 
-            "💾 僅儲存修改參數 (Save Data)", 
-            "🟦 跳過此站 (Skip)", 
-            "🟨 設定暫停 (Hold)", 
-            "📦 入庫隱藏 (Bank)", 
-            "❌ 報廢處理 (Scrap)"
+            "Check Out", 
+            "Save Data Only", 
+            "Skip Stage", 
+            "Hold", 
+            "Bank in", 
+            "Scrap"
         ]
         
-    action_type = st.radio("流程變更選項:", options, horizontal=True)
+    action_type = st.radio("Wafer Action Options", options, horizontal=True, label_visibility="collapsed")
     
     jump_target, comment = None, ""
     
-    if "Skip" in action_type:
+    if action_type == "Skip Stage":
         jump_target = st.selectbox("跳至步驟：", options=avail_steps)
         comment = st.text_input("請輸入跳站原因：")
-    elif "Hold" in action_type:
+    elif action_type == "Hold":
         comment = st.text_input("請輸入暫停原因：")
-    elif "Bank" in action_type:
+    elif action_type == "Bank in":
         comment = st.text_input("請輸入入庫原因：")
-    elif "Scrap" in action_type:
+    elif action_type == "Scrap":
         comment = st.text_input("請輸入報廢原因：")
-    elif "Unscrap" in action_type:
+    elif action_type == "Unscrap":
         comment = st.text_input("請輸入復原報廢原因：")
-    elif "Release Hold" in action_type:
+    elif action_type == "Release Hold":
         comment = st.text_input("請輸入解除暫停原因：")
         
-    if st.button("🚀 確認並寫入雲端", type="primary", use_container_width=True):
+    if st.button("確認並寫入雲端", type="primary", use_container_width=True):
         action_name = ""
-        if "Check out" in action_type: action_name = "Check out"
-        elif "Save Data" in action_type: action_name = "Key in data"
-        elif "Skip" in action_type: action_name = "Skip"
-        elif "Hold" in action_type: action_name = "Hold"
-        elif "Release Hold" in action_type: action_name = "Unhold"
-        elif "Bank" in action_type: action_name = "Bank"
-        elif "Scrap" in action_type: action_name = "Scrap"
-        elif "Unscrap" in action_type: action_name = "Unscrap"
+        if action_type == "Check Out": action_name = "Check out"
+        elif action_type == "Save Data Only": action_name = "Key in data"
+        elif action_type == "Skip Stage": action_name = "Skip"
+        elif action_type == "Hold": action_name = "Hold"
+        elif action_type == "Release Hold": action_name = "Unhold"
+        elif action_type == "Bank in": action_name = "Bank"
+        elif action_type == "Scrap": action_name = "Scrap"
+        elif action_type == "Unscrap": action_name = "Unscrap"
         
         st.session_state.ongoing_action = {
             "name": action_name, 
@@ -134,28 +128,26 @@ def show_ongoing_action_dialog(tw_id, ts_no, target_row_dict, avail_steps):
         }
         st.rerun()
 
-@st.dialog("✏️ 修改歷史站點資料", width="large")
+# 🎯 Wafer History 專屬歷史資料編輯視窗
+@st.dialog(" ", width="large")
 def show_history_edit_dialog(tw_id, ts_no, target_row_dict):
     st.markdown(f"**晶圓 ID:** `{tw_id}` | **修改站點:** 第 `{ts_no}` 步")
-    st.info("💡 提示：在此修改的資料將會覆寫母表 (Route Template) 中的歷史紀錄。")
+    st.info("提示：在此修改的資料將會覆寫母表 (Route Template) 中的歷史紀錄。")
     
-    st.markdown("✏️ **參數修改區**")
+    st.markdown("**Process Parameters**")
     c1, c2, c3 = st.columns(3)
-    with c1: edit_tool = st.text_input("🔧 製程機台 (Process Tool):", value=str(target_row_dict.get("Process Tool", "")))
-    with c2: edit_recipe = st.text_input("🧪 機台配方 (Recipe):", value=str(target_row_dict.get("Recipe", "")))
-    with c3: edit_cp = st.text_input("🎯 檢驗點 (Check point):", value=str(target_row_dict.get("Check point", "")))
+    with c1: edit_tool = st.text_input("Process Tool", value=str(target_row_dict.get("Process Tool", "")))
+    with c2: edit_recipe = st.text_input("Process Recipe", value=str(target_row_dict.get("Recipe", "")))
+    with c3: edit_cp = st.text_input("Check Point", value=str(target_row_dict.get("Check point", "")))
     
     current_comment = str(target_row_dict.get("SPC data", "")).strip()
     if not current_comment: current_comment = str(target_row_dict.get("Comments", "")).strip()
     if not current_comment: current_comment = str(target_row_dict.get("備註", "")).strip()
     
-    st.markdown("📝 **批註 / 機台數據修改 (Result Data / Comments):**")
-    spc_data = st.text_input("修改過站紀錄 (將同步更新 Comments 與 SPC data 欄位):", value=current_comment)
+    spc_data = st.text_input("**Result Data**", value=current_comment)
+    result_image = st.file_uploader("**Result Image**", type=["png", "jpg", "jpeg"], key=f"hist_img_{tw_id}_{ts_no}")
     
-    st.markdown("📸 **重新上傳檢驗結果圖片 (Result 欄位):**")
-    result_image = st.file_uploader("若需更改圖片請上傳新檔 (支援 png/jpg，不更改請留白)", type=["png", "jpg", "jpeg"], key=f"hist_img_{tw_id}_{ts_no}")
-    
-    if st.button("💾 確認修改並寫入雲端", type="primary", use_container_width=True):
+    if st.button("確認修改並寫入雲端", type="primary", use_container_width=True):
         st.session_state.history_edit_action = {
             "w_id": tw_id,
             "s_no": ts_no,
@@ -228,7 +220,7 @@ with all_tabs[0]:
             urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Skip&comment={enc_comment}&time={enc_time}&target_step={enc_target}")
             
         if urls_to_send:
-            with st.spinner(f"🚀 正在將資料與 {act} 指令同步至雲端..."):
+            with st.spinner("🚀 正在將資料與 {act} 指令同步至雲端..."):
                 has_error = False
                 session = requests.Session()
                 adapter = requests.adapters.HTTPAdapter(max_retries=0) 
@@ -322,7 +314,6 @@ with all_tabs[0]:
                     })
             
             if wip_data_list:
-                # 🎯 移除了提示文字
                 df_wip = pd.DataFrame(wip_data_list)
                 display_df = df_wip[["ID (Wafer)", "Step", "Stage Owner", "Step Description", "Process Tool", "Recipe"]]
                 styled_df = display_df.style.set_properties(**{'text-align': 'center'})
@@ -360,7 +351,7 @@ with all_tabs[0]:
             st.warning("⚠️ 母表中找不到 Wafer ID 欄位。")
 
 # =========================================================================
-# 📜 頁籤 2: Wafer History (含獨立搜尋與修改功能)
+# 📜 頁籤 2: Wafer History 
 # =========================================================================
 with all_tabs[1]:
     st.subheader("📜 晶圓歷史過站追蹤足跡 (Wafer History 日誌)")
