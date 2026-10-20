@@ -4,23 +4,23 @@ import requests
 import datetime
 import time      
 import re
-import concurrent.futures  # 🎯 用於多執行緒並發送請求，大幅縮短寫入時間
+import concurrent.futures
 
 # =========================================================================
 # 1. 系統全域基礎配置與資料載入
 # =========================================================================
 st.set_page_config(layout="wide", page_title="TSRI Lot Tracing System")
 
-# 🎯 自訂主標題樣式 (字體 20px)
+if "search_wafer_id_history" not in st.session_state:
+    st.session_state.search_wafer_id_history = "LOT4-11F0"
+
 st.markdown("<div style='font-size: 20px; font-weight: bold; padding-top: 1rem; padding-bottom: 1rem;'>TSRI Lot Tracing System</div>", unsafe_allow_html=True)
 
-# 🎯 已更新為最新的 GAS URL 與 試算表 ID
 MY_ORGANIZATION_GAS_URL = "https://script.google.com/macros/s/AKfycbxSpHeSlbCyMgn0cH60fh62eM_nYoaCwkSCZF1UJMTeC-3z1wQJ1RVLXge1kvzadmKM/exec"
 SPREADSHEET_ID = "1RQt29KIb4rkVo4A-Y3GouMAezYEBakb1q283d1sgdZU"
 
 @st.cache_data(ttl=15)
 def fetch_route_data_via_csv(sheet_name="route_template"):
-    # 🎯 已將網址改為動態帶入 SPREADSHEET_ID 變數，未來維護更方便
     if sheet_name == "route_template":
         csv_url = f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/export?format=csv&gid=0"
     else:
@@ -51,6 +51,7 @@ def fetch_route_data_via_csv(sheet_name="route_template"):
 @st.dialog(" ", width="large")
 def show_ongoing_action_dialog(tw_id, ts_no, target_row_dict, avail_steps):
     st.markdown(f"**Wafer ID:** `{tw_id}` | **Step:** `{ts_no}`")
+    st.caption("*(💡 This Wafer ID has been synced to the Wafer History tab)*")
     
     current_status = str(target_row_dict.get("Check out Time", "")).strip().upper()
     is_held = (current_status == "HOLD")
@@ -65,7 +66,8 @@ def show_ongoing_action_dialog(tw_id, ts_no, target_row_dict, avail_steps):
     with c2: edit_recipe = st.text_input("Process Recipe", value=target_row_dict.get("Recipe", ""))
     with c3: edit_cp = st.text_input("Check Point", value=target_row_dict.get("Check point", ""))
     
-    spc_data = st.text_input("**Result Data**")
+    # 🎯 標題正名為 SPC data
+    spc_data = st.text_input("**SPC data**")
     result_image = st.file_uploader("**Result Image**", type=["png", "jpg", "jpeg"], key=f"img_{tw_id}_{ts_no}")
     
     st.markdown("---")
@@ -130,6 +132,76 @@ def show_ongoing_action_dialog(tw_id, ts_no, target_row_dict, avail_steps):
         }
         st.rerun()
 
+    st.markdown("---")
+    with st.expander("📜 View Wafer History"):
+        df_route_hist, _ = fetch_route_data_via_csv("route_template")
+        if not df_route_hist.empty:
+            wafer_col_list = [c for c in df_route_hist.columns if "Wafer" in c or "wafer" in c]
+            if wafer_col_list:
+                actual_string_col = wafer_col_list[0]
+                filtered_route = df_route_hist[df_route_hist[actual_string_col].astype(str).str.upper() == str(tw_id).upper()]
+                if not filtered_route.empty:
+                    display_route = filtered_route.copy().reset_index(drop=True)
+                    if "Step" in display_route.columns:
+                        display_route["Step"] = display_route["Step"].astype(str).str.replace(".0", "", regex=False)
+                    
+                    wip_row_idx = 0
+                    fco_col_hist = next((c for c in display_route.columns if "check out" in str(c).lower()), "Check out Time")
+                    has_scrap = False
+                    for idx, row in display_route.iterrows():
+                        co_val = str(row.get(fco_col_hist, "")).strip().upper()
+                        if co_val == "SCRP":
+                            has_scrap = True
+                            break
+                    
+                    if not has_scrap:
+                        for idx, row in display_route.iterrows():
+                            co_val = str(row.get(fco_col_hist, "")).strip().upper()
+                            if co_val in ["", "NAN", "INPR", "HOLD", "BANK"]:
+                                wip_row_idx = idx
+                                break
+
+                    target_cols_order = [
+                        "step", "stage owner", "step description", "process tool", "recipe", 
+                        "check point", "spc data", "result", "check out time", "q time", 
+                        "spc group", "target", "ucl", "lcl", "spc result", "hold note"
+                    ]
+                    
+                    final_cols = []
+                    for tgt in target_cols_order:
+                        for c in display_route.columns:
+                            if str(c).strip().lower() == tgt:
+                                final_cols.append(c)
+                                break
+                                
+                    display_route_show = display_route[final_cols]
+                    
+                    col_cfg = {
+                        "Result": st.column_config.ImageColumn("Result (預覽圖片)", help="上傳的檢驗圖片")
+                    }
+                    for col_name in display_route_show.columns:
+                        c_lower = str(col_name).lower().strip()
+                        if c_lower in ["step description", "recipe"]:
+                            col_cfg[col_name] = st.column_config.TextColumn(width="large")
+
+                    def highlight_wip_row(row):
+                        if row.name == wip_row_idx and not has_scrap:
+                            return ['background-color: #d4edda; color: #155724; font-weight: bold;'] * len(row)
+                        return [''] * len(row)
+                    
+                    styled_display_route = display_route_show.style.apply(highlight_wip_row, axis=1)
+                            
+                    st.dataframe(
+                        styled_display_route, 
+                        use_container_width=True, 
+                        hide_index=True, 
+                        column_config=col_cfg
+                    )
+                else:
+                    st.info("No history found for this wafer.")
+        else:
+            st.info("Cannot connect to history database.")
+
 @st.dialog("Edit History Data", width="large")
 def show_history_edit_dialog(tw_id, ts_no, target_row_dict):
     st.markdown(f"**Wafer ID:** `{tw_id}` | **Step:** `{ts_no}`")
@@ -145,8 +217,9 @@ def show_history_edit_dialog(tw_id, ts_no, target_row_dict):
     if not current_comment: current_comment = str(target_row_dict.get("Comments", "")).strip()
     if not current_comment: current_comment = str(target_row_dict.get("備註", "")).strip()
     
-    st.markdown("**Result Data**")
-    spc_data = st.text_input("Update Action Record & SPC data:", value=current_comment)
+    # 🎯 標題正名為 SPC data
+    st.markdown("**SPC data**")
+    spc_data = st.text_input("Update Action Record & SPC data:", value=current_comment, label_visibility="collapsed")
     
     st.markdown("**Result Image**")
     result_image = st.file_uploader("Upload new image to overwrite", type=["png", "jpg", "jpeg"], key=f"hist_img_{tw_id}_{ts_no}")
@@ -345,6 +418,8 @@ with all_tabs[0]:
                         selected_idx = curr_sel[0]
                         selected_item = wip_data_list[selected_idx]
                         
+                        st.session_state.search_wafer_id_history = str(selected_item['ID (Wafer)']).strip()
+                        
                         show_ongoing_action_dialog(
                             selected_item['ID (Wafer)'], 
                             selected_item['_raw_step'], 
@@ -430,7 +505,7 @@ with all_tabs[1]:
     
     col_input1, col_input2 = st.columns(2)
     with col_input1: 
-        search_id = st.text_input("Please Key in Wafer ID", value="LOT4-11F0", key="search_wafer_id_history")
+        search_id = st.text_input("Please Key in Wafer ID", key="search_wafer_id_history")
     with col_input2:
         st.write(" "); st.write(" ")
         if st.button("Refresh Data", use_container_width=True, key="history_refresh"):
@@ -453,27 +528,56 @@ with all_tabs[1]:
             if "Step" in display_route.columns:
                 display_route["Step"] = display_route["Step"].astype(str).str.replace(".0", "", regex=False)
             
-            owner_col_history = next((c for c in display_route.columns if "owner" in str(c).lower()), "Stage Owner")
-            if "Step" in display_route.columns and owner_col_history in display_route.columns:
-                cols = display_route.columns.tolist()
-                cols.remove(owner_col_history)
-                step_idx = cols.index("Step")
-                cols.insert(step_idx + 1, owner_col_history)
-                display_route = display_route[cols]
+            wip_row_idx = 0
+            fco_col_hist = next((c for c in display_route.columns if "check out" in str(c).lower()), "Check out Time")
+            has_scrap = False
+            for idx, row in display_route.iterrows():
+                co_val = str(row.get(fco_col_hist, "")).strip().upper()
+                if co_val == "SCRP":
+                    has_scrap = True
+                    break
             
-            module_col_history = next((c for c in display_route.columns if "module" in str(c).lower()), "Module")
+            if not has_scrap:
+                for idx, row in display_route.iterrows():
+                    co_val = str(row.get(fco_col_hist, "")).strip().upper()
+                    if co_val in ["", "NAN", "INPR", "HOLD", "BANK"]:
+                        wip_row_idx = idx
+                        break
+
+            original_display_route = display_route.copy()
+
+            target_cols_order = [
+                "step", "stage owner", "step description", "process tool", "recipe", 
+                "check point", "spc data", "result", "check out time", "q time", 
+                "spc group", "target", "ucl", "lcl", "spc result", "hold note"
+            ]
+            
+            final_cols = []
+            for tgt in target_cols_order:
+                for c in display_route.columns:
+                    if str(c).strip().lower() == tgt:
+                        final_cols.append(c)
+                        break
+                        
+            display_route_show = display_route[final_cols]
+            
             col_cfg = {
-                "Result": st.column_config.ImageColumn("Result (預覽圖片)", help="上傳的檢驗圖片"),
-                actual_string_col: None, 
-                module_col_history: None
+                "Result": st.column_config.ImageColumn("Result (預覽圖片)", help="上傳的檢驗圖片")
             }
-            for col_name in display_route.columns:
+            for col_name in display_route_show.columns:
                 c_lower = str(col_name).lower().strip()
-                if c_lower in ["step description", "recipe", "customer"]:
+                if c_lower in ["step description", "recipe"]:
                     col_cfg[col_name] = st.column_config.TextColumn(width="large")
 
+            def highlight_wip_row(row):
+                if row.name == wip_row_idx and not has_scrap:
+                    return ['background-color: #d4edda; color: #155724; font-weight: bold;'] * len(row)
+                return [''] * len(row)
+            
+            styled_display_route = display_route_show.style.apply(highlight_wip_row, axis=1)
+
             selected_route_row = st.dataframe(
-                display_route, 
+                styled_display_route, 
                 use_container_width=True, 
                 hide_index=True, 
                 on_select="rerun", 
@@ -484,8 +588,8 @@ with all_tabs[1]:
             
             if selected_route_row and selected_route_row.get("selection", {}).get("rows"):
                 selected_idx = selected_route_row["selection"]["rows"][0]
-                target_step_no = str(display_route.iloc[selected_idx].get("Step", "")).replace(".0", "").strip()
-                target_row_data = display_route.iloc[selected_idx].to_dict()
+                target_step_no = str(original_display_route.iloc[selected_idx].get("Step", "")).replace(".0", "").strip()
+                target_row_data = original_display_route.iloc[selected_idx].to_dict()
                 
                 st.markdown("---")
                 
@@ -498,16 +602,16 @@ with all_tabs[1]:
                 clean_log_steps = df_logs["Step"].astype(str).str.replace(".0", "", regex=False).str.strip()
                 step_logs = df_logs[(df_logs[log_wafer_col].astype(str).str.upper() == search_id.upper()) & (clean_log_steps == target_step_no)]
                 
-                mother_result_val = str(display_route.iloc[selected_idx].get("Result", "")).strip()
+                mother_result_val = str(original_display_route.iloc[selected_idx].get("Result", "")).strip()
                 result_html = ""
                 if mother_result_val.startswith("http"):
                     result_html = f'<a href="{mother_result_val}" target="_blank"><img src="{mother_result_val}" style="max-height: 80px; border-radius: 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); cursor: zoom-in;"></a>'
                 else:
                     result_html = mother_result_val
 
-                mother_spc_val = str(display_route.iloc[selected_idx].get("SPC data", "")).strip()
-                if not mother_spc_val: mother_spc_val = str(display_route.iloc[selected_idx].get("Comments", "")).strip()
-                if not mother_spc_val: mother_spc_val = str(display_route.iloc[selected_idx].get("備註", "")).strip()
+                mother_spc_val = str(original_display_route.iloc[selected_idx].get("SPC data", "")).strip()
+                if not mother_spc_val: mother_spc_val = str(original_display_route.iloc[selected_idx].get("Comments", "")).strip()
+                if not mother_spc_val: mother_spc_val = str(original_display_route.iloc[selected_idx].get("備註", "")).strip()
 
                 if not step_logs.empty:
                     html_parts = ['<div style="font-size: 12pt;"><table style="width: 100%; border-collapse: collapse; border: 1px solid #ddd;">']
@@ -682,7 +786,7 @@ with all_tabs[3]:
                             if has_err: 
                                 time.sleep(3)
                             else:
-                                st.success("Kick off Successfully Submitted!")
+                                st.success("✅ 批次 Kick off 成功！")
                                 time.sleep(1.5)
                             st.cache_data.clear()
                             st.rerun()
