@@ -16,8 +16,8 @@ if "search_wafer_id_history" not in st.session_state:
 
 st.markdown("<div style='font-size: 20px; font-weight: bold; padding-top: 1rem; padding-bottom: 1rem;'>TSRI Lot Tracing System</div>", unsafe_allow_html=True)
 
-MY_ORGANIZATION_GAS_URL = "https://script.google.com/macros/s/AKfycbx9pptKpV0dUDtGifGCbQnO33d42eUbbODnjVq_g4yitOviXtq6_8TdMo7VT7HL9dC-6w/exec"
-SPREADSHEET_ID = "1HIcyPgjoHWA3Wgj8gohyEN2s-kF5A6OGEWuR0wDqULU"
+MY_ORGANIZATION_GAS_URL = "https://script.google.com/macros/s/AKfycbxSpHeSlbCyMgn0cH60fh62eM_nYoaCwkSCZF1UJMTeC-3z1wQJ1RVLXge1kvzadmKM/exec"
+SPREADSHEET_ID = "1RQt29KIb4rkVo4A-Y3GouMAezYEBakb1q283d1sgdZU"
 
 @st.cache_data(ttl=15)
 def fetch_route_data_via_csv(sheet_name="route_template"):
@@ -499,7 +499,6 @@ with all_tabs[1]:
             if "Step" in display_route.columns:
                 display_route["Step"] = display_route["Step"].astype(str).str.replace(".0", "", regex=False)
             
-            # 🎯 找出當站 (WIP) 的 Index
             wip_row_idx = 0
             fco_col_hist = next((c for c in display_route.columns if "check out" in str(c).lower()), "Check out Time")
             has_scrap = False
@@ -516,7 +515,6 @@ with all_tabs[1]:
                         wip_row_idx = idx
                         break
 
-            # 🎯 動態調整欄位順序與隱藏設定
             owner_col_history = next((c for c in display_route.columns if "owner" in str(c).lower()), "Stage Owner")
             if "Step" in display_route.columns and owner_col_history in display_route.columns:
                 cols = display_route.columns.tolist()
@@ -536,7 +534,7 @@ with all_tabs[1]:
                 if c_lower in ["step description", "recipe", "customer"]:
                     col_cfg[col_name] = st.column_config.TextColumn(width="large")
 
-            # 🎯 實作當站反綠高亮邏輯
+            # 🎯 高亮 WIP 行列
             def highlight_wip_row(row):
                 if row.name == wip_row_idx and not has_scrap:
                     return ['background-color: #d4edda; color: #155724; font-weight: bold;'] * len(row)
@@ -544,7 +542,7 @@ with all_tabs[1]:
             
             styled_display_route = display_route.style.apply(highlight_wip_row, axis=1)
 
-            # 🎯 預設選中並置頂當站
+            # 🎯 移除了 selection 參數，避免報錯
             selected_route_row = st.dataframe(
                 styled_display_route, 
                 use_container_width=True, 
@@ -552,8 +550,7 @@ with all_tabs[1]:
                 on_select="rerun", 
                 selection_mode="single-row", 
                 key="history_route_table", 
-                column_config=col_cfg,
-                selection={"rows": [wip_row_idx]} # 預設自動選取當站
+                column_config=col_cfg
             )
             
             if selected_route_row and selected_route_row.get("selection", {}).get("rows"):
