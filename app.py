@@ -162,7 +162,6 @@ def show_history_edit_dialog(tw_id, ts_no, target_row_dict):
         }
         st.rerun()
 
-# 🎯 頁籤名稱加上圖案
 all_tabs = st.tabs(["🔍 Ongoing Wafer", "📜 Wafer History", "📤 Upload New Wafer", "📦 Bank Wafers", "📊 Wafer Overview"])
 
 # =========================================================================
@@ -446,10 +445,21 @@ with all_tabs[1]:
             if "Step" in display_route.columns:
                 display_route["Step"] = display_route["Step"].astype(str).str.replace(".0", "", regex=False)
             
-            # 🎯 隱藏 Wafer ID 欄位
+            # 🎯 調整欄位順序：將 Stage Owner 移到 Step 後面
+            owner_col_history = next((c for c in display_route.columns if "owner" in str(c).lower()), "Stage Owner")
+            if "Step" in display_route.columns and owner_col_history in display_route.columns:
+                cols = display_route.columns.tolist()
+                cols.remove(owner_col_history)
+                step_idx = cols.index("Step")
+                cols.insert(step_idx + 1, owner_col_history)
+                display_route = display_route[cols]
+            
+            # 🎯 隱藏 Wafer ID 與 Module 欄位
+            module_col_history = next((c for c in display_route.columns if "module" in str(c).lower()), "Module")
             col_cfg = {
                 "Result": st.column_config.ImageColumn("Result (預覽圖片)", help="上傳的檢驗圖片"),
-                actual_string_col: None
+                actual_string_col: None, 
+                module_col_history: None
             }
             for col_name in display_route.columns:
                 c_lower = str(col_name).lower().strip()
