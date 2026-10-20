@@ -143,7 +143,6 @@ def show_history_edit_dialog(tw_id, ts_no, target_row_dict):
     with c2: edit_recipe = st.text_input("🧪 機台配方 (Recipe):", value=str(target_row_dict.get("Recipe", "")))
     with c3: edit_cp = st.text_input("🎯 檢驗點 (Check point):", value=str(target_row_dict.get("Check point", "")))
     
-    # 嘗試抓取各種 SPC data / Comments 欄位名稱
     current_comment = str(target_row_dict.get("SPC data", "")).strip()
     if not current_comment: current_comment = str(target_row_dict.get("Comments", "")).strip()
     if not current_comment: current_comment = str(target_row_dict.get("備註", "")).strip()
@@ -447,21 +446,34 @@ with all_tabs[1]:
             filtered_route = df_route
             
         if not filtered_route.empty:
-            # 🎯 母表標題復歸為靠左
-            st.markdown(f"📊 晶圓 **{search_id}** 的母表生產路由全貌：")
+            # 🎯 母表標題置中
+            st.markdown(f"<h4 style='text-align: center;'>📊 晶圓 <b>{search_id}</b> 的母表生產路由全貌：</h4>", unsafe_allow_html=True)
             display_route = filtered_route.copy().reset_index(drop=True)
             
             if "Step" in display_route.columns:
                 display_route["Step"] = display_route["Step"].astype(str).str.replace(".0", "", regex=False)
             
-            # 🎯 設置寬度設定，確保欄位內容完整顯示不被截斷
-            col_cfg = {col: st.column_config.Column(width="large") for col in display_route.columns}
+            # 🎯 針對不同欄位設定適當的寬度，避免 Wafer ID 太寬，並讓長文字完整顯示
+            col_cfg = {}
+            for col_name in display_route.columns:
+                lower_col = str(col_name).strip().lower()
+                if lower_col in ["wafer id", "id", "wafer", "step", "step no.", "module", "q time"]:
+                    col_cfg[col_name] = st.column_config.TextColumn(width="small")
+                elif lower_col in ["step description", "recipe", "check point", "customer", "product type", "comments", "備註", "spc data"]:
+                    col_cfg[col_name] = st.column_config.TextColumn(width="large")
+                else:
+                    col_cfg[col_name] = st.column_config.TextColumn(width="medium")
+            
             col_cfg["Result"] = st.column_config.ImageColumn("Result (預覽圖片)", help="上傳的檢驗圖片")
 
+            # 🎯 動態展開完整高度，不截斷
+            dynamic_height = (len(display_route) + 1) * 36 + 10
+            
             selected_route_row = st.dataframe(
                 display_route, 
                 use_container_width=True, 
                 hide_index=True, 
+                height=dynamic_height,
                 on_select="rerun", 
                 selection_mode="single-row", 
                 key="history_route_table", 
@@ -475,7 +487,7 @@ with all_tabs[1]:
                 
                 st.markdown("---")
                 
-                # 🎯 歷史動作標題復歸靠左對齊
+                # 🎯 歷史動作標題靠左對齊，按鈕靠右
                 hc1, hc2 = st.columns([4, 1])
                 hc1.markdown(f"### 🛑 第 {target_step_no} 步 - 歷史動作完整紀錄 (Action History)")
                 if hc2.button("✏️ 修改此站點資料", use_container_width=True, type="secondary"):
@@ -513,7 +525,7 @@ with all_tabs[1]:
                         bg_color = "#fff3cd" if action_val.upper() == "HOLD" else "#ffffff"
                         text_color = "#d9534f" if action_val.upper() == "HOLD" else "#000000"
                         
-                        # 🎯 將 Action Record (hold_note_val) 與 SPC data 欄位內容設定為置中對齊 (text-align: center)
+                        # 🎯 將 Action Record 與 SPC data 內容置中
                         html_parts.append(f'<tr style="background-color: {bg_color};"><td style="padding: 10px; border: 1px solid #ddd; text-align: center; font-weight: bold;">{action_val}</td><td style="padding: 10px; border: 1px solid #ddd; text-align: center;">{time_val}</td><td style="padding: 10px; border: 1px solid #ddd; text-align: center; color: {text_color}; font-weight: bold;">{hold_note_val}</td><td style="padding: 10px; border: 1px solid #ddd; text-align: center;">{spc_val}</td><td style="padding: 10px; border: 1px solid #ddd; text-align: center;">{result_html}</td></tr>')
                     html_parts.append('</table></div>')
                     st.markdown("".join(html_parts), unsafe_allow_html=True)
