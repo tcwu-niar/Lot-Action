@@ -11,6 +11,11 @@ import concurrent.futures
 # =========================================================================
 st.set_page_config(layout="wide", page_title="TSRI Lot Tracing System")
 
+# 🎯 初始化 Wafer History 的搜尋欄位狀態，預設為空或是 LOT4-11F0
+if "search_wafer_id_history" not in st.session_state:
+    st.session_state.search_wafer_id_history = "LOT4-11F0"
+
+# 🎯 自訂主標題樣式 (字體 20px)
 st.markdown("<div style='font-size: 20px; font-weight: bold; padding-top: 1rem; padding-bottom: 1rem;'>TSRI Lot Tracing System</div>", unsafe_allow_html=True)
 
 MY_ORGANIZATION_GAS_URL = "https://script.google.com/macros/s/AKfycbx9pptKpV0dUDtGifGCbQnO33d42eUbbODnjVq_g4yitOviXtq6_8TdMo7VT7HL9dC-6w/exec"
@@ -48,6 +53,8 @@ def fetch_route_data_via_csv(sheet_name="route_template"):
 @st.dialog(" ", width="large")
 def show_ongoing_action_dialog(tw_id, ts_no, target_row_dict, avail_steps):
     st.markdown(f"**Wafer ID:** `{tw_id}` | **Step:** `{ts_no}`")
+    # 🎯 增加貼心提示，讓使用者知道已經自動同步了
+    st.caption("*(💡 This Wafer ID has been synced to the Wafer History tab)*")
     
     current_status = str(target_row_dict.get("Check out Time", "")).strip().upper()
     is_held = (current_status == "HOLD")
@@ -126,50 +133,6 @@ def show_ongoing_action_dialog(tw_id, ts_no, target_row_dict, avail_steps):
             "orig_row": target_row_dict
         }
         st.rerun()
-
-    # 🎯 整合 Wafer History 展開區塊，讓使用者免切頁籤直接查看
-    st.markdown("---")
-    with st.expander("📜 View Wafer History"):
-        df_route_hist, _ = fetch_route_data_via_csv("route_template")
-        if not df_route_hist.empty:
-            wafer_col_list = [c for c in df_route_hist.columns if "Wafer" in c or "wafer" in c]
-            if wafer_col_list:
-                actual_string_col = wafer_col_list[0]
-                filtered_route = df_route_hist[df_route_hist[actual_string_col].astype(str).str.upper() == str(tw_id).upper()]
-                if not filtered_route.empty:
-                    display_route = filtered_route.copy().reset_index(drop=True)
-                    if "Step" in display_route.columns:
-                        display_route["Step"] = display_route["Step"].astype(str).str.replace(".0", "", regex=False)
-                    
-                    owner_col_history = next((c for c in display_route.columns if "owner" in str(c).lower()), "Stage Owner")
-                    if "Step" in display_route.columns and owner_col_history in display_route.columns:
-                        cols = display_route.columns.tolist()
-                        cols.remove(owner_col_history)
-                        step_idx = cols.index("Step")
-                        cols.insert(step_idx + 1, owner_col_history)
-                        display_route = display_route[cols]
-                    
-                    module_col_history = next((c for c in display_route.columns if "module" in str(c).lower()), "Module")
-                    col_cfg = {
-                        "Result": st.column_config.ImageColumn("Result (預覽圖片)", help="上傳的檢驗圖片"),
-                        actual_string_col: None, 
-                        module_col_history: None
-                    }
-                    for col_name in display_route.columns:
-                        c_lower = str(col_name).lower().strip()
-                        if c_lower in ["step description", "recipe", "customer"]:
-                            col_cfg[col_name] = st.column_config.TextColumn(width="large")
-                            
-                    st.dataframe(
-                        display_route, 
-                        use_container_width=True, 
-                        hide_index=True, 
-                        column_config=col_cfg
-                    )
-                else:
-                    st.info("No history found for this wafer.")
-        else:
-            st.info("Cannot connect to history database.")
 
 @st.dialog("Edit History Data", width="large")
 def show_history_edit_dialog(tw_id, ts_no, target_row_dict):
@@ -257,7 +220,7 @@ with all_tabs[0]:
         elif act == "Scrap": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Scrap&comment={enc_comment}&time={enc_time}")
         elif act == "Unscrap": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Unscrap&comment={enc_comment}&time={enc_time}")
         elif act == "Hold": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Hold&comment={enc_comment}&time={enc_time}")
-        elif act == "Unhold": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Unhold&comment={enc_comment}&time={enc_time}")
+        elif act == "Unhold": urls_to_append.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Unhold&comment={enc_comment}&time={enc_time}")
         elif act == "Bank": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Bank&comment={enc_comment}&time={enc_time}")
         elif act == "Skip":
             enc_target = requests.utils.quote(str(pa["jump_step"]))
@@ -386,6 +349,9 @@ with all_tabs[0]:
                         selected_idx = curr_sel[0]
                         selected_item = wip_data_list[selected_idx]
                         
+                        # 🎯 點擊 Wafer 時，自動將 ID 寫入 History 頁籤的 Session State 中
+                        st.session_state.search_wafer_id_history = str(selected_item['ID (Wafer)']).strip()
+                        
                         show_ongoing_action_dialog(
                             selected_item['ID (Wafer)'], 
                             selected_item['_raw_step'], 
@@ -471,7 +437,8 @@ with all_tabs[1]:
     
     col_input1, col_input2 = st.columns(2)
     with col_input1: 
-        search_id = st.text_input("Please Key in Wafer ID", value="LOT4-11F0", key="search_wafer_id_history")
+        # 🎯 這裡使用 session_state 中的值作為輸入框的值
+        search_id = st.text_input("Please Key in Wafer ID", key="search_wafer_id_history")
     with col_input2:
         st.write(" "); st.write(" ")
         if st.button("Refresh Data", use_container_width=True, key="history_refresh"):
@@ -723,7 +690,7 @@ with all_tabs[3]:
                             if has_err: 
                                 time.sleep(3)
                             else:
-                                st.success("Kick off Successfully Submitted!")
+                                st.success("✅ 批次 Kick off 成功！")
                                 time.sleep(1.5)
                             st.cache_data.clear()
                             st.rerun()
