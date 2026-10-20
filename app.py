@@ -4,6 +4,7 @@ import requests
 import datetime
 import time      
 import re
+import concurrent.futures  # 🎯 用於多執行緒並發送請求，大幅縮短寫入時間
 
 # =========================================================================
 # 1. 系統全域基礎配置與資料載入
@@ -13,16 +14,17 @@ st.set_page_config(layout="wide", page_title="TSRI Lot Tracing System")
 # 🎯 自訂主標題樣式 (字體 20px)
 st.markdown("<div style='font-size: 20px; font-weight: bold; padding-top: 1rem; padding-bottom: 1rem;'>TSRI Lot Tracing System</div>", unsafe_allow_html=True)
 
+# 🎯 已更新為最新的 GAS URL 與 試算表 ID
 MY_ORGANIZATION_GAS_URL = "https://script.google.com/macros/s/AKfycbxSpHeSlbCyMgn0cH60fh62eM_nYoaCwkSCZF1UJMTeC-3z1wQJ1RVLXge1kvzadmKM/exec"
 SPREADSHEET_ID = "1RQt29KIb4rkVo4A-Y3GouMAezYEBakb1q283d1sgdZU"
 
 @st.cache_data(ttl=15)
 def fetch_route_data_via_csv(sheet_name="route_template"):
+    # 🎯 已將網址改為動態帶入 SPREADSHEET_ID 變數，未來維護更方便
     if sheet_name == "route_template":
-        # 🎯 請將 123456789 替換成您在網址列看到的真實 gid 數字！
-        csv_url = "https://docs.google.com/spreadsheets/d/1RQt29KIb4rkVo4A-Y3GouMAezYEBakb1q283d1sgdZU/export?format=csv&gid=0"
+        csv_url = f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/export?format=csv&gid=0"
     else:
-        csv_url = f"https://docs.google.com/spreadsheets/d/1RQt29KIb4rkVo4A-Y3GouMAezYEBakb1q283d1sgdZU/gviz/tq?tqx=out:csv&sheet={sheet_name}"
+        csv_url = f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/gviz/tq?tqx=out:csv&sheet={sheet_name}"
         
     try:
         response = requests.get(csv_url, timeout=8)
@@ -183,7 +185,7 @@ with all_tabs[0]:
         
         final_result_link = ""
         if pa["img"] is not None:
-            with st.spinner("Uploading..."):
+            with st.spinner("Uploading Image..."):
                 try:
                     payload = {"key": "6d207e02198a847aa98d0a2a901485a5", "action": "upload", "format": "json"}
                     files = {"source": pa["img"].getvalue()}
@@ -221,20 +223,23 @@ with all_tabs[0]:
             urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Skip&comment={enc_comment}&time={enc_time}&target_step={enc_target}")
             
         if urls_to_send:
-            with st.spinner(f"Syncing {act} to Cloud..."):
+            with st.spinner(f"Syncing to Cloud..."):
                 has_error = False
-                session = requests.Session()
-                adapter = requests.adapters.HTTPAdapter(max_retries=0) 
-                session.mount('https://', adapter)
                 
-                for url in set(urls_to_send):
+                def send_req(url):
                     try:
-                        res = session.get(url, timeout=12, allow_redirects=False)
-                        if res.status_code not in [200, 302] and "Error" in res.text:
-                            st.error(f"Cloud Error: {res.text}")
-                            has_error = True
+                        return requests.get(url, timeout=15, allow_redirects=False)
                     except:
-                        pass
+                        return None
+                        
+                with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+                    results = executor.map(send_req, set(urls_to_send))
+                    
+                for res in results:
+                    if res and res.status_code not in [200, 302] and "Error" in res.text:
+                        st.error(f"Cloud Error: {res.text}")
+                        has_error = True
+
                 if has_error:
                     time.sleep(3)
                 else:
@@ -367,7 +372,7 @@ with all_tabs[1]:
         
         final_result_link = ""
         if pa["img"] is not None:
-            with st.spinner("Uploading..."):
+            with st.spinner("Uploading Image..."):
                 try:
                     payload = {"key": "6d207e02198a847aa98d0a2a901485a5", "action": "upload", "format": "json"}
                     files = {"source": pa["img"].getvalue()}
@@ -396,18 +401,21 @@ with all_tabs[1]:
         if urls_to_send:
             with st.spinner("Syncing modifications to Cloud..."):
                 has_error = False
-                session = requests.Session()
-                adapter = requests.adapters.HTTPAdapter(max_retries=0)
-                session.mount('https://', adapter)
-
-                for url in set(urls_to_send):
+                
+                def send_req(url):
                     try:
-                        res = session.get(url, timeout=12, allow_redirects=False)
-                        if res.status_code not in [200, 302] and "Error" in res.text:
-                            st.error(f"Cloud Error: {res.text}")
-                            has_error = True
+                        return requests.get(url, timeout=15, allow_redirects=False)
                     except:
-                        pass
+                        return None
+                        
+                with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+                    results = executor.map(send_req, set(urls_to_send))
+                    
+                for res in results:
+                    if res and res.status_code not in [200, 302] and "Error" in res.text:
+                        st.error(f"Cloud Error: {res.text}")
+                        has_error = True
+                        
                 if has_error:
                     time.sleep(3)
                 else:
@@ -445,7 +453,6 @@ with all_tabs[1]:
             if "Step" in display_route.columns:
                 display_route["Step"] = display_route["Step"].astype(str).str.replace(".0", "", regex=False)
             
-            # 🎯 調整欄位順序：將 Stage Owner 移到 Step 後面
             owner_col_history = next((c for c in display_route.columns if "owner" in str(c).lower()), "Stage Owner")
             if "Step" in display_route.columns and owner_col_history in display_route.columns:
                 cols = display_route.columns.tolist()
@@ -454,7 +461,6 @@ with all_tabs[1]:
                 cols.insert(step_idx + 1, owner_col_history)
                 display_route = display_route[cols]
             
-            # 🎯 隱藏 Wafer ID 與 Module 欄位
             module_col_history = next((c for c in display_route.columns if "module" in str(c).lower()), "Module")
             col_cfg = {
                 "Result": st.column_config.ImageColumn("Result (預覽圖片)", help="上傳的檢驗圖片"),
@@ -656,25 +662,27 @@ with all_tabs[3]:
                         for w, s in zip(selected_wids, selected_steps):
                             urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={requests.utils.quote(str(w))}&step_no={requests.utils.quote(str(s))}&action=Kick%20off&comment={enc_comment}&time={enc_time}")
                             
-                        with st.spinner(f"⏳ 正在為 {len(selected_wids)} 片晶圓執行 Kick off..."):
+                        with st.spinner(f"Syncing Kick off for {len(selected_wids)} wafers..."):
                             has_err = False
-                            session = requests.Session()
-                            adapter = requests.adapters.HTTPAdapter(max_retries=0)
-                            session.mount('https://', adapter)
                             
-                            for url in urls_to_send:
+                            def send_req(url):
                                 try:
-                                    res = session.get(url, timeout=12, allow_redirects=False)
-                                    if res.status_code not in [200, 302] and "Error" in res.text:
-                                        st.error(f"❌ 寫入失敗: {res.text}")
-                                        has_err = True
-                                except Exception:
-                                    pass 
+                                    return requests.get(url, timeout=15, allow_redirects=False)
+                                except:
+                                    return None
+                                    
+                            with concurrent.futures.ThreadPoolExecutor(max_workers=15) as executor:
+                                results = executor.map(send_req, urls_to_send)
+                                
+                            for res in results:
+                                if res and res.status_code not in [200, 302] and "Error" in res.text:
+                                    st.error(f"Cloud Error: {res.text}")
+                                    has_err = True
                                     
                             if has_err: 
                                 time.sleep(3)
                             else:
-                                st.success("✅ 批次 Kick off 成功！")
+                                st.success("Kick off Successfully Submitted!")
                                 time.sleep(1.5)
                             st.cache_data.clear()
                             st.rerun()
