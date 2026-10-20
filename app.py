@@ -446,13 +446,21 @@ with all_tabs[1]:
             filtered_route = df_route
             
         if not filtered_route.empty:
-            # 🎯 移除大標題 (已刪除 "母表生產路由全貌：" 標題)
+            st.markdown(f"📊 晶圓 **{search_id}** 的母表生產路由全貌：")
             display_route = filtered_route.copy().reset_index(drop=True)
             
             if "Step" in display_route.columns:
                 display_route["Step"] = display_route["Step"].astype(str).str.replace(".0", "", regex=False)
             
-            # 🎯 恢復原本不鎖定長寬的乾淨設定，讓 Streamlit 原生自動適應，並具備垂直滾動功能
+            # 🎯 針對容易被截斷的長文字欄位，精準設定加寬 (width="large")
+            col_cfg = {
+                "Result": st.column_config.ImageColumn("Result (預覽圖片)", help="上傳的檢驗圖片")
+            }
+            for col_name in display_route.columns:
+                c_lower = str(col_name).lower().strip()
+                if c_lower in ["step description", "recipe", "customer"]:
+                    col_cfg[col_name] = st.column_config.TextColumn(width="large")
+
             selected_route_row = st.dataframe(
                 display_route, 
                 use_container_width=True, 
@@ -460,9 +468,7 @@ with all_tabs[1]:
                 on_select="rerun", 
                 selection_mode="single-row", 
                 key="history_route_table", 
-                column_config={
-                    "Result": st.column_config.ImageColumn("Result (預覽圖片)", help="上傳的檢驗圖片")
-                }
+                column_config=col_cfg
             )
             
             if selected_route_row and selected_route_row.get("selection", {}).get("rows"):
@@ -472,7 +478,7 @@ with all_tabs[1]:
                 
                 st.markdown("---")
                 
-                # 🎯 歷史動作標題恢復靠左對齊
+                # 🎯 歷史動作標題靠左對齊
                 hc1, hc2 = st.columns([4, 1])
                 hc1.markdown(f"### 🛑 第 {target_step_no} 步 - 歷史動作完整紀錄 (Action History)")
                 if hc2.button("✏️ 修改此站點資料", use_container_width=True, type="secondary"):
