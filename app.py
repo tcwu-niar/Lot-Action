@@ -164,7 +164,7 @@ def show_history_edit_dialog(tw_id, ts_no, target_row_dict):
         }
         st.rerun()
 
-all_tabs = st.tabs(["🔍 Ongoing Wafer", "📜 Wafer History", "📤 Upload New Wafer", "📦 Bank Wafers", "📊 Wafer Overview"])
+all_tabs = st.tabs(["Ongoing Wafer", "Wafer History", "Upload New Wafer", "Bank Wafers", "Wafer Overview"])
 
 # =========================================================================
 # 🔍 頁籤 1: Ongoing Wafer 
@@ -528,16 +528,22 @@ with all_tabs[1]:
                         st.markdown(f"<a href='{mother_result_val}' target='_blank'><img src='{mother_result_val}' style='max-height: 250px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); cursor: zoom-in;'></a>", unsafe_allow_html=True)
                     elif mother_result_val:
                         st.markdown(f"**Saved Result Record:** {mother_result_val}")
+    else:
+        st.info("請先於上方搜尋欄輸入特定 Wafer ID 並從表格中選擇特定站點。")
 
 # =========================================================================
 # 📤 頁籤 3: Upload New Wafer 
 # =========================================================================
 with all_tabs[2]:
-    st.subheader("📤 上傳新晶圓路由母表 (Upload New Wafer)")
-    uploaded_file = st.file_uploader("選擇全新批次生產路由檔案 (.csv 或 .xlsx)", type=["csv", "xlsx"])
+    # 🎯 標題更新與去圖案，字體 20px
+    st.markdown("<div style='font-size: 20px; font-weight: bold; padding-bottom: 0.5rem;'>Upload New Wafer</div>", unsafe_allow_html=True)
+    
+    # 🎯 上傳提示更新，並限定只能傳 CSV
+    uploaded_file = st.file_uploader("Only .csv", type=["csv"])
+    
     if uploaded_file is not None:
         try:
-            df_upload = pd.read_csv(uploaded_file) if uploaded_file.name.endswith('.csv') else pd.read_excel(uploaded_file)
+            df_upload = pd.read_csv(uploaded_file)
             df_upload = df_upload.fillna("")
             
             upload_wafer_col = next((c for c in df_upload.columns if str(c).strip().lower() in ["wafer id", "id", "wafer"]), "Wafer ID")
@@ -552,20 +558,22 @@ with all_tabs[2]:
                         df_upload.at[group.index[0], upload_fco_col] = "BANK"
             
             edited_df = st.data_editor(df_upload, use_container_width=True, num_rows="dynamic", key="wafer_upload_editor")
-            if st.button("🚀 確認資料無誤，開始批量寫入雲端母表", type="primary", use_container_width=True):
-                with st.spinner("⏳ 正在寫入..."):
+            
+            # 🎯 按鈕英文正名並去圖案
+            if st.button("Check Upload to System", type="primary", use_container_width=True):
+                with st.spinner("Uploading..."):
                     payload = {"action": "bulk_upload", "data": edited_df.to_dict(orient="records")}
                     try:
                         res = requests.post(MY_ORGANIZATION_GAS_URL, json=payload, timeout=300)
                         if res.status_code == 200 and "Success" in res.text:
-                            st.success("✅ 批量寫入成功！全新晶圓已入庫。")
+                            st.success("Successfully uploaded to the system.")
                             time.sleep(2)
                             st.cache_data.clear()
                             st.rerun()
-                        else: st.error(f"❌ 寫入失敗：{res.text}")
-                    except Exception as e: st.error(f"❌ 網路發送失敗: {e}")
+                        else: st.error(f"Upload failed: {res.text}")
+                    except Exception as e: st.error(f"Network error: {e}")
         except Exception as e:
-            st.error(f"❌ 檔案解析失敗: {str(e)}")
+            st.error(f"Failed to parse file: {str(e)}")
 
 # =========================================================================
 # 📦 頁籤 4: Bank Wafers 
