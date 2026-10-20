@@ -568,7 +568,6 @@ with all_tabs[2]:
 # 📦 頁籤 4: Bank Wafers 
 # =========================================================================
 with all_tabs[3]:
-    # 🎯 標題正名與去圖案
     st.markdown("<div style='font-size: 20px; font-weight: bold; padding-bottom: 0.5rem;'>Bank Wafers & Wait Kick-off Wafers</div>", unsafe_allow_html=True)
 
     df_route_bank, conn_status_bank = fetch_route_data_via_csv("route_template")
@@ -610,7 +609,7 @@ with all_tabs[3]:
                 if is_banked:
                     first_row = w_group.iloc[0]
                     banked_wafers.append({
-                        "Select": False, # 🎯 欄位名稱正名
+                        "Select": False, 
                         "Shuttle Name": str(first_row.get(shuttle_col, "")), 
                         "Owner": str(first_row.get(owner_col, "")),
                         "團隊": str(first_row.get(team_col, "")), 
@@ -629,14 +628,12 @@ with all_tabs[3]:
                     disabled=["Shuttle Name", "Owner", "團隊", "ID (Wafer)", "Bank 停留站點", "備註"]
                 )
                 
-                # 🎯 抓取正名後的欄位
                 selected_flags = edited_bank_df["Select"].tolist()
                 selected_wids = [banked_wafers[i]["ID (Wafer)"] for i, flag in enumerate(selected_flags) if flag]
                 selected_steps = [banked_wafers[i]["_Raw_Step"] for i, flag in enumerate(selected_flags) if flag]
                 
                 if selected_wids:
                     st.markdown("---")
-                    # 🎯 按鈕正名
                     if st.button("Bank Out/Kick-off", type="primary"):
                         urls_to_send = []
                         tw_tz = datetime.timezone(datetime.timedelta(hours=8))
@@ -673,7 +670,6 @@ with all_tabs[3]:
                 st.success("🎉 目前產線上沒有任何晶圓處於 Bank (入庫) 狀態。")
                 
             st.markdown("---")
-            # 🎯 標題正名與去圖案
             st.markdown("<div style='font-size: 20px; font-weight: bold; padding-bottom: 0.5rem;'>Shuttle Wafer Status</div>", unsafe_allow_html=True)
             
             summary_data = []
@@ -743,7 +739,8 @@ with all_tabs[3]:
 # 📊 頁籤 5: Wafer Overview 
 # =========================================================================
 with all_tabs[4]:
-    st.subheader("📊 晶圓生產總表與進度追蹤 (Wafer Overview)")
+    # 🎯 標題正名與字體設定
+    st.markdown("<div style='font-size: 20px; font-weight: bold; padding-bottom: 0.5rem;'>Active Interposer Wafer Status</div>", unsafe_allow_html=True)
     df_route, conn_status = fetch_route_data_via_csv("route_template")
     
     if not df_route.empty:
@@ -864,7 +861,8 @@ with all_tabs[4]:
                 st.info("目前產線上沒有任何進行中 (INPR) 的晶圓。")
                 
             st.markdown("---")
-            st.subheader("📦 已出貨晶圓清單 (Shipped Wafers)")
+            # 🎯 已出貨標題正名與字體設定
+            st.markdown("<div style='font-size: 20px; font-weight: bold; padding-bottom: 0.5rem;'>Shipped Wafers</div>", unsafe_allow_html=True)
             if all_shipped_data:
                 df_shipped = pd.DataFrame(all_shipped_data)
                 st.dataframe(
