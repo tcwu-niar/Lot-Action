@@ -9,7 +9,9 @@ import re
 # 1. 系統全域基礎配置與資料載入
 # =========================================================================
 st.set_page_config(layout="wide", page_title="TSRI Lot Tracing System")
-st.title("🏭 晶圓生產路由與狀態追蹤系統 (TSRI Lot Tracing System)")
+
+# 🎯 自訂主標題樣式 (字體 20px)
+st.markdown("<div style='font-size: 20px; font-weight: bold; padding-top: 1rem; padding-bottom: 1rem;'>TSRI Lot Tracing System</div>", unsafe_allow_html=True)
 
 MY_ORGANIZATION_GAS_URL = "https://script.google.com/macros/s/AKfycbx9pptKpV0dUDtGifGCbQnO33d42eUbbODnjVq_g4yitOviXtq6_8TdMo7VT7HL9dC-6w/exec"
 SPREADSHEET_ID = "1HIcyPgjoHWA3Wgj8gohyEN2s-kF5A6OGEWuR0wDqULU"
@@ -172,7 +174,8 @@ all_tabs = st.tabs(["🔍 Ongoing Wafer", "📜 Wafer History", "📤 Upload New
 # 🔍 頁籤 1: Ongoing Wafer 
 # =========================================================================
 with all_tabs[0]:
-    st.subheader("🔍 當前站點設備與配方資訊 (Ongoing Wafer)")
+    # 🎯 自訂副標題樣式 (字體 18px)
+    st.markdown("<div style='font-size: 18px; font-weight: bold; padding-bottom: 0.5rem;'>Ongoing Wafer List</div>", unsafe_allow_html=True)
     
     if "ongoing_action" in st.session_state:
         pa = st.session_state.ongoing_action
@@ -319,8 +322,7 @@ with all_tabs[0]:
                     })
             
             if wip_data_list:
-                st.markdown("💡 **點擊列表中的欲操作的資料列 (Row)，即可開啟該晶圓的資料填寫與動作面板。** (完全支援手機版操作)")
-                
+                # 🎯 移除了提示文字
                 df_wip = pd.DataFrame(wip_data_list)
                 display_df = df_wip[["ID (Wafer)", "Step", "Stage Owner", "Step Description", "Process Tool", "Recipe"]]
                 styled_df = display_df.style.set_properties(**{'text-align': 'center'})
@@ -446,13 +448,11 @@ with all_tabs[1]:
             filtered_route = df_route
             
         if not filtered_route.empty:
-            st.markdown(f"📊 晶圓 **{search_id}** 的母表生產路由全貌：")
             display_route = filtered_route.copy().reset_index(drop=True)
             
             if "Step" in display_route.columns:
                 display_route["Step"] = display_route["Step"].astype(str).str.replace(".0", "", regex=False)
             
-            # 🎯 針對容易被截斷的長文字欄位，精準設定加寬 (width="large")
             col_cfg = {
                 "Result": st.column_config.ImageColumn("Result (預覽圖片)", help="上傳的檢驗圖片")
             }
@@ -478,7 +478,6 @@ with all_tabs[1]:
                 
                 st.markdown("---")
                 
-                # 🎯 歷史動作標題靠左對齊
                 hc1, hc2 = st.columns([4, 1])
                 hc1.markdown(f"### 🛑 第 {target_step_no} 步 - 歷史動作完整紀錄 (Action History)")
                 if hc2.button("✏️ 修改此站點資料", use_container_width=True, type="secondary"):
@@ -516,7 +515,6 @@ with all_tabs[1]:
                         bg_color = "#fff3cd" if action_val.upper() == "HOLD" else "#ffffff"
                         text_color = "#d9534f" if action_val.upper() == "HOLD" else "#000000"
                         
-                        # 🎯 確保所有資料內容皆置中 (text-align: center)
                         html_parts.append(f'<tr style="background-color: {bg_color};"><td style="padding: 10px; border: 1px solid #ddd; text-align: center; font-weight: bold;">{action_val}</td><td style="padding: 10px; border: 1px solid #ddd; text-align: center;">{time_val}</td><td style="padding: 10px; border: 1px solid #ddd; text-align: center; color: {text_color}; font-weight: bold;">{hold_note_val}</td><td style="padding: 10px; border: 1px solid #ddd; text-align: center;">{spc_val}</td><td style="padding: 10px; border: 1px solid #ddd; text-align: center;">{result_html}</td></tr>')
                     html_parts.append('</table></div>')
                     st.markdown("".join(html_parts), unsafe_allow_html=True)
