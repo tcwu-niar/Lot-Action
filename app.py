@@ -144,6 +144,23 @@ def show_ongoing_action_dialog(tw_id, ts_no, target_row_dict, avail_steps):
                     if "Step" in display_route.columns:
                         display_route["Step"] = display_route["Step"].astype(str).str.replace(".0", "", regex=False)
                     
+                    # 🎯 尋找當站 (WIP) Index 以進行高亮
+                    wip_row_idx = 0
+                    fco_col_hist = next((c for c in display_route.columns if "check out" in str(c).lower()), "Check out Time")
+                    has_scrap = False
+                    for idx, row in display_route.iterrows():
+                        co_val = str(row.get(fco_col_hist, "")).strip().upper()
+                        if co_val == "SCRP":
+                            has_scrap = True
+                            break
+                    
+                    if not has_scrap:
+                        for idx, row in display_route.iterrows():
+                            co_val = str(row.get(fco_col_hist, "")).strip().upper()
+                            if co_val in ["", "NAN", "INPR", "HOLD", "BANK"]:
+                                wip_row_idx = idx
+                                break
+
                     owner_col_history = next((c for c in display_route.columns if "owner" in str(c).lower()), "Stage Owner")
                     if "Step" in display_route.columns and owner_col_history in display_route.columns:
                         cols = display_route.columns.tolist()
@@ -163,8 +180,16 @@ def show_ongoing_action_dialog(tw_id, ts_no, target_row_dict, avail_steps):
                         if c_lower in ["step description", "recipe", "customer"]:
                             col_cfg[col_name] = st.column_config.TextColumn(width="large")
                             
+                    # 🎯 實作當站反綠高亮邏輯
+                    def highlight_wip_row(row):
+                        if row.name == wip_row_idx and not has_scrap:
+                            return ['background-color: #d4edda; color: #155724; font-weight: bold;'] * len(row)
+                        return [''] * len(row)
+                    
+                    styled_display_route = display_route.style.apply(highlight_wip_row, axis=1)
+                            
                     st.dataframe(
-                        display_route, 
+                        styled_display_route, 
                         use_container_width=True, 
                         hide_index=True, 
                         column_config=col_cfg
@@ -534,7 +559,6 @@ with all_tabs[1]:
                 if c_lower in ["step description", "recipe", "customer"]:
                     col_cfg[col_name] = st.column_config.TextColumn(width="large")
 
-            # 🎯 高亮 WIP 行列
             def highlight_wip_row(row):
                 if row.name == wip_row_idx and not has_scrap:
                     return ['background-color: #d4edda; color: #155724; font-weight: bold;'] * len(row)
@@ -542,7 +566,6 @@ with all_tabs[1]:
             
             styled_display_route = display_route.style.apply(highlight_wip_row, axis=1)
 
-            # 🎯 移除了 selection 參數，避免報錯
             selected_route_row = st.dataframe(
                 styled_display_route, 
                 use_container_width=True, 
