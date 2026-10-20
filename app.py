@@ -66,7 +66,8 @@ def show_ongoing_action_dialog(tw_id, ts_no, target_row_dict, avail_steps):
     with c2: edit_recipe = st.text_input("Process Recipe", value=target_row_dict.get("Recipe", ""))
     with c3: edit_cp = st.text_input("Check Point", value=target_row_dict.get("Check point", ""))
     
-    spc_data = st.text_input("**Result Data**")
+    # 🎯 標題正名為 SPC data
+    spc_data = st.text_input("**SPC data**")
     result_image = st.file_uploader("**Result Image**", type=["png", "jpg", "jpeg"], key=f"img_{tw_id}_{ts_no}")
     
     st.markdown("---")
@@ -144,7 +145,6 @@ def show_ongoing_action_dialog(tw_id, ts_no, target_row_dict, avail_steps):
                     if "Step" in display_route.columns:
                         display_route["Step"] = display_route["Step"].astype(str).str.replace(".0", "", regex=False)
                     
-                    # 🎯 尋找當站 (WIP) Index 以進行高亮
                     wip_row_idx = 0
                     fco_col_hist = next((c for c in display_route.columns if "check out" in str(c).lower()), "Check out Time")
                     has_scrap = False
@@ -161,7 +161,6 @@ def show_ongoing_action_dialog(tw_id, ts_no, target_row_dict, avail_steps):
                                 wip_row_idx = idx
                                 break
 
-                    # 🎯 定義嚴格的欄位顯示清單與排序
                     target_cols_order = [
                         "step", "stage owner", "step description", "process tool", "recipe", 
                         "check point", "spc data", "result", "check out time", "q time", 
@@ -185,7 +184,6 @@ def show_ongoing_action_dialog(tw_id, ts_no, target_row_dict, avail_steps):
                         if c_lower in ["step description", "recipe"]:
                             col_cfg[col_name] = st.column_config.TextColumn(width="large")
 
-                    # 🎯 實作當站反綠高亮邏輯
                     def highlight_wip_row(row):
                         if row.name == wip_row_idx and not has_scrap:
                             return ['background-color: #d4edda; color: #155724; font-weight: bold;'] * len(row)
@@ -219,8 +217,9 @@ def show_history_edit_dialog(tw_id, ts_no, target_row_dict):
     if not current_comment: current_comment = str(target_row_dict.get("Comments", "")).strip()
     if not current_comment: current_comment = str(target_row_dict.get("備註", "")).strip()
     
-    st.markdown("**Result Data**")
-    spc_data = st.text_input("Update Action Record & SPC data:", value=current_comment)
+    # 🎯 標題正名為 SPC data
+    st.markdown("**SPC data**")
+    spc_data = st.text_input("Update Action Record & SPC data:", value=current_comment, label_visibility="collapsed")
     
     st.markdown("**Result Image**")
     result_image = st.file_uploader("Upload new image to overwrite", type=["png", "jpg", "jpeg"], key=f"hist_img_{tw_id}_{ts_no}")
@@ -529,7 +528,6 @@ with all_tabs[1]:
             if "Step" in display_route.columns:
                 display_route["Step"] = display_route["Step"].astype(str).str.replace(".0", "", regex=False)
             
-            # 🎯 尋找當站 (WIP) Index 以進行高亮
             wip_row_idx = 0
             fco_col_hist = next((c for c in display_route.columns if "check out" in str(c).lower()), "Check out Time")
             has_scrap = False
@@ -546,10 +544,8 @@ with all_tabs[1]:
                         wip_row_idx = idx
                         break
 
-            # 🎯 備份一份原始的，用來傳遞給 Dialog 編輯視窗，避免欄位被過濾掉找不到資料
             original_display_route = display_route.copy()
 
-            # 🎯 定義嚴格的欄位顯示清單與排序 (排除 Wafer ID, Module, Customer, Product Type, Shuttle Name)
             target_cols_order = [
                 "step", "stage owner", "step description", "process tool", "recipe", 
                 "check point", "spc data", "result", "check out time", "q time", 
@@ -573,7 +569,6 @@ with all_tabs[1]:
                 if c_lower in ["step description", "recipe"]:
                     col_cfg[col_name] = st.column_config.TextColumn(width="large")
 
-            # 🎯 實作當站反綠高亮邏輯
             def highlight_wip_row(row):
                 if row.name == wip_row_idx and not has_scrap:
                     return ['background-color: #d4edda; color: #155724; font-weight: bold;'] * len(row)
