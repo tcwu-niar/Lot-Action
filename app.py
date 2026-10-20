@@ -143,7 +143,6 @@ def show_history_edit_dialog(tw_id, ts_no, target_row_dict):
     with c2: edit_recipe = st.text_input("🧪 機台配方 (Recipe):", value=str(target_row_dict.get("Recipe", "")))
     with c3: edit_cp = st.text_input("🎯 檢驗點 (Check point):", value=str(target_row_dict.get("Check point", "")))
     
-    # 嘗試抓取各種 SPC data / Comments 欄位名稱
     current_comment = str(target_row_dict.get("SPC data", "")).strip()
     if not current_comment: current_comment = str(target_row_dict.get("Comments", "")).strip()
     if not current_comment: current_comment = str(target_row_dict.get("備註", "")).strip()
@@ -488,21 +487,19 @@ with all_tabs[1]:
                 else:
                     result_html = mother_result_val
 
-                # 🎯 智慧撈取 SPC data：先找母表(route_template)，若無則找歷史紀錄表(wafer_status)
                 mother_spc_val = str(display_route.iloc[selected_idx].get("SPC data", "")).strip()
                 if not mother_spc_val: mother_spc_val = str(display_route.iloc[selected_idx].get("Comments", "")).strip()
                 if not mother_spc_val: mother_spc_val = str(display_route.iloc[selected_idx].get("備註", "")).strip()
 
                 if not step_logs.empty:
                     html_parts = ['<div style="font-size: 12pt;"><table style="width: 100%; border-collapse: collapse; border: 1px solid #ddd;">']
-                    html_parts.append('<tr style="background-color: #f8f9fa; color: #333;"><th style="padding: 10px; border: 1px solid #ddd; text-align: center; width: 10%;">動作 (Action)</th><th style="padding: 10px; border: 1px solid #ddd; text-align: center; width: 20%;">日期與時間</th><th style="padding: 10px; border: 1px solid #ddd; text-align: left; width: 25%;">Hold Note (暫停原因)</th><th style="padding: 10px; border: 1px solid #ddd; text-align: left; width: 25%;">SPC data (過站備註)</th><th style="padding: 10px; border: 1px solid #ddd; text-align: center; width: 20%;">Result (檢驗圖片)</th></tr>')
+                    html_parts.append('<tr style="background-color: #f8f9fa; color: #333;"><th style="padding: 10px; border: 1px solid #ddd; text-align: center; width: 10%;">動作 (Action)</th><th style="padding: 10px; border: 1px solid #ddd; text-align: center; width: 20%;">日期與時間</th><th style="padding: 10px; border: 1px solid #ddd; text-align: left; width: 25%;">Action Record</th><th style="padding: 10px; border: 1px solid #ddd; text-align: left; width: 25%;">SPC data</th><th style="padding: 10px; border: 1px solid #ddd; text-align: center; width: 20%;">Result (檢驗圖片)</th></tr>')
                     
                     for _, log_row in step_logs.iterrows():
                         action_val = str(log_row.get("Action", "")).strip()
                         time_val = str(log_row.get("Check out Time", "")).strip()
                         hold_note_val = str(log_row.get("Hold Note", "")).strip()
                         
-                        # 🎯 優先顯示母表的資料，若母表無資料才拿歷史紀錄
                         spc_val = mother_spc_val
                         if not spc_val: spc_val = str(log_row.get("SPC data", "")).strip()
                         if not spc_val: spc_val = str(log_row.get("Comments", "")).strip()
