@@ -46,7 +46,6 @@ def fetch_route_data_via_csv(sheet_name="route_template"):
 # 2. 🎯 將所有彈出視窗定義在全域
 # =========================================================================
 
-# 🎯 Ongoing Wafer 專屬填寫視窗
 @st.dialog(" ", width="large")
 def show_ongoing_action_dialog(tw_id, ts_no, target_row_dict, avail_steps):
     st.markdown(f"**Wafer ID:** `{tw_id}` | **Step:** `{ts_no}`")
@@ -129,7 +128,6 @@ def show_ongoing_action_dialog(tw_id, ts_no, target_row_dict, avail_steps):
         }
         st.rerun()
 
-# 🎯 Wafer History 專屬歷史資料編輯視窗 (去除圖案並英文化)
 @st.dialog("Edit History Data", width="large")
 def show_history_edit_dialog(tw_id, ts_no, target_row_dict):
     st.markdown(f"**Wafer ID:** `{tw_id}` | **Step:** `{ts_no}`")
@@ -164,13 +162,13 @@ def show_history_edit_dialog(tw_id, ts_no, target_row_dict):
         }
         st.rerun()
 
-all_tabs = st.tabs(["Ongoing Wafer", "Wafer History", "Upload New Wafer", "Bank Wafers", "Wafer Overview"])
+# 🎯 頁籤名稱加上圖案
+all_tabs = st.tabs(["🔍 Ongoing Wafer", "📜 Wafer History", "📤 Upload New Wafer", "📦 Bank Wafers", "📊 Wafer Overview"])
 
 # =========================================================================
 # 🔍 頁籤 1: Ongoing Wafer 
 # =========================================================================
 with all_tabs[0]:
-    # 🎯 自訂副標題樣式 (字體 18px)
     st.markdown("<div style='font-size: 18px; font-weight: bold; padding-bottom: 0.5rem;'>Ongoing Wafer List</div>", unsafe_allow_html=True)
     
     if "ongoing_action" in st.session_state:
@@ -355,10 +353,9 @@ with all_tabs[0]:
             st.warning("⚠️ Wafer ID column not found in database.")
 
 # =========================================================================
-# 📜 頁籤 2: Wafer History (完全移除圖案並英文正名)
+# 📜 頁籤 2: Wafer History
 # =========================================================================
 with all_tabs[1]:
-    # 🎯 自訂 Wafer History 標題樣式 (字體 20px)
     st.markdown("<div style='font-size: 20px; font-weight: bold; padding-bottom: 0.5rem;'>Wafer History</div>", unsafe_allow_html=True)
     
     if "history_edit_action" in st.session_state:
@@ -426,11 +423,9 @@ with all_tabs[1]:
     
     col_input1, col_input2 = st.columns(2)
     with col_input1: 
-        # 🎯 去除圖案並改為英文
         search_id = st.text_input("Please Key in Wafer ID", value="LOT4-11F0", key="search_wafer_id_history")
     with col_input2:
         st.write(" "); st.write(" ")
-        # 🎯 按鈕英文正名
         if st.button("Refresh Data", use_container_width=True, key="history_refresh"):
             st.cache_data.clear(); st.rerun()
 
@@ -477,9 +472,7 @@ with all_tabs[1]:
                 st.markdown("---")
                 
                 hc1, hc2 = st.columns([4, 1])
-                # 🎯 標題字體設為 20px 並移除圖案
                 hc1.markdown(f"<div style='font-size: 20px; font-weight: bold;'>Step {target_step_no} Action History</div>", unsafe_allow_html=True)
-                # 🎯 編輯按鈕英文正名
                 if hc2.button("Edit Data", use_container_width=True, type="secondary"):
                     show_history_edit_dialog(search_id, target_step_no, target_row_data)
                 
@@ -520,7 +513,6 @@ with all_tabs[1]:
                     st.markdown("".join(html_parts), unsafe_allow_html=True)
                 
                 else:
-                    # 🎯 空白狀態提示英文正名
                     st.info("No Record")
                     if mother_result_val.startswith("http"):
                         st.markdown("---")
@@ -535,10 +527,8 @@ with all_tabs[1]:
 # 📤 頁籤 3: Upload New Wafer 
 # =========================================================================
 with all_tabs[2]:
-    # 🎯 標題更新與去圖案，字體 20px
     st.markdown("<div style='font-size: 20px; font-weight: bold; padding-bottom: 0.5rem;'>Upload New Wafer</div>", unsafe_allow_html=True)
     
-    # 🎯 上傳提示更新，並限定只能傳 CSV
     uploaded_file = st.file_uploader("Only .csv", type=["csv"])
     
     if uploaded_file is not None:
@@ -559,7 +549,6 @@ with all_tabs[2]:
             
             edited_df = st.data_editor(df_upload, use_container_width=True, num_rows="dynamic", key="wafer_upload_editor")
             
-            # 🎯 按鈕英文正名並去圖案
             if st.button("Check Upload to System", type="primary", use_container_width=True):
                 with st.spinner("Uploading..."):
                     payload = {"action": "bulk_upload", "data": edited_df.to_dict(orient="records")}
@@ -579,7 +568,8 @@ with all_tabs[2]:
 # 📦 頁籤 4: Bank Wafers 
 # =========================================================================
 with all_tabs[3]:
-    st.subheader("📦 入庫晶圓清單 (Banked Wafers)")
+    # 🎯 自訂 Bank Wafers 標題
+    st.markdown("<div style='font-size: 20px; font-weight: bold; padding-bottom: 0.5rem;'>Bank Wafers & Wait Kick-off Wafers</div>", unsafe_allow_html=True)
     st.markdown("集中顯示目前被標記為 Bank (暫停執行/未下線) 的所有晶圓。**勾選左側框框並點擊下方按鈕，即可批次 Kick off (下貨出庫)**。")
 
     df_route_bank, conn_status_bank = fetch_route_data_via_csv("route_template")
@@ -682,7 +672,8 @@ with all_tabs[3]:
                 st.success("🎉 目前產線上沒有任何晶圓處於 Bank (入庫) 狀態。")
                 
             st.markdown("---")
-            st.subheader("📊 各 Shuttle 狀態統計總表")
+            # 🎯 自訂 Shuttle Wafer Status 標題
+            st.markdown("<div style='font-size: 20px; font-weight: bold; padding-bottom: 0.5rem;'>Shuttle Wafer Status</div>", unsafe_allow_html=True)
             
             summary_data = []
             
