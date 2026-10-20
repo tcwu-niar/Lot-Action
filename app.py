@@ -19,6 +19,7 @@ SPREADSHEET_ID = "1HIcyPgjoHWA3Wgj8gohyEN2s-kF5A6OGEWuR0wDqULU"
 @st.cache_data(ttl=15)
 def fetch_route_data_via_csv(sheet_name="route_template"):
     if sheet_name == "route_template":
+        # 🎯 請將 123456789 替換成您在網址列看到的真實 gid 數字！
         csv_url = "https://docs.google.com/spreadsheets/d/1HIcyPgjoHWA3Wgj8gohyEN2s-kF5A6OGEWuR0wDqULU/export?format=csv&gid=0"
     else:
         csv_url = f"https://docs.google.com/spreadsheets/d/1HIcyPgjoHWA3Wgj8gohyEN2s-kF5A6OGEWuR0wDqULU/gviz/tq?tqx=out:csv&sheet={sheet_name}"
@@ -48,14 +49,14 @@ def fetch_route_data_via_csv(sheet_name="route_template"):
 # 🎯 Ongoing Wafer 專屬填寫視窗
 @st.dialog(" ", width="large")
 def show_ongoing_action_dialog(tw_id, ts_no, target_row_dict, avail_steps):
-    st.markdown(f"**晶圓 ID:** `{tw_id}` | **當前站點:** 第 `{ts_no}` 步")
+    st.markdown(f"**Wafer ID:** `{tw_id}` | **Step:** `{ts_no}`")
     
     current_status = str(target_row_dict.get("Check out Time", "")).strip().upper()
     is_held = (current_status == "HOLD")
     is_scrap = (current_status == "SCRP")
     
-    if is_scrap: st.error("此晶圓目前已報廢 (SCRAPPED)。")
-    elif is_held: st.warning("此晶圓目前處於暫停 (HOLD) 狀態。")
+    if is_scrap: st.error("This wafer is currently SCRAPPED.")
+    elif is_held: st.warning("This wafer is currently on HOLD.")
     
     st.markdown("**Process Parameters**")
     c1, c2, c3 = st.columns(3)
@@ -89,20 +90,20 @@ def show_ongoing_action_dialog(tw_id, ts_no, target_row_dict, avail_steps):
     jump_target, comment = None, ""
     
     if action_type == "Skip Stage":
-        jump_target = st.selectbox("跳至步驟：", options=avail_steps)
-        comment = st.text_input("請輸入跳站原因：")
+        jump_target = st.selectbox("Jump to step:", options=avail_steps)
+        comment = st.text_input("Reason for skip:")
     elif action_type == "Hold":
-        comment = st.text_input("請輸入暫停原因：")
+        comment = st.text_input("Reason for hold:")
     elif action_type == "Bank in":
-        comment = st.text_input("請輸入入庫原因：")
+        comment = st.text_input("Reason for bank:")
     elif action_type == "Scrap":
-        comment = st.text_input("請輸入報廢原因：")
+        comment = st.text_input("Reason for scrap:")
     elif action_type == "Unscrap":
-        comment = st.text_input("請輸入復原報廢原因：")
+        comment = st.text_input("Reason for unscrap:")
     elif action_type == "Release Hold":
-        comment = st.text_input("請輸入解除暫停原因：")
+        comment = st.text_input("Reason for release:")
         
-    if st.button("確認並寫入雲端", type="primary", use_container_width=True):
+    if st.button("Confirm and Submit", type="primary", use_container_width=True):
         action_name = ""
         if action_type == "Check Out": action_name = "Check out"
         elif action_type == "Save Data Only": action_name = "Key in data"
@@ -128,11 +129,11 @@ def show_ongoing_action_dialog(tw_id, ts_no, target_row_dict, avail_steps):
         }
         st.rerun()
 
-# 🎯 Wafer History 專屬歷史資料編輯視窗
-@st.dialog(" ", width="large")
+# 🎯 Wafer History 專屬歷史資料編輯視窗 (去除圖案並英文化)
+@st.dialog("Edit History Data", width="large")
 def show_history_edit_dialog(tw_id, ts_no, target_row_dict):
-    st.markdown(f"**晶圓 ID:** `{tw_id}` | **修改站點:** 第 `{ts_no}` 步")
-    st.info("提示：在此修改的資料將會覆寫母表 (Route Template) 中的歷史紀錄。")
+    st.markdown(f"**Wafer ID:** `{tw_id}` | **Step:** `{ts_no}`")
+    st.info("Note: Modifications here will overwrite the Route Template records.")
     
     st.markdown("**Process Parameters**")
     c1, c2, c3 = st.columns(3)
@@ -144,10 +145,13 @@ def show_history_edit_dialog(tw_id, ts_no, target_row_dict):
     if not current_comment: current_comment = str(target_row_dict.get("Comments", "")).strip()
     if not current_comment: current_comment = str(target_row_dict.get("備註", "")).strip()
     
-    spc_data = st.text_input("**Result Data**", value=current_comment)
-    result_image = st.file_uploader("**Result Image**", type=["png", "jpg", "jpeg"], key=f"hist_img_{tw_id}_{ts_no}")
+    st.markdown("**Result Data**")
+    spc_data = st.text_input("Update Action Record & SPC data:", value=current_comment)
     
-    if st.button("確認修改並寫入雲端", type="primary", use_container_width=True):
+    st.markdown("**Result Image**")
+    result_image = st.file_uploader("Upload new image to overwrite", type=["png", "jpg", "jpeg"], key=f"hist_img_{tw_id}_{ts_no}")
+    
+    if st.button("Confirm and Submit", type="primary", use_container_width=True):
         st.session_state.history_edit_action = {
             "w_id": tw_id,
             "s_no": ts_no,
@@ -182,7 +186,7 @@ with all_tabs[0]:
         
         final_result_link = ""
         if pa["img"] is not None:
-            with st.spinner("⏳ 正在將圖片上傳至雲端..."):
+            with st.spinner("Uploading..."):
                 try:
                     payload = {"key": "6d207e02198a847aa98d0a2a901485a5", "action": "upload", "format": "json"}
                     files = {"source": pa["img"].getvalue()}
@@ -190,9 +194,9 @@ with all_tabs[0]:
                     if res.status_code == 200:
                         final_result_link = res.json()["image"]["url"]
                     else:
-                        st.warning(f"⚠️ 圖片上傳失敗 (狀態碼: {res.status_code})")
+                        st.warning(f"Image upload failed: {res.status_code}")
                 except Exception as e:
-                    st.error(f"圖片上傳連線錯誤: {e}")
+                    st.error(f"Upload error: {e}")
                     
         if str(pa["spc"]).strip():
             urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&column_name=SPC%20data&new_value={requests.utils.quote(str(pa['spc']).strip())}")
@@ -220,7 +224,7 @@ with all_tabs[0]:
             urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Skip&comment={enc_comment}&time={enc_time}&target_step={enc_target}")
             
         if urls_to_send:
-            with st.spinner("🚀 正在將資料與 {act} 指令同步至雲端..."):
+            with st.spinner(f"Syncing {act} to Cloud..."):
                 has_error = False
                 session = requests.Session()
                 adapter = requests.adapters.HTTPAdapter(max_retries=0) 
@@ -230,14 +234,14 @@ with all_tabs[0]:
                     try:
                         res = session.get(url, timeout=12, allow_redirects=False)
                         if res.status_code not in [200, 302] and "Error" in res.text:
-                            st.error(f"❌ 雲端拒絕寫入: {res.text}")
+                            st.error(f"Cloud Error: {res.text}")
                             has_error = True
                     except:
                         pass
                 if has_error:
                     time.sleep(3)
                 else:
-                    st.success("✅ 操作成功寫入！")
+                    st.success("Action Successfully Submitted!")
                     time.sleep(1.2)
                 st.cache_data.clear()
                 st.rerun()
@@ -346,15 +350,16 @@ with all_tabs[0]:
                             selected_item['_avail_steps']
                         )
             else:
-                st.info("目前產線上沒有任何進行中的晶圓。")
+                st.info("No Ongoing Wafers at this moment.")
         else:
-            st.warning("⚠️ 母表中找不到 Wafer ID 欄位。")
+            st.warning("⚠️ Wafer ID column not found in database.")
 
 # =========================================================================
-# 📜 頁籤 2: Wafer History 
+# 📜 頁籤 2: Wafer History (完全移除圖案並英文正名)
 # =========================================================================
 with all_tabs[1]:
-    st.subheader("📜 晶圓歷史過站追蹤足跡 (Wafer History 日誌)")
+    # 🎯 自訂 Wafer History 標題樣式 (字體 20px)
+    st.markdown("<div style='font-size: 20px; font-weight: bold; padding-bottom: 0.5rem;'>Wafer History</div>", unsafe_allow_html=True)
     
     if "history_edit_action" in st.session_state:
         pa = st.session_state.history_edit_action
@@ -366,7 +371,7 @@ with all_tabs[1]:
         
         final_result_link = ""
         if pa["img"] is not None:
-            with st.spinner("⏳ 正在將新圖片上傳至雲端..."):
+            with st.spinner("Uploading..."):
                 try:
                     payload = {"key": "6d207e02198a847aa98d0a2a901485a5", "action": "upload", "format": "json"}
                     files = {"source": pa["img"].getvalue()}
@@ -374,9 +379,9 @@ with all_tabs[1]:
                     if res.status_code == 200:
                         final_result_link = res.json()["image"]["url"]
                     else:
-                        st.warning(f"⚠️ 圖片上傳失敗 (狀態碼: {res.status_code})")
+                        st.warning(f"Image upload failed: {res.status_code}")
                 except Exception as e:
-                    st.error(f"圖片上傳連線錯誤: {e}")
+                    st.error(f"Upload error: {e}")
         
         orig_comment = str(pa["orig_row"].get("Comments", "")).strip() or str(pa["orig_row"].get("備註", "")).strip()
         if str(pa["spc"]).strip() != orig_comment:
@@ -393,7 +398,7 @@ with all_tabs[1]:
                 urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&column_name={requests.utils.quote(f_name)}&new_value={requests.utils.quote(str(f_val).strip())}")
 
         if urls_to_send:
-            with st.spinner("🚀 正在同步修改資料至雲端..."):
+            with st.spinner("Syncing modifications to Cloud..."):
                 has_error = False
                 session = requests.Session()
                 adapter = requests.adapters.HTTPAdapter(max_retries=0)
@@ -403,28 +408,30 @@ with all_tabs[1]:
                     try:
                         res = session.get(url, timeout=12, allow_redirects=False)
                         if res.status_code not in [200, 302] and "Error" in res.text:
-                            st.error(f"❌ 雲端拒絕寫入: {res.text}")
+                            st.error(f"Cloud Error: {res.text}")
                             has_error = True
                     except:
                         pass
                 if has_error:
                     time.sleep(3)
                 else:
-                    st.success("✅ 歷史資料修改成功寫入！")
+                    st.success("Modifications Successfully Submitted!")
                     time.sleep(1.2)
                 st.cache_data.clear()
                 st.rerun()
         else:
-            st.info("無偵測到資料變更。")
+            st.info("No modifications detected.")
             time.sleep(1)
             st.rerun()
     
     col_input1, col_input2 = st.columns(2)
     with col_input1: 
-        search_id = st.text_input("🔍 請輸入或掃描欲查詢的晶圓 ID (Wafer ID):", value="LOT4-11F0", key="search_wafer_id_history")
+        # 🎯 去除圖案並改為英文
+        search_id = st.text_input("Please Key in Wafer ID", value="LOT4-11F0", key="search_wafer_id_history")
     with col_input2:
         st.write(" "); st.write(" ")
-        if st.button("🔄 刷新雲端資料", use_container_width=True, key="history_refresh"):
+        # 🎯 按鈕英文正名
+        if st.button("Refresh Data", use_container_width=True, key="history_refresh"):
             st.cache_data.clear(); st.rerun()
 
     df_route, route_status = fetch_route_data_via_csv("route_template")
@@ -470,8 +477,10 @@ with all_tabs[1]:
                 st.markdown("---")
                 
                 hc1, hc2 = st.columns([4, 1])
-                hc1.markdown(f"### 🛑 第 {target_step_no} 步 - 歷史動作完整紀錄 (Action History)")
-                if hc2.button("✏️ 修改此站點資料", use_container_width=True, type="secondary"):
+                # 🎯 標題字體設為 20px 並移除圖案
+                hc1.markdown(f"<div style='font-size: 20px; font-weight: bold;'>Step {target_step_no} Action History</div>", unsafe_allow_html=True)
+                # 🎯 編輯按鈕英文正名
+                if hc2.button("Edit Data", use_container_width=True, type="secondary"):
                     show_history_edit_dialog(search_id, target_step_no, target_row_data)
                 
                 log_wafer_col = [c for c in df_logs.columns if "Wafer" in c or "晶圓" in c][0]
@@ -511,15 +520,14 @@ with all_tabs[1]:
                     st.markdown("".join(html_parts), unsafe_allow_html=True)
                 
                 else:
-                    st.info(f"✅ 該晶圓的第 {target_step_no} 步目前無任何歷史紀錄。")
+                    # 🎯 空白狀態提示英文正名
+                    st.info("No Record")
                     if mother_result_val.startswith("http"):
                         st.markdown("---")
-                        st.markdown("📸 **目前已上傳的檢驗圖片：**")
+                        st.markdown("**Uploaded Result Image:**")
                         st.markdown(f"<a href='{mother_result_val}' target='_blank'><img src='{mother_result_val}' style='max-height: 250px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); cursor: zoom-in;'></a>", unsafe_allow_html=True)
                     elif mother_result_val:
-                        st.markdown(f"**📝 目前已儲存的 Result 紀錄：** {mother_result_val}")
-    else:
-        st.info("請先於上方搜尋欄輸入特定 Wafer ID 並從表格中選擇特定站點。")
+                        st.markdown(f"**Saved Result Record:** {mother_result_val}")
 
 # =========================================================================
 # 📤 頁籤 3: Upload New Wafer 
