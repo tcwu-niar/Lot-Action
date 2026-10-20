@@ -568,9 +568,8 @@ with all_tabs[2]:
 # 📦 頁籤 4: Bank Wafers 
 # =========================================================================
 with all_tabs[3]:
-    # 🎯 自訂 Bank Wafers 標題
+    # 🎯 標題正名與去圖案
     st.markdown("<div style='font-size: 20px; font-weight: bold; padding-bottom: 0.5rem;'>Bank Wafers & Wait Kick-off Wafers</div>", unsafe_allow_html=True)
-    st.markdown("集中顯示目前被標記為 Bank (暫停執行/未下線) 的所有晶圓。**勾選左側框框並點擊下方按鈕，即可批次 Kick off (下貨出庫)**。")
 
     df_route_bank, conn_status_bank = fetch_route_data_via_csv("route_template")
     
@@ -611,7 +610,7 @@ with all_tabs[3]:
                 if is_banked:
                     first_row = w_group.iloc[0]
                     banked_wafers.append({
-                        "🚀 選取": False, 
+                        "Select": False, # 🎯 欄位名稱正名
                         "Shuttle Name": str(first_row.get(shuttle_col, "")), 
                         "Owner": str(first_row.get(owner_col, "")),
                         "團隊": str(first_row.get(team_col, "")), 
@@ -630,13 +629,15 @@ with all_tabs[3]:
                     disabled=["Shuttle Name", "Owner", "團隊", "ID (Wafer)", "Bank 停留站點", "備註"]
                 )
                 
-                selected_flags = edited_bank_df["🚀 選取"].tolist()
+                # 🎯 抓取正名後的欄位
+                selected_flags = edited_bank_df["Select"].tolist()
                 selected_wids = [banked_wafers[i]["ID (Wafer)"] for i, flag in enumerate(selected_flags) if flag]
                 selected_steps = [banked_wafers[i]["_Raw_Step"] for i, flag in enumerate(selected_flags) if flag]
                 
                 if selected_wids:
                     st.markdown("---")
-                    if st.button(f"🚀 批次執行 Kick off", type="primary"):
+                    # 🎯 按鈕正名
+                    if st.button("Bank Out/Kick-off", type="primary"):
                         urls_to_send = []
                         tw_tz = datetime.timezone(datetime.timedelta(hours=8))
                         now_str = datetime.datetime.now(tw_tz).strftime("%Y-%m-%d %H:%M:%S")
@@ -672,7 +673,7 @@ with all_tabs[3]:
                 st.success("🎉 目前產線上沒有任何晶圓處於 Bank (入庫) 狀態。")
                 
             st.markdown("---")
-            # 🎯 自訂 Shuttle Wafer Status 標題
+            # 🎯 標題正名與去圖案
             st.markdown("<div style='font-size: 20px; font-weight: bold; padding-bottom: 0.5rem;'>Shuttle Wafer Status</div>", unsafe_allow_html=True)
             
             summary_data = []
