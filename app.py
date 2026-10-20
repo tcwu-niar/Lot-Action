@@ -16,8 +16,8 @@ if "search_wafer_id_history" not in st.session_state:
 
 st.markdown("<div style='font-size: 20px; font-weight: bold; padding-top: 1rem; padding-bottom: 1rem;'>TSRI Lot Tracing System</div>", unsafe_allow_html=True)
 
-MY_ORGANIZATION_GAS_URL = "https://script.google.com/macros/s/AKfycbx9pptKpV0dUDtGifGCbQnO33d42eUbbODnjVq_g4yitOviXtq6_8TdMo7VT7HL9dC-6w/exec"
-SPREADSHEET_ID = "1HIcyPgjoHWA3Wgj8gohyEN2s-kF5A6OGEWuR0wDqULU"
+MY_ORGANIZATION_GAS_URL = "https://script.google.com/macros/s/AKfycbxSpHeSlbCyMgn0cH60fh62eM_nYoaCwkSCZF1UJMTeC-3z1wQJ1RVLXge1kvzadmKM/exec"
+SPREADSHEET_ID = "1RQt29KIb4rkVo4A-Y3GouMAezYEBakb1q283d1sgdZU"
 
 @st.cache_data(ttl=15)
 def fetch_route_data_via_csv(sheet_name="route_template"):
@@ -161,32 +161,37 @@ def show_ongoing_action_dialog(tw_id, ts_no, target_row_dict, avail_steps):
                                 wip_row_idx = idx
                                 break
 
-                    owner_col_history = next((c for c in display_route.columns if "owner" in str(c).lower()), "Stage Owner")
-                    if "Step" in display_route.columns and owner_col_history in display_route.columns:
-                        cols = display_route.columns.tolist()
-                        cols.remove(owner_col_history)
-                        step_idx = cols.index("Step")
-                        cols.insert(step_idx + 1, owner_col_history)
-                        display_route = display_route[cols]
+                    # 🎯 定義嚴格的欄位顯示清單與排序
+                    target_cols_order = [
+                        "step", "stage owner", "step description", "process tool", "recipe", 
+                        "check point", "spc data", "result", "check out time", "q time", 
+                        "spc group", "target", "ucl", "lcl", "spc result", "hold note"
+                    ]
                     
-                    module_col_history = next((c for c in display_route.columns if "module" in str(c).lower()), "Module")
+                    final_cols = []
+                    for tgt in target_cols_order:
+                        for c in display_route.columns:
+                            if str(c).strip().lower() == tgt:
+                                final_cols.append(c)
+                                break
+                                
+                    display_route_show = display_route[final_cols]
+                    
                     col_cfg = {
-                        "Result": st.column_config.ImageColumn("Result (預覽圖片)", help="上傳的檢驗圖片"),
-                        actual_string_col: None, 
-                        module_col_history: None
+                        "Result": st.column_config.ImageColumn("Result (預覽圖片)", help="上傳的檢驗圖片")
                     }
-                    for col_name in display_route.columns:
+                    for col_name in display_route_show.columns:
                         c_lower = str(col_name).lower().strip()
-                        if c_lower in ["step description", "recipe", "customer"]:
+                        if c_lower in ["step description", "recipe"]:
                             col_cfg[col_name] = st.column_config.TextColumn(width="large")
-                            
+
                     # 🎯 實作當站反綠高亮邏輯
                     def highlight_wip_row(row):
                         if row.name == wip_row_idx and not has_scrap:
                             return ['background-color: #d4edda; color: #155724; font-weight: bold;'] * len(row)
                         return [''] * len(row)
                     
-                    styled_display_route = display_route.style.apply(highlight_wip_row, axis=1)
+                    styled_display_route = display_route_show.style.apply(highlight_wip_row, axis=1)
                             
                     st.dataframe(
                         styled_display_route, 
@@ -524,6 +529,7 @@ with all_tabs[1]:
             if "Step" in display_route.columns:
                 display_route["Step"] = display_route["Step"].astype(str).str.replace(".0", "", regex=False)
             
+            # 🎯 尋找當站 (WIP) Index 以進行高亮
             wip_row_idx = 0
             fco_col_hist = next((c for c in display_route.columns if "check out" in str(c).lower()), "Check out Time")
             has_scrap = False
@@ -540,31 +546,40 @@ with all_tabs[1]:
                         wip_row_idx = idx
                         break
 
-            owner_col_history = next((c for c in display_route.columns if "owner" in str(c).lower()), "Stage Owner")
-            if "Step" in display_route.columns and owner_col_history in display_route.columns:
-                cols = display_route.columns.tolist()
-                cols.remove(owner_col_history)
-                step_idx = cols.index("Step")
-                cols.insert(step_idx + 1, owner_col_history)
-                display_route = display_route[cols]
+            # 🎯 備份一份原始的，用來傳遞給 Dialog 編輯視窗，避免欄位被過濾掉找不到資料
+            original_display_route = display_route.copy()
+
+            # 🎯 定義嚴格的欄位顯示清單與排序 (排除 Wafer ID, Module, Customer, Product Type, Shuttle Name)
+            target_cols_order = [
+                "step", "stage owner", "step description", "process tool", "recipe", 
+                "check point", "spc data", "result", "check out time", "q time", 
+                "spc group", "target", "ucl", "lcl", "spc result", "hold note"
+            ]
             
-            module_col_history = next((c for c in display_route.columns if "module" in str(c).lower()), "Module")
+            final_cols = []
+            for tgt in target_cols_order:
+                for c in display_route.columns:
+                    if str(c).strip().lower() == tgt:
+                        final_cols.append(c)
+                        break
+                        
+            display_route_show = display_route[final_cols]
+            
             col_cfg = {
-                "Result": st.column_config.ImageColumn("Result (預覽圖片)", help="上傳的檢驗圖片"),
-                actual_string_col: None, 
-                module_col_history: None
+                "Result": st.column_config.ImageColumn("Result (預覽圖片)", help="上傳的檢驗圖片")
             }
-            for col_name in display_route.columns:
+            for col_name in display_route_show.columns:
                 c_lower = str(col_name).lower().strip()
-                if c_lower in ["step description", "recipe", "customer"]:
+                if c_lower in ["step description", "recipe"]:
                     col_cfg[col_name] = st.column_config.TextColumn(width="large")
 
+            # 🎯 實作當站反綠高亮邏輯
             def highlight_wip_row(row):
                 if row.name == wip_row_idx and not has_scrap:
                     return ['background-color: #d4edda; color: #155724; font-weight: bold;'] * len(row)
                 return [''] * len(row)
             
-            styled_display_route = display_route.style.apply(highlight_wip_row, axis=1)
+            styled_display_route = display_route_show.style.apply(highlight_wip_row, axis=1)
 
             selected_route_row = st.dataframe(
                 styled_display_route, 
@@ -578,8 +593,8 @@ with all_tabs[1]:
             
             if selected_route_row and selected_route_row.get("selection", {}).get("rows"):
                 selected_idx = selected_route_row["selection"]["rows"][0]
-                target_step_no = str(display_route.iloc[selected_idx].get("Step", "")).replace(".0", "").strip()
-                target_row_data = display_route.iloc[selected_idx].to_dict()
+                target_step_no = str(original_display_route.iloc[selected_idx].get("Step", "")).replace(".0", "").strip()
+                target_row_data = original_display_route.iloc[selected_idx].to_dict()
                 
                 st.markdown("---")
                 
@@ -592,16 +607,16 @@ with all_tabs[1]:
                 clean_log_steps = df_logs["Step"].astype(str).str.replace(".0", "", regex=False).str.strip()
                 step_logs = df_logs[(df_logs[log_wafer_col].astype(str).str.upper() == search_id.upper()) & (clean_log_steps == target_step_no)]
                 
-                mother_result_val = str(display_route.iloc[selected_idx].get("Result", "")).strip()
+                mother_result_val = str(original_display_route.iloc[selected_idx].get("Result", "")).strip()
                 result_html = ""
                 if mother_result_val.startswith("http"):
                     result_html = f'<a href="{mother_result_val}" target="_blank"><img src="{mother_result_val}" style="max-height: 80px; border-radius: 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); cursor: zoom-in;"></a>'
                 else:
                     result_html = mother_result_val
 
-                mother_spc_val = str(display_route.iloc[selected_idx].get("SPC data", "")).strip()
-                if not mother_spc_val: mother_spc_val = str(display_route.iloc[selected_idx].get("Comments", "")).strip()
-                if not mother_spc_val: mother_spc_val = str(display_route.iloc[selected_idx].get("備註", "")).strip()
+                mother_spc_val = str(original_display_route.iloc[selected_idx].get("SPC data", "")).strip()
+                if not mother_spc_val: mother_spc_val = str(original_display_route.iloc[selected_idx].get("Comments", "")).strip()
+                if not mother_spc_val: mother_spc_val = str(original_display_route.iloc[selected_idx].get("備註", "")).strip()
 
                 if not step_logs.empty:
                     html_parts = ['<div style="font-size: 12pt;"><table style="width: 100%; border-collapse: collapse; border: 1px solid #ddd;">']
