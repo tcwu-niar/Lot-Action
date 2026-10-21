@@ -9,7 +9,7 @@ import concurrent.futures
 # =========================================================================
 # 1. 系統全域基礎配置與資料載入
 # =========================================================================
-st.set_page_config(layout="wide", page_title="TSRI Lot Tracing System [UAT Environment]")
+st.set_page_config(layout="wide", page_title="TSRI Lot Tracing System-UAT Environment")
 
 if "search_wafer_id_history" not in st.session_state:
     st.session_state.search_wafer_id_history = "LOT4-11F0"
