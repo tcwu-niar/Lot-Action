@@ -14,7 +14,7 @@ st.set_page_config(layout="wide", page_title="TSRI Lot Tracing UAT Environment")
 if "search_wafer_id_history" not in st.session_state:
     st.session_state.search_wafer_id_history = "LOT4-11F0"
 
-st.markdown("<div style='font-size: 20px; font-weight: bold; padding-top: 1rem; padding-bottom: 1rem;'>TSRI Lot Tracing System</div>", unsafe_allow_html=True)
+st.markdown("<div style='font-size: 20px; font-weight: bold; padding-top: 1rem; padding-bottom: 1rem;'>TSRI Lot Tracing System-UAT Environment</div>", unsafe_allow_html=True)
 
 MY_ORGANIZATION_GAS_URL = "https://script.google.com/macros/s/AKfycbx9pptKpV0dUDtGifGCbQnO33d42eUbbODnjVq_g4yitOviXtq6_8TdMo7VT7HL9dC-6w/exec"
 SPREADSHEET_ID = "1HIcyPgjoHWA3Wgj8gohyEN2s-kF5A6OGEWuR0wDqULU"
