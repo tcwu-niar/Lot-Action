@@ -81,19 +81,20 @@ def show_ongoing_action_dialog(tw_id, ts_no, target_row_dict, avail_steps):
         options = [
             "Check Out", 
             "Save Data Only", 
-            "Jump / Skip Stage", # 🎯 更新名稱，支援往前跳與往後退
+            "Jump / Skip Stage", 
             "Hold", 
             "Bank in", 
             "Scrap"
         ]
         
-    action_type = st.radio("Wafer Action Options", options, horizontal=True, label_visibility="collapsed")
+    action_type = st.radio("Wafer Action Options", options=options, horizontal=True, label_visibility="collapsed")
     
     jump_target, comment = None, ""
     
+    # 🎯 修復 BUG：這裡原本沒有同步修改為 "Jump / Skip Stage"
     if action_type == "Jump / Skip Stage":
         jump_target = st.selectbox("Jump to step (Forward or Backward):", options=avail_steps)
-        comment = st.text_input("Reason for jump:")
+        comment = st.text_input("Reason for jump/skip:")
     elif action_type == "Hold":
         comment = st.text_input("Reason for hold:")
     elif action_type == "Bank in":
@@ -127,7 +128,7 @@ def show_ongoing_action_dialog(tw_id, ts_no, target_row_dict, avail_steps):
             "tool": edit_tool,
             "recipe": edit_recipe,
             "cp": edit_cp,
-            "avail_steps": avail_steps, # 🎯 傳遞所有步驟用於計算往回跳邏輯
+            "avail_steps": avail_steps,
             "orig_row": target_row_dict
         }
         st.rerun()
@@ -275,7 +276,6 @@ with all_tabs[0]:
                 except Exception as e:
                     st.error(f"Upload error: {e}")
                     
-        # 🎯 空白字元覆蓋保護：處理參數修改，空白時送出 %20 防止 GAS 忽略
         fields = {"Process Tool": pa["tool"], "Recipe": pa["recipe"], "Check point": pa["cp"]}
         for f_name, f_val in fields.items():
             orig_val = str(pa["orig_row"].get(f_name, "")).strip()
@@ -284,7 +284,6 @@ with all_tabs[0]:
                 safe_val = new_v_str if new_v_str != "" else " "
                 urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&column_name={requests.utils.quote(f_name)}&new_value={requests.utils.quote(safe_val)}")
                 
-        # SPC/Result 處理
         if str(pa["spc"]).strip():
             urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&column_name=SPC%20data&new_value={requests.utils.quote(str(pa['spc']).strip())}")
         if final_result_link:
@@ -301,7 +300,6 @@ with all_tabs[0]:
         elif act == "Unhold": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Unhold&comment={enc_comment}&time={enc_time}")
         elif act == "Bank": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Bank&comment={enc_comment}&time={enc_time}")
         elif act == "Jump / Skip Stage":
-            # 🎯 智慧判定：是往前跳站，還是往回退站
             curr_step = str(pa["s_no"])
             target_step = str(pa["jump_step"])
             avail = pa["avail_steps"]
@@ -312,12 +310,10 @@ with all_tabs[0]:
                 curr_idx, tgt_idx = 0, 0
                 
             if tgt_idx < curr_idx:
-                # 往回跳 (退站)：把目標站點到當前站點之間的所有 Checkout Time 清空 (寫入空白 %20)
                 for i in range(tgt_idx, curr_idx + 1):
                     enc_step = requests.utils.quote(str(avail[i]))
                     urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_step}&column_name=Check%20out%20Time&new_value=%20")
             elif tgt_idx > curr_idx:
-                # 往後跳 (Skip)
                 enc_target = requests.utils.quote(target_step)
                 urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Skip&comment={enc_comment}&time={enc_time}&target_step={enc_target}")
             
@@ -505,7 +501,6 @@ with all_tabs[1]:
         if final_result_link:
             urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&column_name=Result&new_value={requests.utils.quote(final_result_link)}")
 
-        # 🎯 空白字元覆蓋保護：處理歷史紀錄修改，空白時送出 %20 防止 GAS 忽略
         fields = {"Process Tool": pa["tool"], "Recipe": pa["recipe"], "Check point": pa["cp"], "Check out Time": pa.get("fco", "")}
         for f_name, f_val in fields.items():
             orig_val = str(pa["orig_row"].get(f_name, "")).strip()
