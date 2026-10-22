@@ -87,11 +87,10 @@ def show_ongoing_action_dialog(tw_id, ts_no, target_row_dict, avail_steps):
             "Scrap"
         ]
         
-    action_type = st.radio("Wafer Action Options", options=options, horizontal=True, label_visibility="collapsed")
+    action_type = st.radio("Wafer Action Options", options, horizontal=True, label_visibility="collapsed")
     
     jump_target, comment = None, ""
     
-    # 🎯 修復 BUG：這裡原本沒有同步修改為 "Jump / Skip Stage"
     if action_type == "Jump / Skip Stage":
         jump_target = st.selectbox("Jump to step (Forward or Backward):", options=avail_steps)
         comment = st.text_input("Reason for jump/skip:")
@@ -299,19 +298,23 @@ with all_tabs[0]:
         elif act == "Hold": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Hold&comment={enc_comment}&time={enc_time}")
         elif act == "Unhold": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Unhold&comment={enc_comment}&time={enc_time}")
         elif act == "Bank": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Bank&comment={enc_comment}&time={enc_time}")
+        
+        # 🎯 修復 Jump / Skip 邏輯的 .0 匹配 Bug
         elif act == "Jump / Skip Stage":
-            curr_step = str(pa["s_no"])
-            target_step = str(pa["jump_step"])
-            avail = pa["avail_steps"]
+            curr_step = str(pa["s_no"]).replace(".0", "").strip()
+            target_step = str(pa["jump_step"]).replace(".0", "").strip()
+            avail = [str(x).replace(".0", "").strip() for x in pa["avail_steps"]]
+            
             try:
                 curr_idx = avail.index(curr_step)
                 tgt_idx = avail.index(target_step)
-            except:
+            except Exception as e:
                 curr_idx, tgt_idx = 0, 0
+                st.error(f"Cannot find Step Index: {curr_step} or {target_step}")
                 
             if tgt_idx < curr_idx:
                 for i in range(tgt_idx, curr_idx + 1):
-                    enc_step = requests.utils.quote(str(avail[i]))
+                    enc_step = requests.utils.quote(avail[i])
                     urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_step}&column_name=Check%20out%20Time&new_value=%20")
             elif tgt_idx > curr_idx:
                 enc_target = requests.utils.quote(target_step)
@@ -422,7 +425,8 @@ with all_tabs[0]:
                         "Process Tool": s_tool,
                         "Recipe": s_recipe,
                         "_raw_step": raw_step,
-                        "_avail_steps": [str(x).strip() for x in w_group[step_col].tolist()],
+                        # 🎯 這裡統一將 .0 拿掉，確保傳給下拉選單的都是乾淨字串
+                        "_avail_steps": [str(x).replace(".0", "").strip() for x in w_group[step_col].tolist()],
                         "_row_dict": active_row.to_dict()
                     })
             
