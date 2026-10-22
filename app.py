@@ -87,7 +87,7 @@ def show_ongoing_action_dialog(tw_id, ts_no, target_row_dict, avail_steps):
             "Scrap"
         ]
         
-    action_type = st.radio("Wafer Action Options", options, horizontal=True, label_visibility="collapsed")
+    action_type = st.radio("Wafer Action Options", options=options, horizontal=True, label_visibility="collapsed")
     
     jump_target, comment = None, ""
     
@@ -298,8 +298,6 @@ with all_tabs[0]:
         elif act == "Hold": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Hold&comment={enc_comment}&time={enc_time}")
         elif act == "Unhold": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Unhold&comment={enc_comment}&time={enc_time}")
         elif act == "Bank": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Bank&comment={enc_comment}&time={enc_time}")
-        
-        # 🎯 修復 Jump / Skip 邏輯的 .0 匹配 Bug
         elif act == "Jump / Skip Stage":
             curr_step = str(pa["s_no"]).replace(".0", "").strip()
             target_step = str(pa["jump_step"]).replace(".0", "").strip()
@@ -425,7 +423,6 @@ with all_tabs[0]:
                         "Process Tool": s_tool,
                         "Recipe": s_recipe,
                         "_raw_step": raw_step,
-                        # 🎯 這裡統一將 .0 拿掉，確保傳給下拉選單的都是乾淨字串
                         "_avail_steps": [str(x).replace(".0", "").strip() for x in w_group[step_col].tolist()],
                         "_row_dict": active_row.to_dict()
                     })
@@ -752,6 +749,19 @@ with all_tabs[3]:
                 is_banked = False
                 bank_step_no, bank_comment = "", ""
                 
+                # 🎯 取得 Shuttle Owner 與團隊資訊
+                rep_owner = ""
+                rep_team = ""
+                for _, r in w_group.iterrows():
+                    raw_s = str(r.get(step_col, "")).replace(".0", "").strip()
+                    if raw_s == "1":
+                        rep_owner = str(r.get(owner_col, ""))
+                        rep_team = str(r.get(team_col, ""))
+                        break
+                if not rep_owner and not w_group.empty:
+                    rep_owner = str(w_group.iloc[0].get(owner_col, ""))
+                    rep_team = str(w_group.iloc[0].get(team_col, ""))
+                
                 for idx, row in w_group.iterrows():
                     fco = str(row.get(fco_col, "")).strip().upper()
                     if fco == "SCRP":
@@ -773,8 +783,8 @@ with all_tabs[3]:
                     banked_wafers.append({
                         "Select": False, 
                         "Shuttle Name": str(first_row.get(shuttle_col, "")), 
-                        "Owner": str(first_row.get(owner_col, "")),
-                        "團隊": str(first_row.get(team_col, "")), 
+                        "Owner": rep_owner, 
+                        "團隊": rep_team, 
                         "ID (Wafer)": str(wid).strip(),
                         "Bank 停留站點": f"第 {bank_step_no} 步", 
                         "_Raw_Step": bank_step_no, 
@@ -849,6 +859,19 @@ with all_tabs[3]:
             for shuttle, s_group in df_route_bank.groupby(shuttle_col, sort=False):
                 if str(shuttle).strip() == "": continue
                 
+                # 🎯 取得 Shuttle Owner 與團隊資訊供統計總表使用
+                rep_owner = ""
+                rep_team = ""
+                for _, r in s_group.iterrows():
+                    raw_s = str(r.get(step_col, "")).replace(".0", "").strip()
+                    if raw_s == "1":
+                        rep_owner = str(r.get(owner_col, ""))
+                        rep_team = str(r.get(team_col, ""))
+                        break
+                if not rep_owner and not s_group.empty:
+                    rep_owner = str(s_group.iloc[0].get(owner_col, ""))
+                    rep_team = str(s_group.iloc[0].get(team_col, ""))
+                
                 inpr_count = bank_count = shipped_count = 0
                 
                 for wid in s_group[wafer_col].unique():
@@ -882,6 +905,8 @@ with all_tabs[3]:
                 if (inpr_count + bank_count + shipped_count) > 0:
                     summary_data.append({
                         "Shuttle Name": shuttle,
+                        "Owner": rep_owner,
+                        "團隊": rep_team,
                         "INPR (在製中)": inpr_count,
                         "Bank (入庫)": bank_count,
                         "Shipped (已出貨)": shipped_count,
