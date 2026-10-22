@@ -12,9 +12,9 @@ import concurrent.futures
 st.set_page_config(layout="wide", page_title="TSRI Lot Tracing System")
 
 if "search_wafer_id_history" not in st.session_state:
-    st.session_state.search_wafer_id_history = ""
+    st.session_state.search_wafer_id_history = "LOT4-11F0"
 
-st.markdown("<div style='font-size: 20px; font-weight: bold; padding-top: 1rem; padding-bottom: 1rem;'>TSRI Lot Tracing System-UAT</div>", unsafe_allow_html=True)
+st.markdown("<div style='font-size: 20px; font-weight: bold; padding-top: 1rem; padding-bottom: 1rem;'>TSRI Lot Tracing System</div>", unsafe_allow_html=True)
 
 MY_ORGANIZATION_GAS_URL = "https://script.google.com/macros/s/AKfycbx9pptKpV0dUDtGifGCbQnO33d42eUbbODnjVq_g4yitOviXtq6_8TdMo7VT7HL9dC-6w/exec"
 SPREADSHEET_ID = "1HIcyPgjoHWA3Wgj8gohyEN2s-kF5A6OGEWuR0wDqULU"
@@ -66,7 +66,6 @@ def show_ongoing_action_dialog(tw_id, ts_no, target_row_dict, avail_steps):
     with c2: edit_recipe = st.text_input("Process Recipe", value=target_row_dict.get("Recipe", ""))
     with c3: edit_cp = st.text_input("Check Point", value=target_row_dict.get("Check point", ""))
     
-    # 🎯 標題正名為 Data
     spc_data = st.text_input("**Data**")
     result_image = st.file_uploader("**Result Image**", type=["png", "jpg", "jpeg"], key=f"img_{tw_id}_{ts_no}")
     
@@ -82,19 +81,19 @@ def show_ongoing_action_dialog(tw_id, ts_no, target_row_dict, avail_steps):
         options = [
             "Check Out", 
             "Save Data Only", 
-            "Skip Stage", 
+            "Jump / Skip Stage", 
             "Hold", 
             "Bank in", 
             "Scrap"
         ]
         
-    action_type = st.radio("Wafer Action Options", options, horizontal=True, label_visibility="collapsed")
+    action_type = st.radio("Wafer Action Options", options=options, horizontal=True, label_visibility="collapsed")
     
     jump_target, comment = None, ""
     
-    if action_type == "Skip Stage":
-        jump_target = st.selectbox("Jump to step:", options=avail_steps)
-        comment = st.text_input("Reason for skip:")
+    if action_type == "Jump / Skip Stage":
+        jump_target = st.selectbox("Jump to step (Forward or Backward):", options=avail_steps)
+        comment = st.text_input("Reason for jump/skip:")
     elif action_type == "Hold":
         comment = st.text_input("Reason for hold:")
     elif action_type == "Bank in":
@@ -110,7 +109,7 @@ def show_ongoing_action_dialog(tw_id, ts_no, target_row_dict, avail_steps):
         action_name = ""
         if action_type == "Check Out": action_name = "Check out"
         elif action_type == "Save Data Only": action_name = "Key in data"
-        elif action_type == "Skip Stage": action_name = "Skip"
+        elif action_type == "Jump / Skip Stage": action_name = "Jump / Skip Stage"
         elif action_type == "Hold": action_name = "Hold"
         elif action_type == "Release Hold": action_name = "Unhold"
         elif action_type == "Bank in": action_name = "Bank"
@@ -128,6 +127,7 @@ def show_ongoing_action_dialog(tw_id, ts_no, target_row_dict, avail_steps):
             "tool": edit_tool,
             "recipe": edit_recipe,
             "cp": edit_cp,
+            "avail_steps": avail_steps,
             "orig_row": target_row_dict
         }
         st.rerun()
@@ -217,12 +217,16 @@ def show_history_edit_dialog(tw_id, ts_no, target_row_dict):
     if not current_comment: current_comment = str(target_row_dict.get("Comments", "")).strip()
     if not current_comment: current_comment = str(target_row_dict.get("備註", "")).strip()
     
-    # 🎯 標題正名為 Data
     st.markdown("**Data**")
     spc_data = st.text_input("Update Action Record & Data:", value=current_comment, label_visibility="collapsed")
     
     st.markdown("**Result Image**")
     result_image = st.file_uploader("Upload new image to overwrite", type=["png", "jpg", "jpeg"], key=f"hist_img_{tw_id}_{ts_no}")
+    
+    st.markdown("---")
+    st.markdown("**Status Management (Rework / Undo)**")
+    current_fco = str(target_row_dict.get("Check out Time", "")).strip()
+    edit_fco = st.text_input("Check out Time (Clear this field to revert wafer to this step)", value=current_fco)
     
     if st.button("Confirm and Submit", type="primary", use_container_width=True):
         st.session_state.history_edit_action = {
@@ -233,6 +237,7 @@ def show_history_edit_dialog(tw_id, ts_no, target_row_dict):
             "tool": edit_tool,
             "recipe": edit_recipe,
             "cp": edit_cp,
+            "fco": edit_fco,
             "orig_row": target_row_dict
         }
         st.rerun()
@@ -270,16 +275,18 @@ with all_tabs[0]:
                 except Exception as e:
                     st.error(f"Upload error: {e}")
                     
+        fields = {"Process Tool": pa["tool"], "Recipe": pa["recipe"], "Check point": pa["cp"]}
+        for f_name, f_val in fields.items():
+            orig_val = str(pa["orig_row"].get(f_name, "")).strip()
+            new_v_str = str(f_val).strip()
+            if new_v_str != orig_val:
+                safe_val = new_v_str if new_v_str != "" else " "
+                urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&column_name={requests.utils.quote(f_name)}&new_value={requests.utils.quote(safe_val)}")
+                
         if str(pa["spc"]).strip():
             urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&column_name=SPC%20data&new_value={requests.utils.quote(str(pa['spc']).strip())}")
         if final_result_link:
             urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&column_name=Result&new_value={requests.utils.quote(final_result_link)}")
-            
-        fields = {"Process Tool": pa["tool"], "Recipe": pa["recipe"], "Check point": pa["cp"]}
-        for f_name, f_val in fields.items():
-            orig_val = str(pa["orig_row"].get(f_name, "")).strip()
-            if str(f_val).strip() != orig_val:
-                urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&column_name={requests.utils.quote(f_name)}&new_value={requests.utils.quote(str(f_val).strip())}")
                 
         enc_time = requests.utils.quote(now_str)
         enc_comment = requests.utils.quote(pa.get("comment", ""))
@@ -291,14 +298,29 @@ with all_tabs[0]:
         elif act == "Hold": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Hold&comment={enc_comment}&time={enc_time}")
         elif act == "Unhold": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Unhold&comment={enc_comment}&time={enc_time}")
         elif act == "Bank": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Bank&comment={enc_comment}&time={enc_time}")
-        elif act == "Skip":
-            enc_target = requests.utils.quote(str(pa["jump_step"]))
-            urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Skip&comment={enc_comment}&time={enc_time}&target_step={enc_target}")
+        elif act == "Jump / Skip Stage":
+            curr_step = str(pa["s_no"]).replace(".0", "").strip()
+            target_step = str(pa["jump_step"]).replace(".0", "").strip()
+            avail = [str(x).replace(".0", "").strip() for x in pa["avail_steps"]]
+            
+            try:
+                curr_idx = avail.index(curr_step)
+                tgt_idx = avail.index(target_step)
+            except Exception as e:
+                curr_idx, tgt_idx = 0, 0
+                st.error(f"Cannot find Step Index: {curr_step} or {target_step}")
+                
+            if tgt_idx < curr_idx:
+                for i in range(tgt_idx, curr_idx + 1):
+                    enc_step = requests.utils.quote(avail[i])
+                    urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_step}&column_name=Check%20out%20Time&new_value=%20")
+            elif tgt_idx > curr_idx:
+                enc_target = requests.utils.quote(target_step)
+                urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Skip&comment={enc_comment}&time={enc_time}&target_step={enc_target}")
             
         if urls_to_send:
             with st.spinner(f"Syncing to Cloud..."):
                 has_error = False
-                
                 def send_req(url):
                     try:
                         return requests.get(url, timeout=15, allow_redirects=False)
@@ -331,7 +353,7 @@ with all_tabs[0]:
         fco_col = next((c for c in df_route.columns if "check out" in str(c).lower()), "Check out Time")
         tool_col = next((c for c in df_route.columns if "tool" in str(c).lower()), "Process Tool")
         recipe_col = next((c for c in df_route.columns if "recipe" in str(c).lower()), "Recipe")
-        module_col = next((c for c in df_route.columns if "module" in str(c).lower()), "Module") # 🎯 定位 Module 欄位
+        module_col = next((c for c in df_route.columns if "module" in str(c).lower()), "Module")
         
         if wafer_col in df_route.columns:
             def get_lot_number(wid):
@@ -352,7 +374,6 @@ with all_tabs[0]:
                 active_row = None
                 lot_owner = ""
                 
-                # 🎯 抓取 Step 1 的 Stage Owner 作為 Lot Owner
                 for _, row in w_group.iterrows():
                     raw_s = str(row.get(step_col, "")).replace(".0", "").strip()
                     if raw_s == "1":
@@ -392,7 +413,6 @@ with all_tabs[0]:
                     s_recipe = str(active_row.get(recipe_col, active_row.get("Recipe", "")))
                     s_module = str(active_row.get(module_col, ""))
                     
-                    # 🎯 將新增的 Lot Owner 與 Module 加入清單
                     wip_data_list.append({
                         "Lot Owner": lot_owner,
                         "ID (Wafer)": wid,
@@ -403,13 +423,12 @@ with all_tabs[0]:
                         "Process Tool": s_tool,
                         "Recipe": s_recipe,
                         "_raw_step": raw_step,
-                        "_avail_steps": [str(x).strip() for x in w_group[step_col].tolist()],
+                        "_avail_steps": [str(x).replace(".0", "").strip() for x in w_group[step_col].tolist()],
                         "_row_dict": active_row.to_dict()
                     })
             
             if wip_data_list:
                 df_wip = pd.DataFrame(wip_data_list)
-                # 🎯 調整顯示欄位的順序
                 display_df = df_wip[["Lot Owner", "ID (Wafer)", "Step", "Stage Owner", "Module", "Step Description", "Process Tool", "Recipe"]]
                 styled_df = display_df.style.set_properties(**{'text-align': 'center'})
                 
@@ -483,11 +502,13 @@ with all_tabs[1]:
         if final_result_link:
             urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&column_name=Result&new_value={requests.utils.quote(final_result_link)}")
 
-        fields = {"Process Tool": pa["tool"], "Recipe": pa["recipe"], "Check point": pa["cp"]}
+        fields = {"Process Tool": pa["tool"], "Recipe": pa["recipe"], "Check point": pa["cp"], "Check out Time": pa.get("fco", "")}
         for f_name, f_val in fields.items():
             orig_val = str(pa["orig_row"].get(f_name, "")).strip()
-            if str(f_val).strip() != orig_val:
-                urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&column_name={requests.utils.quote(f_name)}&new_value={requests.utils.quote(str(f_val).strip())}")
+            new_v_str = str(f_val).strip()
+            if new_v_str != orig_val:
+                safe_val = new_v_str if new_v_str != "" else " "
+                urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&column_name={requests.utils.quote(f_name)}&new_value={requests.utils.quote(safe_val)}")
 
         if urls_to_send:
             with st.spinner("Syncing modifications to Cloud..."):
@@ -728,6 +749,19 @@ with all_tabs[3]:
                 is_banked = False
                 bank_step_no, bank_comment = "", ""
                 
+                # 🎯 取得 Shuttle Owner 與團隊資訊
+                rep_owner = ""
+                rep_team = ""
+                for _, r in w_group.iterrows():
+                    raw_s = str(r.get(step_col, "")).replace(".0", "").strip()
+                    if raw_s == "1":
+                        rep_owner = str(r.get(owner_col, ""))
+                        rep_team = str(r.get(team_col, ""))
+                        break
+                if not rep_owner and not w_group.empty:
+                    rep_owner = str(w_group.iloc[0].get(owner_col, ""))
+                    rep_team = str(w_group.iloc[0].get(team_col, ""))
+                
                 for idx, row in w_group.iterrows():
                     fco = str(row.get(fco_col, "")).strip().upper()
                     if fco == "SCRP":
@@ -749,8 +783,8 @@ with all_tabs[3]:
                     banked_wafers.append({
                         "Select": False, 
                         "Shuttle Name": str(first_row.get(shuttle_col, "")), 
-                        "Owner": str(first_row.get(owner_col, "")),
-                        "團隊": str(first_row.get(team_col, "")), 
+                        "Owner": rep_owner, 
+                        "團隊": rep_team, 
                         "ID (Wafer)": str(wid).strip(),
                         "Bank 停留站點": f"第 {bank_step_no} 步", 
                         "_Raw_Step": bank_step_no, 
@@ -825,6 +859,19 @@ with all_tabs[3]:
             for shuttle, s_group in df_route_bank.groupby(shuttle_col, sort=False):
                 if str(shuttle).strip() == "": continue
                 
+                # 🎯 取得 Shuttle Owner 與團隊資訊供統計總表使用
+                rep_owner = ""
+                rep_team = ""
+                for _, r in s_group.iterrows():
+                    raw_s = str(r.get(step_col, "")).replace(".0", "").strip()
+                    if raw_s == "1":
+                        rep_owner = str(r.get(owner_col, ""))
+                        rep_team = str(r.get(team_col, ""))
+                        break
+                if not rep_owner and not s_group.empty:
+                    rep_owner = str(s_group.iloc[0].get(owner_col, ""))
+                    rep_team = str(s_group.iloc[0].get(team_col, ""))
+                
                 inpr_count = bank_count = shipped_count = 0
                 
                 for wid in s_group[wafer_col].unique():
@@ -858,6 +905,8 @@ with all_tabs[3]:
                 if (inpr_count + bank_count + shipped_count) > 0:
                     summary_data.append({
                         "Shuttle Name": shuttle,
+                        "Owner": rep_owner,
+                        "團隊": rep_team,
                         "INPR (在製中)": inpr_count,
                         "Bank (入庫)": bank_count,
                         "Shipped (已出貨)": shipped_count,
