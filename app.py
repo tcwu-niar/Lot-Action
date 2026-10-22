@@ -81,19 +81,19 @@ def show_ongoing_action_dialog(tw_id, ts_no, target_row_dict, avail_steps):
         options = [
             "Check Out", 
             "Save Data Only", 
-            "Skip Stage", 
+            "Jump / Skip Stage", # 🎯 更新名稱，支援往前跳與往後退
             "Hold", 
             "Bank in", 
             "Scrap"
         ]
         
-    action_type = st.radio("Wafer Action Options", horizontal=True, options=options, label_visibility="collapsed")
+    action_type = st.radio("Wafer Action Options", options, horizontal=True, label_visibility="collapsed")
     
     jump_target, comment = None, ""
     
-    if action_type == "Skip Stage":
-        jump_target = st.selectbox("Jump to step:", options=avail_steps)
-        comment = st.text_input("Reason for skip:")
+    if action_type == "Jump / Skip Stage":
+        jump_target = st.selectbox("Jump to step (Forward or Backward):", options=avail_steps)
+        comment = st.text_input("Reason for jump:")
     elif action_type == "Hold":
         comment = st.text_input("Reason for hold:")
     elif action_type == "Bank in":
@@ -109,7 +109,7 @@ def show_ongoing_action_dialog(tw_id, ts_no, target_row_dict, avail_steps):
         action_name = ""
         if action_type == "Check Out": action_name = "Check out"
         elif action_type == "Save Data Only": action_name = "Key in data"
-        elif action_type == "Skip Stage": action_name = "Skip"
+        elif action_type == "Jump / Skip Stage": action_name = "Jump / Skip Stage"
         elif action_type == "Hold": action_name = "Hold"
         elif action_type == "Release Hold": action_name = "Unhold"
         elif action_type == "Bank in": action_name = "Bank"
@@ -127,6 +127,7 @@ def show_ongoing_action_dialog(tw_id, ts_no, target_row_dict, avail_steps):
             "tool": edit_tool,
             "recipe": edit_recipe,
             "cp": edit_cp,
+            "avail_steps": avail_steps, # 🎯 傳遞所有步驟用於計算往回跳邏輯
             "orig_row": target_row_dict
         }
         st.rerun()
@@ -222,7 +223,6 @@ def show_history_edit_dialog(tw_id, ts_no, target_row_dict):
     st.markdown("**Result Image**")
     result_image = st.file_uploader("Upload new image to overwrite", type=["png", "jpg", "jpeg"], key=f"hist_img_{tw_id}_{ts_no}")
     
-    # 🎯 新增 Status Management 區塊，讓使用者可以清除 Checkout Time 來達到退站(往回跳)的效果
     st.markdown("---")
     st.markdown("**Status Management (Rework / Undo)**")
     current_fco = str(target_row_dict.get("Check out Time", "")).strip()
@@ -237,7 +237,7 @@ def show_history_edit_dialog(tw_id, ts_no, target_row_dict):
             "tool": edit_tool,
             "recipe": edit_recipe,
             "cp": edit_cp,
-            "fco": edit_fco, # 🎯 寫入修改後的 Checkout Time
+            "fco": edit_fco,
             "orig_row": target_row_dict
         }
         st.rerun()
@@ -275,16 +275,20 @@ with all_tabs[0]:
                 except Exception as e:
                     st.error(f"Upload error: {e}")
                     
+        # 🎯 空白字元覆蓋保護：處理參數修改，空白時送出 %20 防止 GAS 忽略
+        fields = {"Process Tool": pa["tool"], "Recipe": pa["recipe"], "Check point": pa["cp"]}
+        for f_name, f_val in fields.items():
+            orig_val = str(pa["orig_row"].get(f_name, "")).strip()
+            new_v_str = str(f_val).strip()
+            if new_v_str != orig_val:
+                safe_val = new_v_str if new_v_str != "" else " "
+                urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&column_name={requests.utils.quote(f_name)}&new_value={requests.utils.quote(safe_val)}")
+                
+        # SPC/Result 處理
         if str(pa["spc"]).strip():
             urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&column_name=SPC%20data&new_value={requests.utils.quote(str(pa['spc']).strip())}")
         if final_result_link:
             urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&column_name=Result&new_value={requests.utils.quote(final_result_link)}")
-            
-        fields = {"Process Tool": pa["tool"], "Recipe": pa["recipe"], "Check point": pa["cp"]}
-        for f_name, f_val in fields.items():
-            orig_val = str(pa["orig_row"].get(f_name, "")).strip()
-            if str(f_val).strip() != orig_val:
-                urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&column_name={requests.utils.quote(f_name)}&new_value={requests.utils.quote(str(f_val).strip())}")
                 
         enc_time = requests.utils.quote(now_str)
         enc_comment = requests.utils.quote(pa.get("comment", ""))
@@ -296,14 +300,30 @@ with all_tabs[0]:
         elif act == "Hold": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Hold&comment={enc_comment}&time={enc_time}")
         elif act == "Unhold": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Unhold&comment={enc_comment}&time={enc_time}")
         elif act == "Bank": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Bank&comment={enc_comment}&time={enc_time}")
-        elif act == "Skip":
-            enc_target = requests.utils.quote(str(pa["jump_step"]))
-            urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Skip&comment={enc_comment}&time={enc_time}&target_step={enc_target}")
+        elif act == "Jump / Skip Stage":
+            # 🎯 智慧判定：是往前跳站，還是往回退站
+            curr_step = str(pa["s_no"])
+            target_step = str(pa["jump_step"])
+            avail = pa["avail_steps"]
+            try:
+                curr_idx = avail.index(curr_step)
+                tgt_idx = avail.index(target_step)
+            except:
+                curr_idx, tgt_idx = 0, 0
+                
+            if tgt_idx < curr_idx:
+                # 往回跳 (退站)：把目標站點到當前站點之間的所有 Checkout Time 清空 (寫入空白 %20)
+                for i in range(tgt_idx, curr_idx + 1):
+                    enc_step = requests.utils.quote(str(avail[i]))
+                    urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_step}&column_name=Check%20out%20Time&new_value=%20")
+            elif tgt_idx > curr_idx:
+                # 往後跳 (Skip)
+                enc_target = requests.utils.quote(target_step)
+                urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Skip&comment={enc_comment}&time={enc_time}&target_step={enc_target}")
             
         if urls_to_send:
             with st.spinner(f"Syncing to Cloud..."):
                 has_error = False
-                
                 def send_req(url):
                     try:
                         return requests.get(url, timeout=15, allow_redirects=False)
@@ -485,12 +505,14 @@ with all_tabs[1]:
         if final_result_link:
             urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&column_name=Result&new_value={requests.utils.quote(final_result_link)}")
 
-        # 🎯 將 Checkout Time 加入更新清單中
+        # 🎯 空白字元覆蓋保護：處理歷史紀錄修改，空白時送出 %20 防止 GAS 忽略
         fields = {"Process Tool": pa["tool"], "Recipe": pa["recipe"], "Check point": pa["cp"], "Check out Time": pa.get("fco", "")}
         for f_name, f_val in fields.items():
             orig_val = str(pa["orig_row"].get(f_name, "")).strip()
-            if str(f_val).strip() != orig_val:
-                urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&column_name={requests.utils.quote(f_name)}&new_value={requests.utils.quote(str(f_val).strip())}")
+            new_v_str = str(f_val).strip()
+            if new_v_str != orig_val:
+                safe_val = new_v_str if new_v_str != "" else " "
+                urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&column_name={requests.utils.quote(f_name)}&new_value={requests.utils.quote(safe_val)}")
 
         if urls_to_send:
             with st.spinner("Syncing modifications to Cloud..."):
