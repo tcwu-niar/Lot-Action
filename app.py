@@ -12,7 +12,7 @@ import concurrent.futures
 st.set_page_config(layout="wide", page_title="TSRI Lot Tracing System")
 
 if "search_wafer_id_history" not in st.session_state:
-    st.session_state.search_wafer_id_history = "LOT4-11F0"
+    st.session_state.search_wafer_id_history = ""
 
 st.markdown("<div style='font-size: 20px; font-weight: bold; padding-top: 1rem; padding-bottom: 1rem;'>TSRI Lot Tracing System</div>", unsafe_allow_html=True)
 
@@ -66,8 +66,8 @@ def show_ongoing_action_dialog(tw_id, ts_no, target_row_dict, avail_steps):
     with c2: edit_recipe = st.text_input("Process Recipe", value=target_row_dict.get("Recipe", ""))
     with c3: edit_cp = st.text_input("Check Point", value=target_row_dict.get("Check point", ""))
     
-    # 🎯 標題正名為 SPC data
-    spc_data = st.text_input("**SPC data**")
+    # 🎯 標題正名為 Data
+    spc_data = st.text_input("**Data**")
     result_image = st.file_uploader("**Result Image**", type=["png", "jpg", "jpeg"], key=f"img_{tw_id}_{ts_no}")
     
     st.markdown("---")
@@ -217,9 +217,9 @@ def show_history_edit_dialog(tw_id, ts_no, target_row_dict):
     if not current_comment: current_comment = str(target_row_dict.get("Comments", "")).strip()
     if not current_comment: current_comment = str(target_row_dict.get("備註", "")).strip()
     
-    # 🎯 標題正名為 SPC data
-    st.markdown("**SPC data**")
-    spc_data = st.text_input("Update Action Record & SPC data:", value=current_comment, label_visibility="collapsed")
+    # 🎯 標題正名為 Data
+    st.markdown("**Data**")
+    spc_data = st.text_input("Update Action Record & Data:", value=current_comment, label_visibility="collapsed")
     
     st.markdown("**Result Image**")
     result_image = st.file_uploader("Upload new image to overwrite", type=["png", "jpg", "jpeg"], key=f"hist_img_{tw_id}_{ts_no}")
@@ -331,6 +331,7 @@ with all_tabs[0]:
         fco_col = next((c for c in df_route.columns if "check out" in str(c).lower()), "Check out Time")
         tool_col = next((c for c in df_route.columns if "tool" in str(c).lower()), "Process Tool")
         recipe_col = next((c for c in df_route.columns if "recipe" in str(c).lower()), "Recipe")
+        module_col = next((c for c in df_route.columns if "module" in str(c).lower()), "Module") # 🎯 定位 Module 欄位
         
         if wafer_col in df_route.columns:
             def get_lot_number(wid):
@@ -349,6 +350,16 @@ with all_tabs[0]:
                 has_scrap, is_banked = False, False
                 wip_idx = total_steps
                 active_row = None
+                lot_owner = ""
+                
+                # 🎯 抓取 Step 1 的 Stage Owner 作為 Lot Owner
+                for _, row in w_group.iterrows():
+                    raw_s = str(row.get(step_col, "")).replace(".0", "").strip()
+                    if raw_s == "1":
+                        lot_owner = str(row.get(owner_col, ""))
+                        break
+                if not lot_owner and not w_group.empty:
+                    lot_owner = str(w_group.iloc[0].get(owner_col, ""))
                 
                 for idx, row in w_group.iterrows():
                     fco = str(row.get(fco_col, "")).strip().upper()
@@ -379,11 +390,15 @@ with all_tabs[0]:
                     s_desc = str(active_row.get(desc_col, ""))
                     s_tool = str(active_row.get(tool_col, active_row.get("Process Tool", "")))
                     s_recipe = str(active_row.get(recipe_col, active_row.get("Recipe", "")))
+                    s_module = str(active_row.get(module_col, ""))
                     
+                    # 🎯 將新增的 Lot Owner 與 Module 加入清單
                     wip_data_list.append({
+                        "Lot Owner": lot_owner,
                         "ID (Wafer)": wid,
                         "Step": f"{wip_step_no}/92",
                         "Stage Owner": s_owner,
+                        "Module": s_module,
                         "Step Description": s_desc,
                         "Process Tool": s_tool,
                         "Recipe": s_recipe,
@@ -394,7 +409,8 @@ with all_tabs[0]:
             
             if wip_data_list:
                 df_wip = pd.DataFrame(wip_data_list)
-                display_df = df_wip[["ID (Wafer)", "Step", "Stage Owner", "Step Description", "Process Tool", "Recipe"]]
+                # 🎯 調整顯示欄位的順序
+                display_df = df_wip[["Lot Owner", "ID (Wafer)", "Step", "Stage Owner", "Module", "Step Description", "Process Tool", "Recipe"]]
                 styled_df = display_df.style.set_properties(**{'text-align': 'center'})
                 
                 if "ongoing_last_sel" not in st.session_state:
