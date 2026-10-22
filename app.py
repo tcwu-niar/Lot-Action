@@ -12,7 +12,7 @@ import concurrent.futures
 st.set_page_config(layout="wide", page_title="TSRI Lot Tracing System")
 
 if "search_wafer_id_history" not in st.session_state:
-    st.session_state.search_wafer_id_history = ""
+    st.session_state.search_wafer_id_history = "LOT4-11F0"
 
 st.markdown("<div style='font-size: 20px; font-weight: bold; padding-top: 1rem; padding-bottom: 1rem;'>TSRI Lot Tracing System</div>", unsafe_allow_html=True)
 
@@ -66,7 +66,6 @@ def show_ongoing_action_dialog(tw_id, ts_no, target_row_dict, avail_steps):
     with c2: edit_recipe = st.text_input("Process Recipe", value=target_row_dict.get("Recipe", ""))
     with c3: edit_cp = st.text_input("Check Point", value=target_row_dict.get("Check point", ""))
     
-    # 🎯 標題正名為 Data
     spc_data = st.text_input("**Data**")
     result_image = st.file_uploader("**Result Image**", type=["png", "jpg", "jpeg"], key=f"img_{tw_id}_{ts_no}")
     
@@ -88,7 +87,7 @@ def show_ongoing_action_dialog(tw_id, ts_no, target_row_dict, avail_steps):
             "Scrap"
         ]
         
-    action_type = st.radio("Wafer Action Options", options, horizontal=True, label_visibility="collapsed")
+    action_type = st.radio("Wafer Action Options", horizontal=True, options=options, label_visibility="collapsed")
     
     jump_target, comment = None, ""
     
@@ -217,12 +216,17 @@ def show_history_edit_dialog(tw_id, ts_no, target_row_dict):
     if not current_comment: current_comment = str(target_row_dict.get("Comments", "")).strip()
     if not current_comment: current_comment = str(target_row_dict.get("備註", "")).strip()
     
-    # 🎯 標題正名為 Data
     st.markdown("**Data**")
     spc_data = st.text_input("Update Action Record & Data:", value=current_comment, label_visibility="collapsed")
     
     st.markdown("**Result Image**")
     result_image = st.file_uploader("Upload new image to overwrite", type=["png", "jpg", "jpeg"], key=f"hist_img_{tw_id}_{ts_no}")
+    
+    # 🎯 新增 Status Management 區塊，讓使用者可以清除 Checkout Time 來達到退站(往回跳)的效果
+    st.markdown("---")
+    st.markdown("**Status Management (Rework / Undo)**")
+    current_fco = str(target_row_dict.get("Check out Time", "")).strip()
+    edit_fco = st.text_input("Check out Time (Clear this field to revert wafer to this step)", value=current_fco)
     
     if st.button("Confirm and Submit", type="primary", use_container_width=True):
         st.session_state.history_edit_action = {
@@ -233,6 +237,7 @@ def show_history_edit_dialog(tw_id, ts_no, target_row_dict):
             "tool": edit_tool,
             "recipe": edit_recipe,
             "cp": edit_cp,
+            "fco": edit_fco, # 🎯 寫入修改後的 Checkout Time
             "orig_row": target_row_dict
         }
         st.rerun()
@@ -331,7 +336,7 @@ with all_tabs[0]:
         fco_col = next((c for c in df_route.columns if "check out" in str(c).lower()), "Check out Time")
         tool_col = next((c for c in df_route.columns if "tool" in str(c).lower()), "Process Tool")
         recipe_col = next((c for c in df_route.columns if "recipe" in str(c).lower()), "Recipe")
-        module_col = next((c for c in df_route.columns if "module" in str(c).lower()), "Module") # 🎯 定位 Module 欄位
+        module_col = next((c for c in df_route.columns if "module" in str(c).lower()), "Module")
         
         if wafer_col in df_route.columns:
             def get_lot_number(wid):
@@ -352,7 +357,6 @@ with all_tabs[0]:
                 active_row = None
                 lot_owner = ""
                 
-                # 🎯 抓取 Step 1 的 Stage Owner 作為 Lot Owner
                 for _, row in w_group.iterrows():
                     raw_s = str(row.get(step_col, "")).replace(".0", "").strip()
                     if raw_s == "1":
@@ -392,7 +396,6 @@ with all_tabs[0]:
                     s_recipe = str(active_row.get(recipe_col, active_row.get("Recipe", "")))
                     s_module = str(active_row.get(module_col, ""))
                     
-                    # 🎯 將新增的 Lot Owner 與 Module 加入清單
                     wip_data_list.append({
                         "Lot Owner": lot_owner,
                         "ID (Wafer)": wid,
@@ -409,7 +412,6 @@ with all_tabs[0]:
             
             if wip_data_list:
                 df_wip = pd.DataFrame(wip_data_list)
-                # 🎯 調整顯示欄位的順序
                 display_df = df_wip[["Lot Owner", "ID (Wafer)", "Step", "Stage Owner", "Module", "Step Description", "Process Tool", "Recipe"]]
                 styled_df = display_df.style.set_properties(**{'text-align': 'center'})
                 
@@ -483,7 +485,8 @@ with all_tabs[1]:
         if final_result_link:
             urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&column_name=Result&new_value={requests.utils.quote(final_result_link)}")
 
-        fields = {"Process Tool": pa["tool"], "Recipe": pa["recipe"], "Check point": pa["cp"]}
+        # 🎯 將 Checkout Time 加入更新清單中
+        fields = {"Process Tool": pa["tool"], "Recipe": pa["recipe"], "Check point": pa["cp"], "Check out Time": pa.get("fco", "")}
         for f_name, f_val in fields.items():
             orig_val = str(pa["orig_row"].get(f_name, "")).strip()
             if str(f_val).strip() != orig_val:
