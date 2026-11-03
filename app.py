@@ -125,32 +125,43 @@ def show_ongoing_action_dialog(tw_id, ts_no, target_row_dict, avail_steps):
     elif action_type == "Release Hold":
         comment = st.text_input("Reason for release:")
         
-    if st.button("Confirm and Submit", type="primary", use_container_width=True):
-        action_name = ""
-        if action_type == "Check Out": action_name = "Check out"
-        elif action_type == "Save Data Only": action_name = "Key in data"
-        elif action_type == "Jump / Skip Stage": action_name = "Jump / Skip Stage"
-        elif action_type == "Hold": action_name = "Hold"
-        elif action_type == "Release Hold": action_name = "Unhold"
-        elif action_type == "Bank in": action_name = "Bank"
-        elif action_type == "Scrap": action_name = "Scrap"
-        elif action_type == "Unscrap": action_name = "Unscrap"
-        
-        st.session_state.ongoing_action = {
-            "name": action_name, 
-            "w_id": tw_id, 
-            "s_no": safe_ts_no,
-            "spc": spc_data, 
-            "img": result_image, 
-            "jump_step": jump_target, 
-            "comment": comment,
-            "tool": edit_tool,
-            "recipe": edit_recipe,
-            "cp": edit_cp,
-            "avail_steps": avail_steps,
-            "orig_row": target_row_dict
-        }
-        st.rerun()
+    # 🎯 增加彈出視窗按鈕佈局，加入 Close Window 選項
+    col_submit, col_cancel = st.columns([3, 1])
+    
+    with col_submit:
+        if st.button("Confirm and Submit", type="primary", use_container_width=True):
+            action_name = ""
+            if action_type == "Check Out": action_name = "Check out"
+            elif action_type == "Save Data Only": action_name = "Key in data"
+            elif action_type == "Jump / Skip Stage": action_name = "Jump / Skip Stage"
+            elif action_type == "Hold": action_name = "Hold"
+            elif action_type == "Release Hold": action_name = "Unhold"
+            elif action_type == "Bank in": action_name = "Bank"
+            elif action_type == "Scrap": action_name = "Scrap"
+            elif action_type == "Unscrap": action_name = "Unscrap"
+            
+            st.session_state.ongoing_action = {
+                "name": action_name, 
+                "w_id": tw_id, 
+                "s_no": safe_ts_no,
+                "spc": spc_data, 
+                "img": result_image, 
+                "jump_step": jump_target, 
+                "comment": comment,
+                "tool": edit_tool,
+                "recipe": edit_recipe,
+                "cp": edit_cp,
+                "avail_steps": avail_steps,
+                "orig_row": target_row_dict
+            }
+            st.rerun()
+            
+    with col_cancel:
+        # 🎯 點擊此按鈕，強制清除外層表格勾選狀態並重整
+        if st.button("Close Window", type="secondary", use_container_width=True):
+            st.session_state.ongoing_last_sel = []
+            st.session_state.clear_ongoing_selection = True
+            st.rerun()
 
     st.markdown("---")
     with st.expander("📜 View Wafer History"):
@@ -374,6 +385,7 @@ with all_tabs[0]:
                     time.sleep(1.2)
                     
                 st.cache_data.clear()
+                # 🎯 過站成功後，強制觸發清除選取狀態旗標
                 st.session_state.clear_ongoing_selection = True
                 st.rerun()
 
@@ -494,6 +506,7 @@ with all_tabs[0]:
                 if "ongoing_last_sel" not in st.session_state:
                     st.session_state.ongoing_last_sel = []
 
+                # 🎯 動態處理強制取消勾選
                 sel_state = "single-row"
                 if st.session_state.clear_ongoing_selection:
                     st.session_state.ongoing_last_sel = []
@@ -514,6 +527,7 @@ with all_tabs[0]:
                 curr_sel = selection.get("selection", {}).get("rows", [])
                 
                 if curr_sel != st.session_state.ongoing_last_sel:
+                    # 🎯 如果選擇了新的列，將原本舊的清除標記抹除，避免殘留
                     st.session_state.ongoing_last_sel = curr_sel
                     
                     if curr_sel:
@@ -886,7 +900,8 @@ with all_tabs[3]:
                         enc_comment = requests.utils.quote("[KICK OFF] 從 Bank Wafers 批次出庫下線")
                         
                         for w, s in zip(selected_wids, selected_steps):
-                            urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={requests.utils.quote(str(w))}&step_no={requests.utils.quote(str(s))}&action=Kick%20off&comment={enc_comment}&time={enc_time}")
+                            enc_s = requests.utils.quote(str(s))
+                            urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={requests.utils.quote(str(w))}&step_no={enc_s}&action=Kick%20off&comment={enc_comment}&time={enc_time}")
                             
                         with st.spinner(f"Syncing Kick off for {len(selected_wids)} wafers..."):
                             has_err = False
@@ -1088,7 +1103,6 @@ with all_tabs[4]:
                         sub_pct = min(int((curr_sub_val / sub_total) * 100), 100)
                         
                         step_display = f"{curr_main_val}/92<br><span style='color: #17a2b8; font-weight: bold;'>{curr_sub_val}/{sub_total}</span>"
-                        # 🎯 進度條文字只顯示百分比
                         prog_display = f'<div class="prog-wrapper" style="margin-bottom: 4px;"><div class="prog-container"><div class="prog-bar" style="width: {main_pct}%;"></div></div><div class="prog-text">{main_pct}%</div></div><div class="prog-wrapper"><div class="prog-container"><div class="prog-bar" style="width: {sub_pct}%; background-color: #17a2b8;"></div></div><div class="prog-text" style="color: #17a2b8;">{sub_pct}%</div></div>'
                     else:
                         curr_main_val = int(re.findall(r'\d+', wip_step_no)[0]) if re.findall(r'\d+', wip_step_no) else 0
@@ -1107,11 +1121,9 @@ with all_tabs[4]:
                                 sub_pct = 0
                                 
                             step_display = f"{curr_main_val}/92<br><span style='color: #17a2b8; font-weight: bold;'>{curr_sub_val}/{sub_total}</span>"
-                            # 🎯 進度條文字只顯示百分比
                             prog_display = f'<div class="prog-wrapper" style="margin-bottom: 4px;"><div class="prog-container"><div class="prog-bar" style="width: {main_pct}%;"></div></div><div class="prog-text">{main_pct}%</div></div><div class="prog-wrapper"><div class="prog-container"><div class="prog-bar" style="width: {sub_pct}%; background-color: #17a2b8;"></div></div><div class="prog-text" style="color: #17a2b8;">{sub_pct}%</div></div>'
                         else:
                             step_display = f"{curr_main_val}/92"
-                            # 🎯 進度條文字只顯示百分比
                             prog_display = f'<div class="prog-wrapper"><div class="prog-container"><div class="prog-bar" style="width: {main_pct}%;"></div></div><div class="prog-text">{main_pct}%</div></div>'
                     
                     team_valid_wafers.append({
