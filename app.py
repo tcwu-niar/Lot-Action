@@ -14,9 +14,6 @@ st.set_page_config(layout="wide", page_title="TSRI Lot Tracing System")
 if "search_wafer_id_history" not in st.session_state:
     st.session_state.search_wafer_id_history = ""
 
-if "clear_ongoing_selection" not in st.session_state:
-    st.session_state.clear_ongoing_selection = False
-
 st.markdown("<div style='font-size: 20px; font-weight: bold; padding-top: 1rem; padding-bottom: 1rem;'>TSRI Lot Tracing System</div>", unsafe_allow_html=True)
 
 MY_ORGANIZATION_GAS_URL = "https://script.google.com/macros/s/AKfycbxSpHeSlbCyMgn0cH60fh62eM_nYoaCwkSCZF1UJMTeC-3z1wQJ1RVLXge1kvzadmKM/exec"
@@ -125,43 +122,32 @@ def show_ongoing_action_dialog(tw_id, ts_no, target_row_dict, avail_steps):
     elif action_type == "Release Hold":
         comment = st.text_input("Reason for release:")
         
-    # 🎯 增加彈出視窗按鈕佈局，加入 Close Window 選項
-    col_submit, col_cancel = st.columns([3, 1])
-    
-    with col_submit:
-        if st.button("Confirm and Submit", type="primary", use_container_width=True):
-            action_name = ""
-            if action_type == "Check Out": action_name = "Check out"
-            elif action_type == "Save Data Only": action_name = "Key in data"
-            elif action_type == "Jump / Skip Stage": action_name = "Jump / Skip Stage"
-            elif action_type == "Hold": action_name = "Hold"
-            elif action_type == "Release Hold": action_name = "Unhold"
-            elif action_type == "Bank in": action_name = "Bank"
-            elif action_type == "Scrap": action_name = "Scrap"
-            elif action_type == "Unscrap": action_name = "Unscrap"
-            
-            st.session_state.ongoing_action = {
-                "name": action_name, 
-                "w_id": tw_id, 
-                "s_no": safe_ts_no,
-                "spc": spc_data, 
-                "img": result_image, 
-                "jump_step": jump_target, 
-                "comment": comment,
-                "tool": edit_tool,
-                "recipe": edit_recipe,
-                "cp": edit_cp,
-                "avail_steps": avail_steps,
-                "orig_row": target_row_dict
-            }
-            st.rerun()
-            
-    with col_cancel:
-        # 🎯 點擊此按鈕，強制清除外層表格勾選狀態並重整
-        if st.button("Close Window", type="secondary", use_container_width=True):
-            st.session_state.ongoing_last_sel = []
-            st.session_state.clear_ongoing_selection = True
-            st.rerun()
+    if st.button("Confirm and Submit", type="primary", use_container_width=True):
+        action_name = ""
+        if action_type == "Check Out": action_name = "Check out"
+        elif action_type == "Save Data Only": action_name = "Key in data"
+        elif action_type == "Jump / Skip Stage": action_name = "Jump / Skip Stage"
+        elif action_type == "Hold": action_name = "Hold"
+        elif action_type == "Release Hold": action_name = "Unhold"
+        elif action_type == "Bank in": action_name = "Bank"
+        elif action_type == "Scrap": action_name = "Scrap"
+        elif action_type == "Unscrap": action_name = "Unscrap"
+        
+        st.session_state.ongoing_action = {
+            "name": action_name, 
+            "w_id": tw_id, 
+            "s_no": safe_ts_no,
+            "spc": spc_data, 
+            "img": result_image, 
+            "jump_step": jump_target, 
+            "comment": comment,
+            "tool": edit_tool,
+            "recipe": edit_recipe,
+            "cp": edit_cp,
+            "avail_steps": avail_steps,
+            "orig_row": target_row_dict
+        }
+        st.rerun()
 
     st.markdown("---")
     with st.expander("📜 View Wafer History"):
@@ -385,8 +371,6 @@ with all_tabs[0]:
                     time.sleep(1.2)
                     
                 st.cache_data.clear()
-                # 🎯 過站成功後，強制觸發清除選取狀態旗標
-                st.session_state.clear_ongoing_selection = True
                 st.rerun()
 
     df_route, conn_status = fetch_route_data_via_csv("route_template")
@@ -503,45 +487,32 @@ with all_tabs[0]:
                 display_df = df_wip[["Lot Owner", "ID (Wafer)", "Step", "Stage Owner", "Module", "Step Description", "Process Tool", "Recipe"]]
                 styled_df = display_df.style.set_properties(**{'text-align': 'center'})
                 
-                if "ongoing_last_sel" not in st.session_state:
-                    st.session_state.ongoing_last_sel = []
-
-                # 🎯 動態處理強制取消勾選
-                sel_state = "single-row"
-                if st.session_state.clear_ongoing_selection:
-                    st.session_state.ongoing_last_sel = []
-                    st.session_state.clear_ongoing_selection = False
-                    table_key = f"ongoing_wafer_table_{time.time()}" 
-                else:
-                    table_key = "ongoing_wafer_table"
-
+                # 🎯 這裡加上動態產生 key 的機制，確保每次畫面重新渲染，表格都強制回到未選取狀態！
+                table_key = f"ongoing_wafer_table_{int(time.time() * 100)}"
+                
                 selection = st.dataframe(
                     styled_df,
                     use_container_width=True,
                     hide_index=True,
                     on_select="rerun",
-                    selection_mode=sel_state,
+                    selection_mode="single-row",
                     key=table_key
                 )
                 
                 curr_sel = selection.get("selection", {}).get("rows", [])
                 
-                if curr_sel != st.session_state.ongoing_last_sel:
-                    # 🎯 如果選擇了新的列，將原本舊的清除標記抹除，避免殘留
-                    st.session_state.ongoing_last_sel = curr_sel
+                if curr_sel:
+                    selected_idx = curr_sel[0]
+                    selected_item = wip_data_list[selected_idx]
                     
-                    if curr_sel:
-                        selected_idx = curr_sel[0]
-                        selected_item = wip_data_list[selected_idx]
-                        
-                        st.session_state.search_wafer_id_history = str(selected_item['ID (Wafer)']).strip()
-                        
-                        show_ongoing_action_dialog(
-                            selected_item['ID (Wafer)'], 
-                            selected_item['_raw_step'], 
-                            selected_item['_row_dict'], 
-                            selected_item['_avail_steps']
-                        )
+                    st.session_state.search_wafer_id_history = str(selected_item['ID (Wafer)']).strip()
+                    
+                    show_ongoing_action_dialog(
+                        selected_item['ID (Wafer)'], 
+                        selected_item['_raw_step'], 
+                        selected_item['_row_dict'], 
+                        selected_item['_avail_steps']
+                    )
             else:
                 st.info("No Ongoing Wafers at this moment.")
         else:
