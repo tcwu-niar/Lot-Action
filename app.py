@@ -19,7 +19,6 @@ st.markdown("<div style='font-size: 20px; font-weight: bold; padding-top: 1rem; 
 MY_ORGANIZATION_GAS_URL = "https://script.google.com/macros/s/AKfycbxSpHeSlbCyMgn0cH60fh62eM_nYoaCwkSCZF1UJMTeC-3z1wQJ1RVLXge1kvzadmKM/exec"
 SPREADSHEET_ID = "1RQt29KIb4rkVo4A-Y3GouMAezYEBakb1q283d1sgdZU"
 
-# 🎯 全新設計的 Step 清理函數：只清除結尾的 .0，絕對保護 68.01 或 68.10 不變形！
 def clean_step(val):
     s = str(val).strip()
     if s.endswith(".0"):
@@ -39,7 +38,6 @@ def fetch_route_data_via_csv(sheet_name="route_template"):
             if "<html" in response.text.lower() or "<doctype" in response.text.lower():
                 return pd.DataFrame(), "權限受阻，請確保試算表已開啟連結共用"
             from io import StringIO
-            # 🎯 強制指定 dtype=str，避免 Pandas 雞婆把 68.10 轉成 68.1
             df_data = pd.read_csv(StringIO(response.text), dtype=str)
             df_data.columns = [str(c).strip().replace('\n', '').replace('\r', '') for c in df_data.columns]
             df_data = df_data.fillna("")
@@ -330,7 +328,6 @@ with all_tabs[0]:
             with st.spinner(f"Syncing to Cloud (Sequential Safe Mode)..."):
                 has_error = False
                 
-                # 🎯 改回 Session 順序執行，避免多執行緒同時修改同一列造成 GAS 互鎖與失敗，確保 100% 成功
                 session = requests.Session()
                 for url in urls_to_send:
                     try:
@@ -411,6 +408,12 @@ with all_tabs[0]:
                 
                 if active_row is not None:
                     raw_step = clean_step(active_row.get(step_col, ""))
+                    
+                    # 🎯 自動判斷總站數：若為含有小數點的支線 (RDL)，以此晶圓的實際總站數為分母
+                    is_sub_route = any("." in clean_step(x) for x in w_group[step_col].dropna().tolist())
+                    total_display = len(w_group) if is_sub_route else 92
+                    
+                    # 若 raw_step 是空值，代表它剛好在最後一步的邊緣，則以 wip_idx + 1 作為當前步數顯示
                     wip_step_no = str(wip_idx + 1) if raw_step in ["", "nan", "NaN", "None"] else raw_step
                     
                     s_owner = str(active_row.get(owner_col, ""))
@@ -422,7 +425,7 @@ with all_tabs[0]:
                     wip_data_list.append({
                         "Lot Owner": lot_owner,
                         "ID (Wafer)": wid,
-                        "Step": f"{wip_step_no}/92",
+                        "Step": f"{wip_step_no}/{total_display}",
                         "Stage Owner": s_owner,
                         "Module": s_module,
                         "Step Description": s_desc,
@@ -964,38 +967,67 @@ with all_tabs[4]:
                 for wid in s_group[wafer_col].unique():
                     w_group = s_group[s_group[wafer_col] == wid].reset_index(drop=True)
                     total_steps = len(w_group)
+                    
+                    # 🎯 取得此晶圓的實際總站數，避免含有小數點子站點的 RDL 晶圓破圖
+                    actual_total_steps = 0
+                    for _, row in w_group.iterrows():
+                        val = clean_step(row.get(step_col, ""))
+                        if val:
+                            actual_total_steps += 1
+                    if actual_total_steps == 0: actual_total_steps = total_steps
+                    
                     has_scrap, is_banked, wip_idx = False, False, total_steps  
                     raw_last_step = clean_step(w_group.iloc[-1].get(step_col, ""))
-                    wip_step_no = str(total_steps) if raw_last_step in ["", "nan", "NaN", "None"] else raw_last_step
+                    wip_step_no = str(actual_total_steps) if raw_last_step in ["", "nan", "NaN", "None"] else raw_last_step
                     status_html = '<span class="status-dot" style="background-color: #0d6efd;"></span> Shipped (已出貨)'
+                    
+                    # 🎯 這裡改為紀錄當前走到第幾個實際有效站點 (用以計算進度條的分子)
+                    actual_current_idx = 1
                     
                     for idx, row in w_group.iterrows():
                         fco = str(row.get(fco_col, "")).strip().upper()
                         if fco == "SCRP":
                             has_scrap, wip_idx = True, idx
                             raw_step = clean_step(row.get(step_col, ""))
-                            wip_step_no = str(idx + 1) if raw_step in ["", "nan", "NaN", "None"] else raw_step
+                            wip_step_no = str(actual_current_idx) if raw_step in ["", "nan", "NaN", "None"] else raw_step
                             status_html = f'<span class="status-dot" style="background-color: #dc3545;"></span> SCRAPPED: {row.get(desc_col, "")}'
                             break
+                        actual_current_idx += 1
                             
                     if not has_scrap:
+                        actual_current_idx = 1
                         for idx, row in w_group.iterrows():
                             fco = str(row.get(fco_col, "")).strip().upper()
                             if fco in ["", "NAN", "INPR", "HOLD", "BANK"]:
                                 wip_idx = idx
                                 raw_step = clean_step(row.get(step_col, ""))
-                                wip_step_no = str(idx + 1) if raw_step in ["", "nan", "NaN", "None"] else raw_step
+                                wip_step_no = str(actual_current_idx) if raw_step in ["", "nan", "NaN", "None"] else raw_step
                                 if fco == "HOLD": status_html = f'<span class="status-dot" style="background-color: #ffc107;"></span> HOLD: {row.get(desc_col, "")}'
                                 elif fco == "BANK": is_banked = True
                                 else: status_html = f'<span class="status-dot" style="background-color: #198754;"></span> INPR: {row.get(desc_col, "")}'
                                 break
+                            actual_current_idx += 1
                                 
                     if is_banked: continue
                     is_shipped = True if (wip_idx == total_steps and not has_scrap) else False
-                    nums = re.findall(r'\d+', str(wip_step_no))
-                    progress_pct = min(int((int(nums[0]) if nums else 0) / 92 * 100), 100)
                     
-                    team_valid_wafers.append({"id": wid, "step": f"{wip_step_no}/92", "status": status_html, "is_shipped": is_shipped, "progress_pct": progress_pct})
+                    # 🎯 修正進度條比例計算邏輯
+                    # 如果該站點本身帶有數字，就嘗試擷取最前面的整數 (例如 68.21 -> 68) 或是直接使用 actual_current_idx
+                    try:
+                        step_num = float(wip_step_no)
+                    except:
+                        nums = re.findall(r'\d+', str(wip_step_no))
+                        step_num = float(nums[0]) if nums else float(actual_current_idx)
+                        
+                    progress_pct = min(int((step_num / float(actual_total_steps)) * 100), 100)
+                    
+                    team_valid_wafers.append({
+                        "id": wid, 
+                        "step": f"{wip_step_no}/{actual_total_steps}", # 🎯 動態帶入當前步數與總步數
+                        "status": status_html, 
+                        "is_shipped": is_shipped, 
+                        "progress_pct": progress_pct
+                    })
                     
                     if is_shipped:
                         all_shipped_data.append({
@@ -1003,7 +1035,7 @@ with all_tabs[4]:
                             "Owner": rep_owner,
                             "團隊": rep_team,
                             "ID (Wafer)": wid,
-                            "Step": f"{wip_step_no}/92",
+                            "Step": f"{wip_step_no}/{actual_total_steps}",
                             "Status": "🟢 Shipped (已出貨)"
                         })
                 
