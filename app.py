@@ -19,10 +19,15 @@ st.markdown("<div style='font-size: 20px; font-weight: bold; padding-top: 1rem; 
 MY_ORGANIZATION_GAS_URL = "https://script.google.com/macros/s/AKfycbxSpHeSlbCyMgn0cH60fh62eM_nYoaCwkSCZF1UJMTeC-3z1wQJ1RVLXge1kvzadmKM/exec"
 SPREADSHEET_ID = "1RQt29KIb4rkVo4A-Y3GouMAezYEBakb1q283d1sgdZU"
 
+# 🎯 終極版 clean_step：絕對保護小數點後方的位數，杜絕 68.10 變 68.1 的慘劇
 def clean_step(val):
     s = str(val).strip()
+    if not s or s in ["nan", "NaN", "None"]:
+        return ""
+    # 如果確實是以 .0 結尾（例如 61.0），才把 .0 砍掉
     if s.endswith(".0"):
         return s[:-2]
+    # 如果是小數點，且結尾是 0 但不是 .0（例如 68.10），直接原封不動回傳
     return s
 
 @st.cache_data(ttl=15)
@@ -38,6 +43,7 @@ def fetch_route_data_via_csv(sheet_name="route_template"):
             if "<html" in response.text.lower() or "<doctype" in response.text.lower():
                 return pd.DataFrame(), "權限受阻，請確保試算表已開啟連結共用"
             from io import StringIO
+            # 🎯 強制整張表都是字串，絕對不讓 Pandas 猜測型別
             df_data = pd.read_csv(StringIO(response.text), dtype=str)
             df_data.columns = [str(c).strip().replace('\n', '').replace('\r', '') for c in df_data.columns]
             df_data = df_data.fillna("")
@@ -56,7 +62,9 @@ def fetch_route_data_via_csv(sheet_name="route_template"):
 
 @st.dialog(" ", width="large")
 def show_ongoing_action_dialog(tw_id, ts_no, target_row_dict, avail_steps):
-    st.markdown(f"**Wafer ID:** `{tw_id}` | **Step:** `{ts_no}`")
+    # 🎯 再次確認傳進來的 ts_no 必須是安全的原始格式
+    safe_ts_no = clean_step(ts_no)
+    st.markdown(f"**Wafer ID:** `{tw_id}` | **Step:** `{safe_ts_no}`")
     st.caption("*(💡 This Wafer ID has been synced to the Wafer History tab)*")
     
     current_status = str(target_row_dict.get("Check out Time", "")).strip().upper()
@@ -73,7 +81,7 @@ def show_ongoing_action_dialog(tw_id, ts_no, target_row_dict, avail_steps):
     with c3: edit_cp = st.text_input("Check Point", value=target_row_dict.get("Check point", ""))
     
     spc_data = st.text_input("**Data**")
-    result_image = st.file_uploader("**Result Image**", type=["png", "jpg", "jpeg"], key=f"img_{tw_id}_{ts_no}")
+    result_image = st.file_uploader("**Result Image**", type=["png", "jpg", "jpeg"], key=f"img_{tw_id}_{safe_ts_no}")
     
     st.markdown("---")
     st.markdown("**Wafer Action**")
@@ -125,7 +133,7 @@ def show_ongoing_action_dialog(tw_id, ts_no, target_row_dict, avail_steps):
         st.session_state.ongoing_action = {
             "name": action_name, 
             "w_id": tw_id, 
-            "s_no": ts_no, 
+            "s_no": safe_ts_no, # 🎯 確保傳進狀態的也絕對是正確格式
             "spc": spc_data, 
             "img": result_image, 
             "jump_step": jump_target, 
@@ -409,16 +417,32 @@ with all_tabs[0]:
                 if active_row is not None:
                     raw_step = clean_step(active_row.get(step_col, ""))
                     
+                    sub_steps = [clean_step(x) for x in w_group[step_col] if "." in clean_step(x)]
+                    has_sub_route = len(sub_steps) > 0
+                    
+                    curr_main_val = 0
+                    curr_sub_val = 0
+                    
                     if "." in raw_step:
                         parts = raw_step.split(".")
-                        main_val = parts[0]
-                        sub_val = parts[1]
-                        
-                        curr_sub_val = int(re.findall(r'\d+', sub_val)[0]) if re.findall(r'\d+', sub_val) else 0
-                        sub_total = sum(1 for s in w_group[step_col] if str(s).strip().startswith(f"{main_val}."))
-                        wip_step_no = f"{main_val}/92 (Sub: {curr_sub_val}/{sub_total})"
+                        curr_main_val = int(re.findall(r'\d+', parts[0])[0]) if re.findall(r'\d+', parts[0]) else 0
+                        curr_sub_val = int(re.findall(r'\d+', parts[1])[0]) if re.findall(r'\d+', parts[1]) else 0
                     else:
-                        wip_step_no = f"{raw_step}/92"
+                        curr_main_val = int(re.findall(r'\d+', raw_step)[0]) if re.findall(r'\d+', raw_step) else 0
+                        if has_sub_route:
+                            sub_main_str = sub_steps[0].split(".")[0]
+                            sub_main_val = int(re.findall(r'\d+', sub_main_str)[0]) if re.findall(r'\d+', sub_main_str) else 0
+                            if curr_main_val > sub_main_val:
+                                curr_sub_val = len(sub_steps)
+                            else:
+                                curr_sub_val = 0
+                                
+                    if has_sub_route:
+                        # 🎯 動態修正子站點顯示，確保抓到 68.10 也不會漏掉尾數 0
+                        actual_sub_val = raw_step.split(".")[1] if "." in raw_step else curr_sub_val
+                        wip_step_no = f"{curr_main_val}/92 (Sub: {actual_sub_val}/{len(sub_steps)})"
+                    else:
+                        wip_step_no = f"{curr_main_val}/92"
                     
                     s_owner = str(active_row.get(owner_col, ""))
                     s_desc = str(active_row.get(desc_col, ""))
@@ -948,7 +972,7 @@ with all_tabs[4]:
         desc_col = next((c for c in df_route.columns if "description" in str(c).lower()), "Step description")
         
         if wafer_col in df_route.columns:
-            html_table = """<style>.overview-table { width: 100%; border-collapse: collapse; font-family: sans-serif; font-size: 14px; margin-top: 10px; } .overview-table th { background-color: #f8f9fa; padding: 12px 10px; border: 1px solid #dee2e6; text-align: left; font-weight: bold; color: #495057; } .overview-table td { padding: 10px; border: 1px solid #dee2e6; text-align: left; vertical-align: middle; color: #212529; } .overview-table .merged-cell { text-align: center; vertical-align: middle; font-weight: bold; background-color: #ffffff; color: #0d6efd; } .overview-table .owner-team-cell { text-align: center; vertical-align: middle; background-color: #ffffff; } .prog-wrapper { display: flex; align-items: center; width: 100%; } .prog-container { background-color: #e9ecef; border-radius: 4px; flex-grow: 1; height: 16px; overflow: hidden; } .prog-bar { background-color: #28a745; height: 100%; border-radius: 4px; transition: width 0.4s ease; } .prog-text { margin-left: 10px; font-size: 13px; font-weight: 500; min-width: 35px; text-align: right; } .status-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }</style><table class="overview-table"><tr><th>Shuttle Name</th><th>Owner</th><th>團隊</th><th style="width: 90px; text-align: center;">已出貨</th><th>ID (Wafer)</th><th>Step</th><th>Status</th><th style="width: 200px;">進度條</th></tr>"""
+            html_table = """<style>.overview-table { width: 100%; border-collapse: collapse; font-family: sans-serif; font-size: 14px; margin-top: 10px; } .overview-table th { background-color: #f8f9fa; padding: 12px 10px; border: 1px solid #dee2e6; text-align: left; font-weight: bold; color: #495057; } .overview-table td { padding: 10px; border: 1px solid #dee2e6; text-align: left; vertical-align: middle; color: #212529; } .overview-table .merged-cell { text-align: center; vertical-align: middle; font-weight: bold; background-color: #ffffff; color: #0d6efd; } .overview-table .owner-team-cell { text-align: center; vertical-align: middle; background-color: #ffffff; } .prog-wrapper { display: flex; align-items: center; width: 100%; } .prog-container { background-color: #e9ecef; border-radius: 4px; flex-grow: 1; height: 16px; overflow: hidden; } .prog-bar { background-color: #28a745; height: 100%; border-radius: 4px; transition: width 0.4s ease; } .prog-text { margin-left: 10px; font-size: 13px; font-weight: 500; min-width: 45px; text-align: right; } .status-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }</style><table class="overview-table"><tr><th>Shuttle Name</th><th>Owner</th><th>團隊</th><th style="width: 90px; text-align: center;">已出貨</th><th>ID (Wafer)</th><th>Step</th><th>Status</th><th style="width: 250px;">進度條</th></tr>"""
             df_route[shuttle_col] = df_route[shuttle_col].fillna("")
             df_route[team_col] = df_route[team_col].fillna("")
             
@@ -1006,32 +1030,34 @@ with all_tabs[4]:
                         
                     wip_step_no = str(wip_idx + 1) if raw_step in ["", "nan", "NaN", "None"] else raw_step
                     
-                    # 🎯 檢查此晶圓是否有支線
+                    # 🎯 檢查此晶圓是否有支線 (掃描整張 Route 表確認)
                     sub_steps = [clean_step(x) for x in w_group[step_col] if "." in clean_step(x)]
                     has_sub_route = len(sub_steps) > 0
                     
                     if "." in wip_step_no:
+                        # 正在走支線：完美雙進度條
                         parts = wip_step_no.split(".")
-                        main_str = parts[0]
-                        sub_str = parts[1]
+                        curr_main_val = int(re.findall(r'\d+', parts[0])[0]) if re.findall(r'\d+', parts[0]) else 0
+                        # 安全擷取子步數 (例如從 .02 抓出 2)
+                        sub_str = re.findall(r'\d+', parts[1])[0] if re.findall(r'\d+', parts[1]) else "0"
+                        curr_sub_val = int(sub_str)
                         
-                        curr_main_val = int(re.findall(r'\d+', main_str)[0]) if re.findall(r'\d+', main_str) else 0
-                        curr_sub_val = int(re.findall(r'\d+', sub_str)[0]) if re.findall(r'\d+', sub_str) else 0
-                        
-                        sub_total = sum(1 for s in w_group[step_col] if str(s).strip().startswith(f"{main_str}."))
+                        sub_total = sum(1 for s in w_group[step_col] if str(s).strip().startswith(f"{curr_main_val}."))
                         if sub_total == 0: sub_total = 24 
                         
                         main_pct = min(int((curr_main_val / 92) * 100), 100)
                         sub_pct = min(int((curr_sub_val / sub_total) * 100), 100)
                         
                         step_display = f"{curr_main_val}/92<br><span style='color: #17a2b8; font-weight: bold;'>{curr_sub_val}/{sub_total}</span>"
-                        prog_display = f'<div class="prog-wrapper" style="margin-bottom: 4px;"><div class="prog-container"><div class="prog-bar" style="width: {main_pct}%;"></div></div><div class="prog-text">{main_pct}%</div></div><div class="prog-wrapper"><div class="prog-container"><div class="prog-bar" style="width: {sub_pct}%; background-color: #17a2b8;"></div></div><div class="prog-text">{sub_pct}%</div></div>'
+                        # 單行字串保護防破圖
+                        prog_display = f'<div class="prog-wrapper" style="margin-bottom: 4px;"><div class="prog-container"><div class="prog-bar" style="width: {main_pct}%;"></div></div><div class="prog-text">{curr_main_val}/92 ({main_pct}%)</div></div><div class="prog-wrapper"><div class="prog-container"><div class="prog-bar" style="width: {sub_pct}%; background-color: #17a2b8;"></div></div><div class="prog-text" style="color: #17a2b8;">{curr_sub_val}/{sub_total} ({sub_pct}%)</div></div>'
                     else:
+                        # 走在主線上
                         curr_main_val = int(re.findall(r'\d+', wip_step_no)[0]) if re.findall(r'\d+', wip_step_no) else 0
                         main_pct = min(int((curr_main_val / 92) * 100), 100)
                         
                         if has_sub_route:
-                            # 🎯 如果這片 Wafer 有支線，但是當前走到主線：判斷主線有沒有超過支線的位置
+                            # 含有支線的晶圓：常駐雙進度條，依主線進度判斷支線是 0 還是滿格
                             sub_main_str = sub_steps[0].split(".")[0]
                             sub_main_val = int(re.findall(r'\d+', sub_main_str)[0]) if re.findall(r'\d+', sub_main_str) else 0
                             
@@ -1044,11 +1070,11 @@ with all_tabs[4]:
                                 sub_pct = 0
                                 
                             step_display = f"{curr_main_val}/92<br><span style='color: #17a2b8; font-weight: bold;'>{curr_sub_val}/{sub_total}</span>"
-                            prog_display = f'<div class="prog-wrapper" style="margin-bottom: 4px;"><div class="prog-container"><div class="prog-bar" style="width: {main_pct}%;"></div></div><div class="prog-text">{main_pct}%</div></div><div class="prog-wrapper"><div class="prog-container"><div class="prog-bar" style="width: {sub_pct}%; background-color: #17a2b8;"></div></div><div class="prog-text">{sub_pct}%</div></div>'
+                            prog_display = f'<div class="prog-wrapper" style="margin-bottom: 4px;"><div class="prog-container"><div class="prog-bar" style="width: {main_pct}%;"></div></div><div class="prog-text">{curr_main_val}/92 ({main_pct}%)</div></div><div class="prog-wrapper"><div class="prog-container"><div class="prog-bar" style="width: {sub_pct}%; background-color: #17a2b8;"></div></div><div class="prog-text" style="color: #17a2b8;">{curr_sub_val}/{sub_total} ({sub_pct}%)</div></div>'
                         else:
-                            # 🎯 如果這片 Wafer 完全沒有支線，就只顯示一條進度條
+                            # 無支線晶圓：純粹單行進度條
                             step_display = f"{curr_main_val}/92"
-                            prog_display = f'<div class="prog-wrapper"><div class="prog-container"><div class="prog-bar" style="width: {main_pct}%;"></div></div><div class="prog-text">{main_pct}%</div></div>'
+                            prog_display = f'<div class="prog-wrapper"><div class="prog-container"><div class="prog-bar" style="width: {main_pct}%;"></div></div><div class="prog-text">{curr_main_val}/92 ({main_pct}%)</div></div>'
                     
                     team_valid_wafers.append({
                         "id": wid, 
