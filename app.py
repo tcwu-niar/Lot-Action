@@ -19,7 +19,6 @@ st.markdown("<div style='font-size: 20px; font-weight: bold; padding-top: 1rem; 
 MY_ORGANIZATION_GAS_URL = "https://script.google.com/macros/s/AKfycbxSpHeSlbCyMgn0cH60fh62eM_nYoaCwkSCZF1UJMTeC-3z1wQJ1RVLXge1kvzadmKM/exec"
 SPREADSHEET_ID = "1RQt29KIb4rkVo4A-Y3GouMAezYEBakb1q283d1sgdZU"
 
-# 🎯 UI 顯示專用：保護小數點後方的位數 (例如 68.10 原樣保留)
 def clean_step(val):
     s = str(val).strip()
     if not s or s in ["nan", "NaN", "None"]:
@@ -28,7 +27,6 @@ def clean_step(val):
         return s[:-2]
     return s
 
-# 🎯 API 傳輸專用：強制將 68.10 轉為 68.1，以符合 Google Sheets 底層 Number 型態比對
 def gas_safe_step(val):
     s = str(val).strip()
     try:
@@ -70,7 +68,8 @@ def fetch_route_data_via_csv(sheet_name="route_template"):
 
 @st.dialog(" ", width="large")
 def show_ongoing_action_dialog(tw_id, ts_no, target_row_dict, avail_steps):
-    st.markdown(f"**Wafer ID:** `{tw_id}` | **Step:** `{ts_no}`")
+    safe_ts_no = clean_step(ts_no)
+    st.markdown(f"**Wafer ID:** `{tw_id}` | **Step:** `{safe_ts_no}`")
     st.caption("*(💡 This Wafer ID has been synced to the Wafer History tab)*")
     
     current_status = str(target_row_dict.get("Check out Time", "")).strip().upper()
@@ -87,7 +86,7 @@ def show_ongoing_action_dialog(tw_id, ts_no, target_row_dict, avail_steps):
     with c3: edit_cp = st.text_input("Check Point", value=target_row_dict.get("Check point", ""))
     
     spc_data = st.text_input("**Data**")
-    result_image = st.file_uploader("**Result Image**", type=["png", "jpg", "jpeg"], key=f"img_{tw_id}_{ts_no}")
+    result_image = st.file_uploader("**Result Image**", type=["png", "jpg", "jpeg"], key=f"img_{tw_id}_{safe_ts_no}")
     
     st.markdown("---")
     st.markdown("**Wafer Action**")
@@ -139,7 +138,7 @@ def show_ongoing_action_dialog(tw_id, ts_no, target_row_dict, avail_steps):
         st.session_state.ongoing_action = {
             "name": action_name, 
             "w_id": tw_id, 
-            "s_no": ts_no, 
+            "s_no": safe_ts_no,
             "spc": spc_data, 
             "img": result_image, 
             "jump_step": jump_target, 
@@ -279,8 +278,6 @@ with all_tabs[0]:
         urls_to_send = []
         
         enc_w_id = requests.utils.quote(str(pa["w_id"]))
-        
-        # 🎯 API 發送前，強制轉譯為 GAS 認得的數值格式 (如 68.10 轉 68.1)
         enc_s_no = requests.utils.quote(gas_safe_step(pa["s_no"]))
         
         final_result_link = ""
@@ -305,8 +302,16 @@ with all_tabs[0]:
                 safe_val = new_v_str if new_v_str != "" else " "
                 urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&column_name={requests.utils.quote(f_name)}&new_value={requests.utils.quote(safe_val)}")
                 
-        if str(pa["spc"]).strip():
-            urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&column_name=SPC%20data&new_value={requests.utils.quote(str(pa['spc']).strip())}")
+        # 🎯 動態判斷要寫入哪個欄位，避免母表沒有該欄位導致報錯
+        new_spc_val = str(pa["spc"]).strip()
+        if new_spc_val:
+            if "SPC data" in pa["orig_row"]:
+                urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&column_name=SPC%20data&new_value={requests.utils.quote(new_spc_val)}")
+            elif "Comments" in pa["orig_row"]:
+                urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&column_name=Comments&new_value={requests.utils.quote(new_spc_val)}")
+            elif "備註" in pa["orig_row"]:
+                urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&column_name=備註&new_value={requests.utils.quote(new_spc_val)}")
+                
         if final_result_link:
             urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&column_name=Result&new_value={requests.utils.quote(final_result_link)}")
                 
@@ -314,7 +319,6 @@ with all_tabs[0]:
         enc_comment = requests.utils.quote(pa.get("comment", ""))
         act = pa["name"]
         
-        # 🎯 修復 Action 中帶有空白字元的問題 (%20)
         if act == "Check out": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Check%20out&comment={enc_comment}&time={enc_time}")
         elif act == "Scrap": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Scrap&comment={enc_comment}&time={enc_time}")
         elif act == "Unscrap": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Unscrap&comment={enc_comment}&time={enc_time}")
@@ -335,7 +339,6 @@ with all_tabs[0]:
                 
             if tgt_idx < curr_idx:
                 for i in range(tgt_idx, curr_idx + 1):
-                    # 🎯 同步使用 gas_safe_step
                     enc_step = requests.utils.quote(gas_safe_step(avail[i]))
                     urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_step}&column_name=Check%20out%20Time&new_value=%20")
             elif tgt_idx > curr_idx:
@@ -531,8 +534,6 @@ with all_tabs[1]:
         
         urls_to_send = []
         enc_w_id = requests.utils.quote(str(pa["w_id"]))
-        
-        # 🎯 編輯歷史時也使用 gas_safe_step 防護
         enc_s_no = requests.utils.quote(gas_safe_step(pa["s_no"]))
         
         final_result_link = ""
@@ -549,10 +550,14 @@ with all_tabs[1]:
                 except Exception as e:
                     st.error(f"Upload error: {e}")
         
-        orig_comment = str(pa["orig_row"].get("Comments", "")).strip() or str(pa["orig_row"].get("備註", "")).strip()
-        if str(pa["spc"]).strip() != orig_comment:
-            urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&column_name=Comments&new_value={requests.utils.quote(str(pa['spc']).strip())}")
-            urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&column_name=SPC%20data&new_value={requests.utils.quote(str(pa['spc']).strip())}")
+        # 🎯 動態判斷要寫入哪個欄位，徹底解決 "找不到欄位 Comments" 的 GAS Error
+        new_spc = str(pa['spc']).strip()
+        for col_name in ["SPC data", "Comments", "備註"]:
+            if col_name in pa["orig_row"]:
+                orig_val = str(pa["orig_row"].get(col_name, "")).strip()
+                if new_spc != orig_val:
+                    safe_val = new_spc if new_spc != "" else " "
+                    urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&column_name={requests.utils.quote(col_name)}&new_value={requests.utils.quote(safe_val)}")
 
         if final_result_link:
             urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&column_name=Result&new_value={requests.utils.quote(final_result_link)}")
@@ -871,7 +876,6 @@ with all_tabs[3]:
                         enc_comment = requests.utils.quote("[KICK OFF] 從 Bank Wafers 批次出庫下線")
                         
                         for w, s in zip(selected_wids, selected_steps):
-                            # 🎯 API 也使用 gas_safe_step 防護
                             enc_s = requests.utils.quote(gas_safe_step(s))
                             urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={requests.utils.quote(str(w))}&step_no={enc_s}&action=Kick%20off&comment={enc_comment}&time={enc_time}")
                             
