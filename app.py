@@ -14,6 +14,10 @@ st.set_page_config(layout="wide", page_title="TSRI Lot Tracing System")
 if "search_wafer_id_history" not in st.session_state:
     st.session_state.search_wafer_id_history = ""
 
+# 🎯 專門用來管理 Ongoing 表格選取狀態的動態 Key
+if "ongoing_table_key" not in st.session_state:
+    st.session_state.ongoing_table_key = "ongoing_wafer_table_0"
+
 st.markdown("<div style='font-size: 20px; font-weight: bold; padding-top: 1rem; padding-bottom: 1rem;'>TSRI Lot Tracing System</div>", unsafe_allow_html=True)
 
 MY_ORGANIZATION_GAS_URL = "https://script.google.com/macros/s/AKfycbxSpHeSlbCyMgn0cH60fh62eM_nYoaCwkSCZF1UJMTeC-3z1wQJ1RVLXge1kvzadmKM/exec"
@@ -346,7 +350,6 @@ with all_tabs[0]:
             with st.spinner(f"Syncing to Cloud (Sequential Safe Mode)..."):
                 has_error = False
                 success_count = 0
-                
                 session = requests.Session()
                 for url in urls_to_send:
                     try:
@@ -486,22 +489,25 @@ with all_tabs[0]:
                 df_wip = pd.DataFrame(wip_data_list)
                 display_df = df_wip[["Lot Owner", "ID (Wafer)", "Step", "Stage Owner", "Module", "Step Description", "Process Tool", "Recipe"]]
                 styled_df = display_df.style.set_properties(**{'text-align': 'center'})
-                
-                # 🎯 這裡加上動態產生 key 的機制，確保每次畫面重新渲染，表格都強制回到未選取狀態！
-                table_key = f"ongoing_wafer_table_{int(time.time() * 100)}"
-                
+
+                # 🎯 載入受保護的動態表格 Key
                 selection = st.dataframe(
                     styled_df,
                     use_container_width=True,
                     hide_index=True,
                     on_select="rerun",
                     selection_mode="single-row",
-                    key=table_key
+                    key=st.session_state.ongoing_table_key
                 )
                 
                 curr_sel = selection.get("selection", {}).get("rows", [])
                 
+                # 🎯 核心體驗：一旦偵測到使用者勾選，立刻將表格的 Key 更新，
+                # 這樣一來，不論使用者是按 X 關閉、按 ESC，還是點擊 Submit，
+                # 當畫面重新整理時，表格會自動重置為「乾淨且沒有打勾」的狀態！
                 if curr_sel:
+                    st.session_state.ongoing_table_key = f"ongoing_wafer_table_{int(time.time() * 1000)}"
+                    
                     selected_idx = curr_sel[0]
                     selected_item = wip_data_list[selected_idx]
                     
