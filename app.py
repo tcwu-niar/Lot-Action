@@ -12,7 +12,7 @@ import concurrent.futures
 st.set_page_config(layout="wide", page_title="TSRI Lot Tracing System")
 
 if "search_wafer_id_history" not in st.session_state:
-    st.session_state.search_wafer_id_history = "LOT4-11F0"
+    st.session_state.search_wafer_id_history = ""
 
 st.markdown("<div style='font-size: 20px; font-weight: bold; padding-top: 1rem; padding-bottom: 1rem;'>TSRI Lot Tracing System</div>", unsafe_allow_html=True)
 
