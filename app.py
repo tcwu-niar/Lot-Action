@@ -19,22 +19,25 @@ st.markdown("<div style='font-size: 20px; font-weight: bold; padding-top: 1rem; 
 MY_ORGANIZATION_GAS_URL = "https://script.google.com/macros/s/AKfycbxSpHeSlbCyMgn0cH60fh62eM_nYoaCwkSCZF1UJMTeC-3z1wQJ1RVLXge1kvzadmKM/exec"
 SPREADSHEET_ID = "1RQt29KIb4rkVo4A-Y3GouMAezYEBakb1q283d1sgdZU"
 
+# 🎯 終極版 clean_step：加入數學精度校正，完美消滅浮點數誤差 (如 68.139999 -> 68.14)
 def clean_step(val):
     s = str(val).strip()
     if not s or s in ["nan", "NaN", "None"]:
         return ""
-    if s.endswith(".0"):
-        return s[:-2]
-    return s
-
-def gas_safe_step(val):
-    s = str(val).strip()
+    
     try:
-        f = float(s)
-        if f.is_integer():
-            return str(int(f))
-        return str(f)
+        f_val = float(s)
+        # 判斷是否為整數 (處理 61.0 或 61.000000001 這種精度誤差)
+        if abs(f_val - round(f_val)) < 1e-6:
+            return str(int(round(f_val)))
+        else:
+            # 若為小數支線，強制四捨五入到小數點後兩位，並確保字串回傳
+            # 這能同時解決 68.139999 變 68.14，以及 68.1 變成 68.10 的問題！
+            return f"{f_val:.2f}"
     except:
+        # 若包含非數字字元 (例如 68A)，則保留原本的文字去尾
+        if s.endswith(".0"):
+            return s[:-2]
         return s
 
 @st.cache_data(ttl=15)
@@ -278,7 +281,8 @@ with all_tabs[0]:
         urls_to_send = []
         
         enc_w_id = requests.utils.quote(str(pa["w_id"]))
-        enc_s_no = requests.utils.quote(gas_safe_step(pa["s_no"]))
+        # 🎯 直接拿乾淨無瑕的字串 (例如 "68.14")
+        enc_s_no = requests.utils.quote(str(pa["s_no"]))
         
         final_result_link = ""
         if pa["img"] is not None:
@@ -302,7 +306,6 @@ with all_tabs[0]:
                 safe_val = new_v_str if new_v_str != "" else " "
                 urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&column_name={requests.utils.quote(f_name)}&new_value={requests.utils.quote(safe_val)}")
                 
-        # 🎯 動態判斷要寫入哪個欄位，避免母表沒有該欄位導致報錯
         new_spc_val = str(pa["spc"]).strip()
         if new_spc_val:
             if "SPC data" in pa["orig_row"]:
@@ -339,10 +342,10 @@ with all_tabs[0]:
                 
             if tgt_idx < curr_idx:
                 for i in range(tgt_idx, curr_idx + 1):
-                    enc_step = requests.utils.quote(gas_safe_step(avail[i]))
+                    enc_step = requests.utils.quote(str(avail[i]))
                     urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_step}&column_name=Check%20out%20Time&new_value=%20")
             elif tgt_idx > curr_idx:
-                enc_target = requests.utils.quote(gas_safe_step(target_step))
+                enc_target = requests.utils.quote(str(target_step))
                 urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Skip&comment={enc_comment}&time={enc_time}&target_step={enc_target}")
             
         if urls_to_send:
@@ -357,7 +360,7 @@ with all_tabs[0]:
                         if res.status_code not in [200, 302]:
                             st.error(f"HTTP Error {res.status_code}: {res.text}")
                             has_error = True
-                        elif "Error" in res.text or "Exception" in res.text:
+                        elif "Error" in res.text or "Exception" in res.text or "找不到對應的 Wafer ID 與 Step" in res.text:
                             st.error(f"GAS Error: {res.text}")
                             has_error = True
                         else:
@@ -459,7 +462,8 @@ with all_tabs[0]:
                                 curr_sub_val = 0
                                 
                     if has_sub_route:
-                        wip_step_no = f"{curr_main_val}/92 (Sub: {curr_sub_val}/{len(sub_steps)})"
+                        actual_sub_val = raw_step.split(".")[1] if "." in raw_step else curr_sub_val
+                        wip_step_no = f"{curr_main_val}/92 (Sub: {actual_sub_val}/{len(sub_steps)})"
                     else:
                         wip_step_no = f"{curr_main_val}/92"
                     
@@ -534,7 +538,7 @@ with all_tabs[1]:
         
         urls_to_send = []
         enc_w_id = requests.utils.quote(str(pa["w_id"]))
-        enc_s_no = requests.utils.quote(gas_safe_step(pa["s_no"]))
+        enc_s_no = requests.utils.quote(str(pa["s_no"]))
         
         final_result_link = ""
         if pa["img"] is not None:
@@ -550,7 +554,6 @@ with all_tabs[1]:
                 except Exception as e:
                     st.error(f"Upload error: {e}")
         
-        # 🎯 動態判斷要寫入哪個欄位，徹底解決 "找不到欄位 Comments" 的 GAS Error
         new_spc = str(pa['spc']).strip()
         for col_name in ["SPC data", "Comments", "備註"]:
             if col_name in pa["orig_row"]:
@@ -581,7 +584,7 @@ with all_tabs[1]:
                         if res.status_code not in [200, 302]:
                             st.error(f"HTTP Error {res.status_code}: {res.text}")
                             has_error = True
-                        elif "Error" in res.text or "Exception" in res.text:
+                        elif "Error" in res.text or "Exception" in res.text or "找不到對應的 Wafer ID 與 Step" in res.text:
                             st.error(f"GAS Error: {res.text}")
                             has_error = True
                         else:
@@ -876,8 +879,7 @@ with all_tabs[3]:
                         enc_comment = requests.utils.quote("[KICK OFF] 從 Bank Wafers 批次出庫下線")
                         
                         for w, s in zip(selected_wids, selected_steps):
-                            enc_s = requests.utils.quote(gas_safe_step(s))
-                            urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={requests.utils.quote(str(w))}&step_no={enc_s}&action=Kick%20off&comment={enc_comment}&time={enc_time}")
+                            urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={requests.utils.quote(str(w))}&step_no={requests.utils.quote(str(s))}&action=Kick%20off&comment={enc_comment}&time={enc_time}")
                             
                         with st.spinner(f"Syncing Kick off for {len(selected_wids)} wafers..."):
                             has_err = False
