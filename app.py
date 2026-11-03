@@ -12,7 +12,7 @@ import concurrent.futures
 st.set_page_config(layout="wide", page_title="TSRI Lot Tracing System")
 
 if "search_wafer_id_history" not in st.session_state:
-    st.session_state.search_wafer_id_history = "LOT4-11F0"
+    st.session_state.search_wafer_id_history = ""
 
 st.markdown("<div style='font-size: 20px; font-weight: bold; padding-top: 1rem; padding-bottom: 1rem;'>TSRI Lot Tracing System</div>", unsafe_allow_html=True)
 
@@ -327,6 +327,7 @@ with all_tabs[0]:
         if urls_to_send:
             with st.spinner(f"Syncing to Cloud (Sequential Safe Mode)..."):
                 has_error = False
+                
                 session = requests.Session()
                 for url in urls_to_send:
                     try:
@@ -408,31 +409,16 @@ with all_tabs[0]:
                 if active_row is not None:
                     raw_step = clean_step(active_row.get(step_col, ""))
                     
-                    # 🎯 Ongoing 智慧雙軌進度文字
-                    sub_steps = [clean_step(x) for x in w_group[step_col] if "." in clean_step(x)]
-                    has_sub_route = len(sub_steps) > 0
-                    
-                    curr_main_val = 0
-                    curr_sub_val = 0
-                    
                     if "." in raw_step:
                         parts = raw_step.split(".")
-                        curr_main_val = int(re.findall(r'\d+', parts[0])[0]) if re.findall(r'\d+', parts[0]) else 0
-                        curr_sub_val = int(re.findall(r'\d+', parts[1])[0]) if re.findall(r'\d+', parts[1]) else 0
+                        main_val = parts[0]
+                        sub_val = parts[1]
+                        
+                        curr_sub_val = int(re.findall(r'\d+', sub_val)[0]) if re.findall(r'\d+', sub_val) else 0
+                        sub_total = sum(1 for s in w_group[step_col] if str(s).strip().startswith(f"{main_val}."))
+                        wip_step_no = f"{main_val}/92 (Sub: {curr_sub_val}/{sub_total})"
                     else:
-                        curr_main_val = int(re.findall(r'\d+', raw_step)[0]) if re.findall(r'\d+', raw_step) else 0
-                        if has_sub_route:
-                            sub_main_str = sub_steps[0].split(".")[0]
-                            sub_main_val = int(re.findall(r'\d+', sub_main_str)[0]) if re.findall(r'\d+', sub_main_str) else 0
-                            if curr_main_val > sub_main_val:
-                                curr_sub_val = len(sub_steps)
-                            else:
-                                curr_sub_val = 0
-                                
-                    if has_sub_route:
-                        wip_step_no = f"{curr_main_val}/92 (Sub: {curr_sub_val}/{len(sub_steps)})"
-                    else:
-                        wip_step_no = f"{curr_main_val}/92"
+                        wip_step_no = f"{raw_step}/92"
                     
                     s_owner = str(active_row.get(owner_col, ""))
                     s_desc = str(active_row.get(desc_col, ""))
@@ -1018,39 +1004,51 @@ with all_tabs[4]:
                         raw_step = clean_step(w_group.iloc[-1].get(step_col, ""))
                         status_html = '<span class="status-dot" style="background-color: #0d6efd;"></span> Shipped (已出貨)'
                         
-                    # 🎯 全新主副進度計算邏輯，確保主線分母永遠為 92 步
+                    wip_step_no = str(wip_idx + 1) if raw_step in ["", "nan", "NaN", "None"] else raw_step
+                    
+                    # 🎯 檢查此晶圓是否有支線
                     sub_steps = [clean_step(x) for x in w_group[step_col] if "." in clean_step(x)]
                     has_sub_route = len(sub_steps) > 0
                     
-                    curr_main_val = 0
-                    curr_sub_val = 0
-                    
-                    if "." in raw_step:
-                        parts = raw_step.split(".")
-                        curr_main_val = int(re.findall(r'\d+', parts[0])[0]) if re.findall(r'\d+', parts[0]) else 0
-                        curr_sub_val = int(re.findall(r'\d+', parts[1])[0]) if re.findall(r'\d+', parts[1]) else 0
-                    else:
-                        curr_main_val = int(re.findall(r'\d+', raw_step)[0]) if re.findall(r'\d+', raw_step) else 0
-                        # 若這片晶圓有支線，且當前主線步數已經超越了支線所在的步數，直接將支線填滿
-                        if has_sub_route:
-                            sub_main_str = sub_steps[0].split(".")[0]
-                            sub_main_val = int(re.findall(r'\d+', sub_main_str)[0]) if re.findall(r'\d+', sub_main_str) else 0
-                            if curr_main_val > sub_main_val:
-                                curr_sub_val = len(sub_steps)
-                            else:
-                                curr_sub_val = 0
-                                
-                    main_pct = min(int((curr_main_val / 92) * 100), 100)
-                    
-                    if has_sub_route:
-                        sub_total = len(sub_steps)
-                        sub_pct = min(int((curr_sub_val / sub_total) * 100), 100) if sub_total > 0 else 0
+                    if "." in wip_step_no:
+                        parts = wip_step_no.split(".")
+                        main_str = parts[0]
+                        sub_str = parts[1]
+                        
+                        curr_main_val = int(re.findall(r'\d+', main_str)[0]) if re.findall(r'\d+', main_str) else 0
+                        curr_sub_val = int(re.findall(r'\d+', sub_str)[0]) if re.findall(r'\d+', sub_str) else 0
+                        
+                        sub_total = sum(1 for s in w_group[step_col] if str(s).strip().startswith(f"{main_str}."))
+                        if sub_total == 0: sub_total = 24 
+                        
+                        main_pct = min(int((curr_main_val / 92) * 100), 100)
+                        sub_pct = min(int((curr_sub_val / sub_total) * 100), 100)
+                        
                         step_display = f"{curr_main_val}/92<br><span style='color: #17a2b8; font-weight: bold;'>{curr_sub_val}/{sub_total}</span>"
-                        # 避免 HTML 單行縮排引發 Markdown 解析破圖
                         prog_display = f'<div class="prog-wrapper" style="margin-bottom: 4px;"><div class="prog-container"><div class="prog-bar" style="width: {main_pct}%;"></div></div><div class="prog-text">{main_pct}%</div></div><div class="prog-wrapper"><div class="prog-container"><div class="prog-bar" style="width: {sub_pct}%; background-color: #17a2b8;"></div></div><div class="prog-text">{sub_pct}%</div></div>'
                     else:
-                        step_display = f"{curr_main_val}/92"
-                        prog_display = f'<div class="prog-wrapper"><div class="prog-container"><div class="prog-bar" style="width: {main_pct}%;"></div></div><div class="prog-text">{main_pct}%</div></div>'
+                        curr_main_val = int(re.findall(r'\d+', wip_step_no)[0]) if re.findall(r'\d+', wip_step_no) else 0
+                        main_pct = min(int((curr_main_val / 92) * 100), 100)
+                        
+                        if has_sub_route:
+                            # 🎯 如果這片 Wafer 有支線，但是當前走到主線：判斷主線有沒有超過支線的位置
+                            sub_main_str = sub_steps[0].split(".")[0]
+                            sub_main_val = int(re.findall(r'\d+', sub_main_str)[0]) if re.findall(r'\d+', sub_main_str) else 0
+                            
+                            sub_total = len(sub_steps)
+                            if curr_main_val > sub_main_val:
+                                curr_sub_val = sub_total
+                                sub_pct = 100
+                            else:
+                                curr_sub_val = 0
+                                sub_pct = 0
+                                
+                            step_display = f"{curr_main_val}/92<br><span style='color: #17a2b8; font-weight: bold;'>{curr_sub_val}/{sub_total}</span>"
+                            prog_display = f'<div class="prog-wrapper" style="margin-bottom: 4px;"><div class="prog-container"><div class="prog-bar" style="width: {main_pct}%;"></div></div><div class="prog-text">{main_pct}%</div></div><div class="prog-wrapper"><div class="prog-container"><div class="prog-bar" style="width: {sub_pct}%; background-color: #17a2b8;"></div></div><div class="prog-text">{sub_pct}%</div></div>'
+                        else:
+                            # 🎯 如果這片 Wafer 完全沒有支線，就只顯示一條進度條
+                            step_display = f"{curr_main_val}/92"
+                            prog_display = f'<div class="prog-wrapper"><div class="prog-container"><div class="prog-bar" style="width: {main_pct}%;"></div></div><div class="prog-text">{main_pct}%</div></div>'
                     
                     team_valid_wafers.append({
                         "id": wid, 
@@ -1099,7 +1097,6 @@ with all_tabs[4]:
                             html_table += f'<td class="owner-team-cell" rowspan="{team_rowspan}">{t_data["team_name"]}</td><td class="merged-cell" rowspan="{team_rowspan}">{shipped_count}</td>'
                             is_first_in_team = False
                         
-                        # 每片 Wafer 都獲得自己獨立的一列顯示與獨立進度條
                         html_table += f"<td>{w_data['id']}</td><td>{w_data['step']}</td><td>{w_data['status']}</td>"
                         html_table += f"<td>{w_data['prog_display']}</td>"
                         html_table += "</tr>"
