@@ -409,7 +409,6 @@ with all_tabs[0]:
                 if active_row is not None:
                     raw_step = clean_step(active_row.get(step_col, ""))
                     
-                    # 🎯 Ongoing 頁籤也支援主副進度字串顯示
                     if "." in raw_step:
                         parts = raw_step.split(".")
                         main_val = parts[0]
@@ -947,7 +946,6 @@ with all_tabs[4]:
         desc_col = next((c for c in df_route.columns if "description" in str(c).lower()), "Step description")
         
         if wafer_col in df_route.columns:
-            # 🎯 取消進度條的 rowspan 合併設定，讓每片 Wafer 都獨立顯示雙進度條
             html_table = """<style>.overview-table { width: 100%; border-collapse: collapse; font-family: sans-serif; font-size: 14px; margin-top: 10px; } .overview-table th { background-color: #f8f9fa; padding: 12px 10px; border: 1px solid #dee2e6; text-align: left; font-weight: bold; color: #495057; } .overview-table td { padding: 10px; border: 1px solid #dee2e6; text-align: left; vertical-align: middle; color: #212529; } .overview-table .merged-cell { text-align: center; vertical-align: middle; font-weight: bold; background-color: #ffffff; color: #0d6efd; } .overview-table .owner-team-cell { text-align: center; vertical-align: middle; background-color: #ffffff; } .prog-wrapper { display: flex; align-items: center; width: 100%; } .prog-container { background-color: #e9ecef; border-radius: 4px; flex-grow: 1; height: 16px; overflow: hidden; } .prog-bar { background-color: #28a745; height: 100%; border-radius: 4px; transition: width 0.4s ease; } .prog-text { margin-left: 10px; font-size: 13px; font-weight: 500; min-width: 35px; text-align: right; } .status-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }</style><table class="overview-table"><tr><th>Shuttle Name</th><th>Owner</th><th>團隊</th><th style="width: 90px; text-align: center;">已出貨</th><th>ID (Wafer)</th><th>Step</th><th>Status</th><th style="width: 200px;">進度條</th></tr>"""
             df_route[shuttle_col] = df_route[shuttle_col].fillna("")
             df_route[team_col] = df_route[team_col].fillna("")
@@ -1007,7 +1005,7 @@ with all_tabs[4]:
                         
                     wip_step_no = str(wip_idx + 1) if raw_step in ["", "nan", "NaN", "None"] else raw_step
                     
-                    # 🎯 核心邏輯：判斷當前站點是否有小數點 (支線)，動態生成雙層進度條
+                    # 🎯 核心修復：單行字串輸出 HTML 避免 Streamlit Markdown 引擎破壞標籤
                     if "." in wip_step_no:
                         parts = wip_step_no.split(".")
                         main_str = parts[0]
@@ -1023,27 +1021,13 @@ with all_tabs[4]:
                         sub_pct = min(int((sub_val / sub_total) * 100), 100)
                         
                         step_display = f"{main_val}/92<br><span style='color: #6c757d; font-size: 0.85em;'>{sub_val}/{sub_total}</span>"
-                        prog_display = f'''
-                        <div class="prog-wrapper" style="margin-bottom: 4px;">
-                            <div class="prog-container"><div class="prog-bar" style="width: {main_pct}%;"></div></div>
-                            <div class="prog-text">{main_pct}%</div>
-                        </div>
-                        <div class="prog-wrapper">
-                            <div class="prog-container"><div class="prog-bar" style="width: {sub_pct}%; background-color: #17a2b8;"></div></div>
-                            <div class="prog-text">{sub_pct}%</div>
-                        </div>
-                        '''
+                        prog_display = f'<div class="prog-wrapper" style="margin-bottom: 4px;"><div class="prog-container"><div class="prog-bar" style="width: {main_pct}%;"></div></div><div class="prog-text">{main_pct}%</div></div><div class="prog-wrapper"><div class="prog-container"><div class="prog-bar" style="width: {sub_pct}%; background-color: #17a2b8;"></div></div><div class="prog-text">{sub_pct}%</div></div>'
                     else:
                         main_val = int(re.findall(r'\d+', wip_step_no)[0]) if re.findall(r'\d+', wip_step_no) else 0
                         main_pct = min(int((main_val / 92) * 100), 100)
                         
                         step_display = f"{main_val}/92"
-                        prog_display = f'''
-                        <div class="prog-wrapper">
-                            <div class="prog-container"><div class="prog-bar" style="width: {main_pct}%;"></div></div>
-                            <div class="prog-text">{main_pct}%</div>
-                        </div>
-                        '''
+                        prog_display = f'<div class="prog-wrapper"><div class="prog-container"><div class="prog-bar" style="width: {main_pct}%;"></div></div><div class="prog-text">{main_pct}%</div></div>'
                     
                     team_valid_wafers.append({
                         "id": wid, 
@@ -1092,7 +1076,6 @@ with all_tabs[4]:
                             html_table += f'<td class="owner-team-cell" rowspan="{team_rowspan}">{t_data["team_name"]}</td><td class="merged-cell" rowspan="{team_rowspan}">{shipped_count}</td>'
                             is_first_in_team = False
                         
-                        # 🎯 把獨立專屬的進度條分配給各個 Wafer 列
                         html_table += f"<td>{w_data['id']}</td><td>{w_data['step']}</td><td>{w_data['status']}</td>"
                         html_table += f"<td>{w_data['prog_display']}</td>"
                         html_table += "</tr>"
