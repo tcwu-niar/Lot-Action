@@ -19,6 +19,13 @@ st.markdown("<div style='font-size: 20px; font-weight: bold; padding-top: 1rem; 
 MY_ORGANIZATION_GAS_URL = "https://script.google.com/macros/s/AKfycbxSpHeSlbCyMgn0cH60fh62eM_nYoaCwkSCZF1UJMTeC-3z1wQJ1RVLXge1kvzadmKM/exec"
 SPREADSHEET_ID = "1RQt29KIb4rkVo4A-Y3GouMAezYEBakb1q283d1sgdZU"
 
+# 🎯 全新設計的 Step 清理函數：只清除結尾的 .0，絕對保護 68.01 或 68.10 不變形！
+def clean_step(val):
+    s = str(val).strip()
+    if s.endswith(".0"):
+        return s[:-2]
+    return s
+
 @st.cache_data(ttl=15)
 def fetch_route_data_via_csv(sheet_name="route_template"):
     if sheet_name == "route_template":
@@ -32,7 +39,8 @@ def fetch_route_data_via_csv(sheet_name="route_template"):
             if "<html" in response.text.lower() or "<doctype" in response.text.lower():
                 return pd.DataFrame(), "權限受阻，請確保試算表已開啟連結共用"
             from io import StringIO
-            df_data = pd.read_csv(StringIO(response.text))
+            # 🎯 強制指定 dtype=str，避免 Pandas 雞婆把 68.10 轉成 68.1
+            df_data = pd.read_csv(StringIO(response.text), dtype=str)
             df_data.columns = [str(c).strip().replace('\n', '').replace('\r', '') for c in df_data.columns]
             df_data = df_data.fillna("")
             for col in df_data.columns:
@@ -143,7 +151,7 @@ def show_ongoing_action_dialog(tw_id, ts_no, target_row_dict, avail_steps):
                 if not filtered_route.empty:
                     display_route = filtered_route.copy().reset_index(drop=True)
                     if "Step" in display_route.columns:
-                        display_route["Step"] = display_route["Step"].astype(str).str.replace(".0", "", regex=False)
+                        display_route["Step"] = display_route["Step"].apply(clean_step)
                     
                     wip_row_idx = 0
                     fco_col_hist = next((c for c in display_route.columns if "check out" in str(c).lower()), "Check out Time")
@@ -299,9 +307,9 @@ with all_tabs[0]:
         elif act == "Unhold": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Unhold&comment={enc_comment}&time={enc_time}")
         elif act == "Bank": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Bank&comment={enc_comment}&time={enc_time}")
         elif act == "Jump / Skip Stage":
-            curr_step = str(pa["s_no"]).replace(".0", "").strip()
-            target_step = str(pa["jump_step"]).replace(".0", "").strip()
-            avail = [str(x).replace(".0", "").strip() for x in pa["avail_steps"]]
+            curr_step = clean_step(pa["s_no"])
+            target_step = clean_step(pa["jump_step"])
+            avail = [clean_step(x) for x in pa["avail_steps"]]
             
             try:
                 curr_idx = avail.index(curr_step)
@@ -319,20 +327,18 @@ with all_tabs[0]:
                 urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Skip&comment={enc_comment}&time={enc_time}&target_step={enc_target}")
             
         if urls_to_send:
-            with st.spinner(f"Syncing to Cloud..."):
+            with st.spinner(f"Syncing to Cloud (Sequential Safe Mode)..."):
                 has_error = False
-                def send_req(url):
+                
+                # 🎯 改回 Session 順序執行，避免多執行緒同時修改同一列造成 GAS 互鎖與失敗，確保 100% 成功
+                session = requests.Session()
+                for url in urls_to_send:
                     try:
-                        return requests.get(url, timeout=15, allow_redirects=False)
-                    except:
-                        return None
-                        
-                with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-                    results = executor.map(send_req, set(urls_to_send))
-                    
-                for res in results:
-                    if res and res.status_code not in [200, 302] and "Error" in res.text:
-                        st.error(f"Cloud Error: {res.text}")
+                        res = session.get(url, timeout=15, allow_redirects=True)
+                        if res.status_code not in [200, 302] and "Error" in res.text:
+                            st.error(f"Cloud Error: {res.text}")
+                            has_error = True
+                    except Exception as e:
                         has_error = True
 
                 if has_error:
@@ -375,7 +381,7 @@ with all_tabs[0]:
                 lot_owner = ""
                 
                 for _, row in w_group.iterrows():
-                    raw_s = str(row.get(step_col, "")).replace(".0", "").strip()
+                    raw_s = clean_step(row.get(step_col, ""))
                     if raw_s == "1":
                         lot_owner = str(row.get(owner_col, ""))
                         break
@@ -404,7 +410,7 @@ with all_tabs[0]:
                 if wip_idx == total_steps and not has_scrap: continue 
                 
                 if active_row is not None:
-                    raw_step = str(active_row.get(step_col, "")).replace(".0", "").strip()
+                    raw_step = clean_step(active_row.get(step_col, ""))
                     wip_step_no = str(wip_idx + 1) if raw_step in ["", "nan", "NaN", "None"] else raw_step
                     
                     s_owner = str(active_row.get(owner_col, ""))
@@ -423,7 +429,7 @@ with all_tabs[0]:
                         "Process Tool": s_tool,
                         "Recipe": s_recipe,
                         "_raw_step": raw_step,
-                        "_avail_steps": [str(x).replace(".0", "").strip() for x in w_group[step_col].tolist()],
+                        "_avail_steps": [clean_step(x) for x in w_group[step_col].tolist()],
                         "_row_dict": active_row.to_dict()
                     })
             
@@ -511,21 +517,17 @@ with all_tabs[1]:
                 urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&column_name={requests.utils.quote(f_name)}&new_value={requests.utils.quote(safe_val)}")
 
         if urls_to_send:
-            with st.spinner("Syncing modifications to Cloud..."):
+            with st.spinner("Syncing modifications to Cloud (Sequential Safe Mode)..."):
                 has_error = False
                 
-                def send_req(url):
+                session = requests.Session()
+                for url in urls_to_send:
                     try:
-                        return requests.get(url, timeout=15, allow_redirects=False)
-                    except:
-                        return None
-                        
-                with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-                    results = executor.map(send_req, set(urls_to_send))
-                    
-                for res in results:
-                    if res and res.status_code not in [200, 302] and "Error" in res.text:
-                        st.error(f"Cloud Error: {res.text}")
+                        res = session.get(url, timeout=15, allow_redirects=True)
+                        if res.status_code not in [200, 302] and "Error" in res.text:
+                            st.error(f"Cloud Error: {res.text}")
+                            has_error = True
+                    except Exception as e:
                         has_error = True
                         
                 if has_error:
@@ -563,7 +565,7 @@ with all_tabs[1]:
             display_route = filtered_route.copy().reset_index(drop=True)
             
             if "Step" in display_route.columns:
-                display_route["Step"] = display_route["Step"].astype(str).str.replace(".0", "", regex=False)
+                display_route["Step"] = display_route["Step"].apply(clean_step)
             
             wip_row_idx = 0
             fco_col_hist = next((c for c in display_route.columns if "check out" in str(c).lower()), "Check out Time")
@@ -625,7 +627,7 @@ with all_tabs[1]:
             
             if selected_route_row and selected_route_row.get("selection", {}).get("rows"):
                 selected_idx = selected_route_row["selection"]["rows"][0]
-                target_step_no = str(original_display_route.iloc[selected_idx].get("Step", "")).replace(".0", "").strip()
+                target_step_no = clean_step(original_display_route.iloc[selected_idx].get("Step", ""))
                 target_row_data = original_display_route.iloc[selected_idx].to_dict()
                 
                 st.markdown("---")
@@ -636,7 +638,7 @@ with all_tabs[1]:
                     show_history_edit_dialog(search_id, target_step_no, target_row_data)
                 
                 log_wafer_col = [c for c in df_logs.columns if "Wafer" in c or "晶圓" in c][0]
-                clean_log_steps = df_logs["Step"].astype(str).str.replace(".0", "", regex=False).str.strip()
+                clean_log_steps = df_logs["Step"].apply(clean_step)
                 step_logs = df_logs[(df_logs[log_wafer_col].astype(str).str.upper() == search_id.upper()) & (clean_log_steps == target_step_no)]
                 
                 mother_result_val = str(original_display_route.iloc[selected_idx].get("Result", "")).strip()
@@ -749,11 +751,10 @@ with all_tabs[3]:
                 is_banked = False
                 bank_step_no, bank_comment = "", ""
                 
-                # 🎯 取得 Shuttle Owner 與團隊資訊
                 rep_owner = ""
                 rep_team = ""
                 for _, r in w_group.iterrows():
-                    raw_s = str(r.get(step_col, "")).replace(".0", "").strip()
+                    raw_s = clean_step(r.get(step_col, ""))
                     if raw_s == "1":
                         rep_owner = str(r.get(owner_col, ""))
                         rep_team = str(r.get(team_col, ""))
@@ -859,11 +860,10 @@ with all_tabs[3]:
             for shuttle, s_group in df_route_bank.groupby(shuttle_col, sort=False):
                 if str(shuttle).strip() == "": continue
                 
-                # 🎯 取得 Shuttle Owner 與團隊資訊供統計總表使用
                 rep_owner = ""
                 rep_team = ""
                 for _, r in s_group.iterrows():
-                    raw_s = str(r.get(step_col, "")).replace(".0", "").strip()
+                    raw_s = clean_step(r.get(step_col, ""))
                     if raw_s == "1":
                         rep_owner = str(r.get(owner_col, ""))
                         rep_team = str(r.get(team_col, ""))
@@ -965,7 +965,7 @@ with all_tabs[4]:
                     w_group = s_group[s_group[wafer_col] == wid].reset_index(drop=True)
                     total_steps = len(w_group)
                     has_scrap, is_banked, wip_idx = False, False, total_steps  
-                    raw_last_step = str(w_group.iloc[-1].get(step_col, "")).replace(".0", "").strip()
+                    raw_last_step = clean_step(w_group.iloc[-1].get(step_col, ""))
                     wip_step_no = str(total_steps) if raw_last_step in ["", "nan", "NaN", "None"] else raw_last_step
                     status_html = '<span class="status-dot" style="background-color: #0d6efd;"></span> Shipped (已出貨)'
                     
@@ -973,7 +973,7 @@ with all_tabs[4]:
                         fco = str(row.get(fco_col, "")).strip().upper()
                         if fco == "SCRP":
                             has_scrap, wip_idx = True, idx
-                            raw_step = str(row.get(step_col, "")).replace(".0", "").strip()
+                            raw_step = clean_step(row.get(step_col, ""))
                             wip_step_no = str(idx + 1) if raw_step in ["", "nan", "NaN", "None"] else raw_step
                             status_html = f'<span class="status-dot" style="background-color: #dc3545;"></span> SCRAPPED: {row.get(desc_col, "")}'
                             break
@@ -983,7 +983,7 @@ with all_tabs[4]:
                             fco = str(row.get(fco_col, "")).strip().upper()
                             if fco in ["", "NAN", "INPR", "HOLD", "BANK"]:
                                 wip_idx = idx
-                                raw_step = str(row.get(step_col, "")).replace(".0", "").strip()
+                                raw_step = clean_step(row.get(step_col, ""))
                                 wip_step_no = str(idx + 1) if raw_step in ["", "nan", "NaN", "None"] else raw_step
                                 if fco == "HOLD": status_html = f'<span class="status-dot" style="background-color: #ffc107;"></span> HOLD: {row.get(desc_col, "")}'
                                 elif fco == "BANK": is_banked = True
