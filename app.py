@@ -14,12 +14,15 @@ st.set_page_config(layout="wide", page_title="TSRI Lot Tracing System")
 if "search_wafer_id_history" not in st.session_state:
     st.session_state.search_wafer_id_history = ""
 
+# 🎯 初始化一個 flag，用來控制表格的 selection state 是否需要被強制清空
+if "clear_ongoing_selection" not in st.session_state:
+    st.session_state.clear_ongoing_selection = False
+
 st.markdown("<div style='font-size: 20px; font-weight: bold; padding-top: 1rem; padding-bottom: 1rem;'>TSRI Lot Tracing System</div>", unsafe_allow_html=True)
 
 MY_ORGANIZATION_GAS_URL = "https://script.google.com/macros/s/AKfycbxSpHeSlbCyMgn0cH60fh62eM_nYoaCwkSCZF1UJMTeC-3z1wQJ1RVLXge1kvzadmKM/exec"
 SPREADSHEET_ID = "1RQt29KIb4rkVo4A-Y3GouMAezYEBakb1q283d1sgdZU"
 
-# 🎯 終極版 clean_step：加入數學精度校正，完美消滅浮點數誤差 (如 68.139999 -> 68.14)
 def clean_step(val):
     s = str(val).strip()
     if not s or s in ["nan", "NaN", "None"]:
@@ -27,15 +30,11 @@ def clean_step(val):
     
     try:
         f_val = float(s)
-        # 判斷是否為整數 (處理 61.0 或 61.000000001 這種精度誤差)
         if abs(f_val - round(f_val)) < 1e-6:
             return str(int(round(f_val)))
         else:
-            # 若為小數支線，強制四捨五入到小數點後兩位，並確保字串回傳
-            # 這能同時解決 68.139999 變 68.14，以及 68.1 變成 68.10 的問題！
             return f"{f_val:.2f}"
     except:
-        # 若包含非數字字元 (例如 68A)，則保留原本的文字去尾
         if s.endswith(".0"):
             return s[:-2]
         return s
@@ -281,7 +280,6 @@ with all_tabs[0]:
         urls_to_send = []
         
         enc_w_id = requests.utils.quote(str(pa["w_id"]))
-        # 🎯 直接拿乾淨無瑕的字串 (例如 "68.14")
         enc_s_no = requests.utils.quote(str(pa["s_no"]))
         
         final_result_link = ""
@@ -375,7 +373,12 @@ with all_tabs[0]:
                 else:
                     st.success(f"Action Successfully Submitted! ({success_count} requests)")
                     time.sleep(1.2)
+                    
                 st.cache_data.clear()
+                
+                # 🎯 標記需要清除表格選取狀態
+                st.session_state.clear_ongoing_selection = True
+                
                 st.rerun()
 
     df_route, conn_status = fetch_route_data_via_csv("route_template")
@@ -495,13 +498,24 @@ with all_tabs[0]:
                 if "ongoing_last_sel" not in st.session_state:
                     st.session_state.ongoing_last_sel = []
 
+                # 🎯 檢查是否需要清除選取狀態，若是，則將 state 設成空值並關閉 flag
+                sel_state = "single-row"
+                if st.session_state.clear_ongoing_selection:
+                    st.session_state.ongoing_last_sel = []
+                    st.session_state.clear_ongoing_selection = False
+                    
+                    # 透過更改 key 強制讓 Streamlit 重新渲染乾淨的 dataframe 元件，達到完全清除勾選的效果
+                    table_key = f"ongoing_wafer_table_{time.time()}" 
+                else:
+                    table_key = "ongoing_wafer_table"
+
                 selection = st.dataframe(
                     styled_df,
                     use_container_width=True,
                     hide_index=True,
                     on_select="rerun",
-                    selection_mode="single-row",
-                    key="ongoing_wafer_table"
+                    selection_mode=sel_state,
+                    key=table_key
                 )
                 
                 curr_sel = selection.get("selection", {}).get("rows", [])
@@ -879,7 +893,8 @@ with all_tabs[3]:
                         enc_comment = requests.utils.quote("[KICK OFF] 從 Bank Wafers 批次出庫下線")
                         
                         for w, s in zip(selected_wids, selected_steps):
-                            urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={requests.utils.quote(str(w))}&step_no={requests.utils.quote(str(s))}&action=Kick%20off&comment={enc_comment}&time={enc_time}")
+                            enc_s = requests.utils.quote(gas_safe_step(s))
+                            urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={requests.utils.quote(str(w))}&step_no={enc_s}&action=Kick%20off&comment={enc_comment}&time={enc_time}")
                             
                         with st.spinner(f"Syncing Kick off for {len(selected_wids)} wafers..."):
                             has_err = False
