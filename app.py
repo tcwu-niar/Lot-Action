@@ -409,12 +409,15 @@ with all_tabs[0]:
                 if active_row is not None:
                     raw_step = clean_step(active_row.get(step_col, ""))
                     
-                    # 🎯 自動判斷總站數：若為含有小數點的支線 (RDL)，以此晶圓的實際總站數為分母
-                    is_sub_route = any("." in clean_step(x) for x in w_group[step_col].dropna().tolist())
-                    total_display = len(w_group) if is_sub_route else 92
-                    
-                    # 若 raw_step 是空值，代表它剛好在最後一步的邊緣，則以 wip_idx + 1 作為當前步數顯示
-                    wip_step_no = str(wip_idx + 1) if raw_step in ["", "nan", "NaN", "None"] else raw_step
+                    # 🎯 Ongoing 頁籤也支援主副進度字串顯示
+                    if "." in raw_step:
+                        parts = raw_step.split(".")
+                        main_val = parts[0]
+                        sub_val = parts[1]
+                        sub_total = sum(1 for s in w_group[step_col] if str(s).strip().startswith(f"{main_val}."))
+                        wip_step_no = f"{main_val}/92 (Sub: {sub_val}/{sub_total})"
+                    else:
+                        wip_step_no = f"{raw_step}/92"
                     
                     s_owner = str(active_row.get(owner_col, ""))
                     s_desc = str(active_row.get(desc_col, ""))
@@ -425,7 +428,7 @@ with all_tabs[0]:
                     wip_data_list.append({
                         "Lot Owner": lot_owner,
                         "ID (Wafer)": wid,
-                        "Step": f"{wip_step_no}/{total_display}",
+                        "Step": wip_step_no,
                         "Stage Owner": s_owner,
                         "Module": s_module,
                         "Step Description": s_desc,
@@ -944,6 +947,7 @@ with all_tabs[4]:
         desc_col = next((c for c in df_route.columns if "description" in str(c).lower()), "Step description")
         
         if wafer_col in df_route.columns:
+            # 🎯 取消進度條的 rowspan 合併設定，讓每片 Wafer 都獨立顯示雙進度條
             html_table = """<style>.overview-table { width: 100%; border-collapse: collapse; font-family: sans-serif; font-size: 14px; margin-top: 10px; } .overview-table th { background-color: #f8f9fa; padding: 12px 10px; border: 1px solid #dee2e6; text-align: left; font-weight: bold; color: #495057; } .overview-table td { padding: 10px; border: 1px solid #dee2e6; text-align: left; vertical-align: middle; color: #212529; } .overview-table .merged-cell { text-align: center; vertical-align: middle; font-weight: bold; background-color: #ffffff; color: #0d6efd; } .overview-table .owner-team-cell { text-align: center; vertical-align: middle; background-color: #ffffff; } .prog-wrapper { display: flex; align-items: center; width: 100%; } .prog-container { background-color: #e9ecef; border-radius: 4px; flex-grow: 1; height: 16px; overflow: hidden; } .prog-bar { background-color: #28a745; height: 100%; border-radius: 4px; transition: width 0.4s ease; } .prog-text { margin-left: 10px; font-size: 13px; font-weight: 500; min-width: 35px; text-align: right; } .status-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }</style><table class="overview-table"><tr><th>Shuttle Name</th><th>Owner</th><th>團隊</th><th style="width: 90px; text-align: center;">已出貨</th><th>ID (Wafer)</th><th>Step</th><th>Status</th><th style="width: 200px;">進度條</th></tr>"""
             df_route[shuttle_col] = df_route[shuttle_col].fillna("")
             df_route[team_col] = df_route[team_col].fillna("")
@@ -968,65 +972,85 @@ with all_tabs[4]:
                     w_group = s_group[s_group[wafer_col] == wid].reset_index(drop=True)
                     total_steps = len(w_group)
                     
-                    # 🎯 取得此晶圓的實際總站數，避免含有小數點子站點的 RDL 晶圓破圖
-                    actual_total_steps = 0
-                    for _, row in w_group.iterrows():
-                        val = clean_step(row.get(step_col, ""))
-                        if val:
-                            actual_total_steps += 1
-                    if actual_total_steps == 0: actual_total_steps = total_steps
-                    
                     has_scrap, is_banked, wip_idx = False, False, total_steps  
-                    raw_last_step = clean_step(w_group.iloc[-1].get(step_col, ""))
-                    wip_step_no = str(actual_total_steps) if raw_last_step in ["", "nan", "NaN", "None"] else raw_last_step
-                    status_html = '<span class="status-dot" style="background-color: #0d6efd;"></span> Shipped (已出貨)'
-                    
-                    # 🎯 這裡改為紀錄當前走到第幾個實際有效站點 (用以計算進度條的分子)
-                    actual_current_idx = 1
                     
                     for idx, row in w_group.iterrows():
                         fco = str(row.get(fco_col, "")).strip().upper()
                         if fco == "SCRP":
                             has_scrap, wip_idx = True, idx
-                            raw_step = clean_step(row.get(step_col, ""))
-                            wip_step_no = str(actual_current_idx) if raw_step in ["", "nan", "NaN", "None"] else raw_step
-                            status_html = f'<span class="status-dot" style="background-color: #dc3545;"></span> SCRAPPED: {row.get(desc_col, "")}'
                             break
-                        actual_current_idx += 1
                             
                     if not has_scrap:
-                        actual_current_idx = 1
                         for idx, row in w_group.iterrows():
                             fco = str(row.get(fco_col, "")).strip().upper()
                             if fco in ["", "NAN", "INPR", "HOLD", "BANK"]:
                                 wip_idx = idx
-                                raw_step = clean_step(row.get(step_col, ""))
-                                wip_step_no = str(actual_current_idx) if raw_step in ["", "nan", "NaN", "None"] else raw_step
-                                if fco == "HOLD": status_html = f'<span class="status-dot" style="background-color: #ffc107;"></span> HOLD: {row.get(desc_col, "")}'
-                                elif fco == "BANK": is_banked = True
-                                else: status_html = f'<span class="status-dot" style="background-color: #198754;"></span> INPR: {row.get(desc_col, "")}'
+                                if fco == "BANK": is_banked = True
                                 break
-                            actual_current_idx += 1
                                 
                     if is_banked: continue
                     is_shipped = True if (wip_idx == total_steps and not has_scrap) else False
                     
-                    # 🎯 修正進度條比例計算邏輯
-                    # 如果該站點本身帶有數字，就嘗試擷取最前面的整數 (例如 68.21 -> 68) 或是直接使用 actual_current_idx
-                    try:
-                        step_num = float(wip_step_no)
-                    except:
-                        nums = re.findall(r'\d+', str(wip_step_no))
-                        step_num = float(nums[0]) if nums else float(actual_current_idx)
+                    if wip_idx < total_steps:
+                        active_row = w_group.iloc[wip_idx]
+                        raw_step = clean_step(active_row.get(step_col, ""))
+                        fco_val = str(active_row.get(fco_col, "")).strip().upper()
+                        if fco_val == "SCRP":
+                            status_html = f'<span class="status-dot" style="background-color: #dc3545;"></span> SCRAPPED: {active_row.get(desc_col, "")}'
+                        elif fco_val == "HOLD":
+                            status_html = f'<span class="status-dot" style="background-color: #ffc107;"></span> HOLD: {active_row.get(desc_col, "")}'
+                        else:
+                            status_html = f'<span class="status-dot" style="background-color: #198754;"></span> INPR: {active_row.get(desc_col, "")}'
+                    else:
+                        raw_step = clean_step(w_group.iloc[-1].get(step_col, ""))
+                        status_html = '<span class="status-dot" style="background-color: #0d6efd;"></span> Shipped (已出貨)'
                         
-                    progress_pct = min(int((step_num / float(actual_total_steps)) * 100), 100)
+                    wip_step_no = str(wip_idx + 1) if raw_step in ["", "nan", "NaN", "None"] else raw_step
+                    
+                    # 🎯 核心邏輯：判斷當前站點是否有小數點 (支線)，動態生成雙層進度條
+                    if "." in wip_step_no:
+                        parts = wip_step_no.split(".")
+                        main_str = parts[0]
+                        sub_str = parts[1]
+                        
+                        main_val = int(re.findall(r'\d+', main_str)[0]) if re.findall(r'\d+', main_str) else 0
+                        sub_val = int(re.findall(r'\d+', sub_str)[0]) if re.findall(r'\d+', sub_str) else 0
+                        
+                        sub_total = sum(1 for s in w_group[step_col] if str(s).strip().startswith(f"{main_str}."))
+                        if sub_total == 0: sub_total = 24 
+                        
+                        main_pct = min(int((main_val / 92) * 100), 100)
+                        sub_pct = min(int((sub_val / sub_total) * 100), 100)
+                        
+                        step_display = f"{main_val}/92<br><span style='color: #6c757d; font-size: 0.85em;'>{sub_val}/{sub_total}</span>"
+                        prog_display = f'''
+                        <div class="prog-wrapper" style="margin-bottom: 4px;">
+                            <div class="prog-container"><div class="prog-bar" style="width: {main_pct}%;"></div></div>
+                            <div class="prog-text">{main_pct}%</div>
+                        </div>
+                        <div class="prog-wrapper">
+                            <div class="prog-container"><div class="prog-bar" style="width: {sub_pct}%; background-color: #17a2b8;"></div></div>
+                            <div class="prog-text">{sub_pct}%</div>
+                        </div>
+                        '''
+                    else:
+                        main_val = int(re.findall(r'\d+', wip_step_no)[0]) if re.findall(r'\d+', wip_step_no) else 0
+                        main_pct = min(int((main_val / 92) * 100), 100)
+                        
+                        step_display = f"{main_val}/92"
+                        prog_display = f'''
+                        <div class="prog-wrapper">
+                            <div class="prog-container"><div class="prog-bar" style="width: {main_pct}%;"></div></div>
+                            <div class="prog-text">{main_pct}%</div>
+                        </div>
+                        '''
                     
                     team_valid_wafers.append({
                         "id": wid, 
-                        "step": f"{wip_step_no}/{actual_total_steps}", # 🎯 動態帶入當前步數與總步數
+                        "step": step_display, 
                         "status": status_html, 
                         "is_shipped": is_shipped, 
-                        "progress_pct": progress_pct
+                        "prog_display": prog_display
                     })
                     
                     if is_shipped:
@@ -1035,7 +1059,7 @@ with all_tabs[4]:
                             "Owner": rep_owner,
                             "團隊": rep_team,
                             "ID (Wafer)": wid,
-                            "Step": f"{wip_step_no}/{actual_total_steps}",
+                            "Step": step_display.split("<br>")[0],
                             "Status": "🟢 Shipped (已出貨)"
                         })
                 
@@ -1057,22 +1081,22 @@ with all_tabs[4]:
                     
                     is_first_in_team = True
                     shipped_count = sum(1 for w in t_data["wafers"] if w["is_shipped"])
-                    max_progress_pct = max([w["progress_pct"] for w in inpr_wafers] + [0])
 
                     for w_data in inpr_wafers:
                         html_table += "<tr>"
                         if is_first_in_shuttle:
                             html_table += f'<td class="merged-cell" rowspan="{shuttle_inpr_count}">{shuttle}</td><td class="owner-team-cell" rowspan="{shuttle_inpr_count}">{s_data["owner"]}</td>'
                             is_first_in_shuttle = False
+                        
                         if is_first_in_team:
                             html_table += f'<td class="owner-team-cell" rowspan="{team_rowspan}">{t_data["team_name"]}</td><td class="merged-cell" rowspan="{team_rowspan}">{shipped_count}</td>'
-                        
-                        html_table += f"<td>{w_data['id']}</td><td>{w_data['step']}</td><td>{w_data['status']}</td>"
-                        
-                        if is_first_in_team:
-                            html_table += f'<td rowspan="{team_rowspan}"><div class="prog-wrapper"><div class="prog-container"><div class="prog-bar" style="width: {max_progress_pct}%;"></div></div><div class="prog-text">{max_progress_pct}%</div></div></td>'
                             is_first_in_team = False
+                        
+                        # 🎯 把獨立專屬的進度條分配給各個 Wafer 列
+                        html_table += f"<td>{w_data['id']}</td><td>{w_data['step']}</td><td>{w_data['status']}</td>"
+                        html_table += f"<td>{w_data['prog_display']}</td>"
                         html_table += "</tr>"
+                        
             html_table += "</table>"
             
             if has_inpr_wafers:
