@@ -14,7 +14,6 @@ st.set_page_config(layout="wide", page_title="TSRI Lot Tracing System")
 if "search_wafer_id_history" not in st.session_state:
     st.session_state.search_wafer_id_history = ""
 
-# 🎯 初始化一個 flag，用來控制表格的 selection state 是否需要被強制清空
 if "clear_ongoing_selection" not in st.session_state:
     st.session_state.clear_ongoing_selection = False
 
@@ -375,10 +374,7 @@ with all_tabs[0]:
                     time.sleep(1.2)
                     
                 st.cache_data.clear()
-                
-                # 🎯 標記需要清除表格選取狀態
                 st.session_state.clear_ongoing_selection = True
-                
                 st.rerun()
 
     df_route, conn_status = fetch_route_data_via_csv("route_template")
@@ -498,13 +494,10 @@ with all_tabs[0]:
                 if "ongoing_last_sel" not in st.session_state:
                     st.session_state.ongoing_last_sel = []
 
-                # 🎯 檢查是否需要清除選取狀態，若是，則將 state 設成空值並關閉 flag
                 sel_state = "single-row"
                 if st.session_state.clear_ongoing_selection:
                     st.session_state.ongoing_last_sel = []
                     st.session_state.clear_ongoing_selection = False
-                    
-                    # 透過更改 key 強制讓 Streamlit 重新渲染乾淨的 dataframe 元件，達到完全清除勾選的效果
                     table_key = f"ongoing_wafer_table_{time.time()}" 
                 else:
                     table_key = "ongoing_wafer_table"
@@ -893,8 +886,7 @@ with all_tabs[3]:
                         enc_comment = requests.utils.quote("[KICK OFF] 從 Bank Wafers 批次出庫下線")
                         
                         for w, s in zip(selected_wids, selected_steps):
-                            enc_s = requests.utils.quote(gas_safe_step(s))
-                            urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={requests.utils.quote(str(w))}&step_no={enc_s}&action=Kick%20off&comment={enc_comment}&time={enc_time}")
+                            urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={requests.utils.quote(str(w))}&step_no={requests.utils.quote(str(s))}&action=Kick%20off&comment={enc_comment}&time={enc_time}")
                             
                         with st.spinner(f"Syncing Kick off for {len(selected_wids)} wafers..."):
                             has_err = False
@@ -1096,7 +1088,8 @@ with all_tabs[4]:
                         sub_pct = min(int((curr_sub_val / sub_total) * 100), 100)
                         
                         step_display = f"{curr_main_val}/92<br><span style='color: #17a2b8; font-weight: bold;'>{curr_sub_val}/{sub_total}</span>"
-                        prog_display = f'<div class="prog-wrapper" style="margin-bottom: 4px;"><div class="prog-container"><div class="prog-bar" style="width: {main_pct}%;"></div></div><div class="prog-text">{curr_main_val}/92 ({main_pct}%)</div></div><div class="prog-wrapper"><div class="prog-container"><div class="prog-bar" style="width: {sub_pct}%; background-color: #17a2b8;"></div></div><div class="prog-text" style="color: #17a2b8;">{curr_sub_val}/{sub_total} ({sub_pct}%)</div></div>'
+                        # 🎯 進度條文字只顯示百分比
+                        prog_display = f'<div class="prog-wrapper" style="margin-bottom: 4px;"><div class="prog-container"><div class="prog-bar" style="width: {main_pct}%;"></div></div><div class="prog-text">{main_pct}%</div></div><div class="prog-wrapper"><div class="prog-container"><div class="prog-bar" style="width: {sub_pct}%; background-color: #17a2b8;"></div></div><div class="prog-text" style="color: #17a2b8;">{sub_pct}%</div></div>'
                     else:
                         curr_main_val = int(re.findall(r'\d+', wip_step_no)[0]) if re.findall(r'\d+', wip_step_no) else 0
                         main_pct = min(int((curr_main_val / 92) * 100), 100)
@@ -1114,10 +1107,12 @@ with all_tabs[4]:
                                 sub_pct = 0
                                 
                             step_display = f"{curr_main_val}/92<br><span style='color: #17a2b8; font-weight: bold;'>{curr_sub_val}/{sub_total}</span>"
-                            prog_display = f'<div class="prog-wrapper" style="margin-bottom: 4px;"><div class="prog-container"><div class="prog-bar" style="width: {main_pct}%;"></div></div><div class="prog-text">{curr_main_val}/92 ({main_pct}%)</div></div><div class="prog-wrapper"><div class="prog-container"><div class="prog-bar" style="width: {sub_pct}%; background-color: #17a2b8;"></div></div><div class="prog-text" style="color: #17a2b8;">{curr_sub_val}/{sub_total} ({sub_pct}%)</div></div>'
+                            # 🎯 進度條文字只顯示百分比
+                            prog_display = f'<div class="prog-wrapper" style="margin-bottom: 4px;"><div class="prog-container"><div class="prog-bar" style="width: {main_pct}%;"></div></div><div class="prog-text">{main_pct}%</div></div><div class="prog-wrapper"><div class="prog-container"><div class="prog-bar" style="width: {sub_pct}%; background-color: #17a2b8;"></div></div><div class="prog-text" style="color: #17a2b8;">{sub_pct}%</div></div>'
                         else:
                             step_display = f"{curr_main_val}/92"
-                            prog_display = f'<div class="prog-wrapper"><div class="prog-container"><div class="prog-bar" style="width: {main_pct}%;"></div></div><div class="prog-text">{curr_main_val}/92 ({main_pct}%)</div></div>'
+                            # 🎯 進度條文字只顯示百分比
+                            prog_display = f'<div class="prog-wrapper"><div class="prog-container"><div class="prog-bar" style="width: {main_pct}%;"></div></div><div class="prog-text">{main_pct}%</div></div>'
                     
                     team_valid_wafers.append({
                         "id": wid, 
