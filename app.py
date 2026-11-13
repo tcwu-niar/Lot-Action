@@ -12,12 +12,31 @@ import concurrent.futures
 st.set_page_config(layout="wide", page_title="TSRI Lot Tracing System")
 
 if "search_wafer_id_history" not in st.session_state:
-    st.session_state.search_wafer_id_history = ""
+    st.session_state.search_wafer_id_history = "LOT4-11F0"
 
-st.markdown("<div style='font-size: 20px; font-weight: bold; padding-top: 1rem; padding-bottom: 1rem;'>TSRI Lot Tracing System-UAT Environment</div>", unsafe_allow_html=True)
+if "clear_ongoing_selection" not in st.session_state:
+    st.session_state.clear_ongoing_selection = False
+
+st.markdown("<div style='font-size: 20px; font-weight: bold; padding-top: 1rem; padding-bottom: 1rem;'>TSRI Lot Tracing System</div>", unsafe_allow_html=True)
 
 MY_ORGANIZATION_GAS_URL = "https://script.google.com/macros/s/AKfycbx9pptKpV0dUDtGifGCbQnO33d42eUbbODnjVq_g4yitOviXtq6_8TdMo7VT7HL9dC-6w/exec"
 SPREADSHEET_ID = "1HIcyPgjoHWA3Wgj8gohyEN2s-kF5A6OGEWuR0wDqULU"
+
+def clean_step(val):
+    s = str(val).strip()
+    if not s or s in ["nan", "NaN", "None"]:
+        return ""
+    
+    try:
+        f_val = float(s)
+        if abs(f_val - round(f_val)) < 1e-6:
+            return str(int(round(f_val)))
+        else:
+            return f"{f_val:.2f}"
+    except:
+        if s.endswith(".0"):
+            return s[:-2]
+        return s
 
 @st.cache_data(ttl=15)
 def fetch_route_data_via_csv(sheet_name="route_template"):
@@ -32,7 +51,7 @@ def fetch_route_data_via_csv(sheet_name="route_template"):
             if "<html" in response.text.lower() or "<doctype" in response.text.lower():
                 return pd.DataFrame(), "權限受阻，請確保試算表已開啟連結共用"
             from io import StringIO
-            df_data = pd.read_csv(StringIO(response.text))
+            df_data = pd.read_csv(StringIO(response.text), dtype=str)
             df_data.columns = [str(c).strip().replace('\n', '').replace('\r', '') for c in df_data.columns]
             df_data = df_data.fillna("")
             for col in df_data.columns:
@@ -50,7 +69,8 @@ def fetch_route_data_via_csv(sheet_name="route_template"):
 
 @st.dialog(" ", width="large")
 def show_ongoing_action_dialog(tw_id, ts_no, target_row_dict, avail_steps):
-    st.markdown(f"**Wafer ID:** `{tw_id}` | **Step:** `{ts_no}`")
+    safe_ts_no = clean_step(ts_no)
+    st.markdown(f"**Wafer ID:** `{tw_id}` | **Step:** `{safe_ts_no}`")
     st.caption("*(💡 This Wafer ID has been synced to the Wafer History tab)*")
     
     current_status = str(target_row_dict.get("Check out Time", "")).strip().upper()
@@ -67,7 +87,7 @@ def show_ongoing_action_dialog(tw_id, ts_no, target_row_dict, avail_steps):
     with c3: edit_cp = st.text_input("Check Point", value=target_row_dict.get("Check point", ""))
     
     spc_data = st.text_input("**Data**")
-    result_image = st.file_uploader("**Result Image**", type=["png", "jpg", "jpeg"], key=f"img_{tw_id}_{ts_no}")
+    result_image = st.file_uploader("**Result Image**", type=["png", "jpg", "jpeg"], key=f"img_{tw_id}_{safe_ts_no}")
     
     st.markdown("---")
     st.markdown("**Wafer Action**")
@@ -119,7 +139,7 @@ def show_ongoing_action_dialog(tw_id, ts_no, target_row_dict, avail_steps):
         st.session_state.ongoing_action = {
             "name": action_name, 
             "w_id": tw_id, 
-            "s_no": ts_no, 
+            "s_no": safe_ts_no,
             "spc": spc_data, 
             "img": result_image, 
             "jump_step": jump_target, 
@@ -133,7 +153,7 @@ def show_ongoing_action_dialog(tw_id, ts_no, target_row_dict, avail_steps):
         st.rerun()
 
     st.markdown("---")
-    with st.expander("📜 View Wafer History"):
+    with st.expander("📜 View Wafer History", expanded=True):
         df_route_hist, _ = fetch_route_data_via_csv("route_template")
         if not df_route_hist.empty:
             wafer_col_list = [c for c in df_route_hist.columns if "Wafer" in c or "wafer" in c]
@@ -143,7 +163,7 @@ def show_ongoing_action_dialog(tw_id, ts_no, target_row_dict, avail_steps):
                 if not filtered_route.empty:
                     display_route = filtered_route.copy().reset_index(drop=True)
                     if "Step" in display_route.columns:
-                        display_route["Step"] = display_route["Step"].astype(str).str.replace(".0", "", regex=False)
+                        display_route["Step"] = display_route["Step"].apply(clean_step)
                     
                     wip_row_idx = 0
                     fco_col_hist = next((c for c in display_route.columns if "check out" in str(c).lower()), "Check out Time")
@@ -225,8 +245,43 @@ def show_history_edit_dialog(tw_id, ts_no, target_row_dict):
     
     st.markdown("---")
     st.markdown("**Status Management (Rework / Undo)**")
+    
+    # 🎯 全新日曆與時間選擇器設計
     current_fco = str(target_row_dict.get("Check out Time", "")).strip()
-    edit_fco = st.text_input("Check out Time (Clear this field to revert wafer to this step)", value=current_fco)
+    st.markdown(f"**Current Status / Time:** `{current_fco if current_fco else 'Empty'}`")
+    
+    fco_action = st.radio(
+        "Modify Check out Time:",
+        ["Keep Original (保持原本狀態)", "Set New Date & Time (設定新時間)", "Clear Time (清除時間以退站)"],
+        horizontal=True,
+        label_visibility="collapsed"
+    )
+    
+    # 智慧預設值：嘗試解析原本的時間，若無法解析(例如原本是空值或HOLD)，就用現在時間
+    default_date = datetime.datetime.now().date()
+    default_time = datetime.datetime.now().time()
+    
+    if current_fco:
+        try:
+            parsed_dt = pd.to_datetime(current_fco)
+            default_date = parsed_dt.date()
+            default_time = parsed_dt.time()
+        except:
+            pass
+            
+    cd1, cd2 = st.columns(2)
+    with cd1:
+        sel_date = st.date_input("Select Date", value=default_date, disabled=(fco_action != "Set New Date & Time"))
+    with cd2:
+        sel_time = st.time_input("Select Time", value=default_time, step=60, disabled=(fco_action != "Set New Date & Time"))
+        
+    # 依據選擇組合最終要送出的 Check out Time 字串
+    if fco_action == "Keep Original (保持原本狀態)":
+        edit_fco = current_fco
+    elif fco_action == "Clear Time (清除時間以退站)":
+        edit_fco = ""
+    else:
+        edit_fco = f"{sel_date.strftime('%Y-%m-%d')} {sel_time.strftime('%H:%M:%S')}"
     
     if st.button("Confirm and Submit", type="primary", use_container_width=True):
         st.session_state.history_edit_action = {
@@ -283,8 +338,15 @@ with all_tabs[0]:
                 safe_val = new_v_str if new_v_str != "" else " "
                 urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&column_name={requests.utils.quote(f_name)}&new_value={requests.utils.quote(safe_val)}")
                 
-        if str(pa["spc"]).strip():
-            urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&column_name=SPC%20data&new_value={requests.utils.quote(str(pa['spc']).strip())}")
+        new_spc_val = str(pa["spc"]).strip()
+        if new_spc_val:
+            if "SPC data" in pa["orig_row"]:
+                urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&column_name=SPC%20data&new_value={requests.utils.quote(new_spc_val)}")
+            elif "Comments" in pa["orig_row"]:
+                urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&column_name=Comments&new_value={requests.utils.quote(new_spc_val)}")
+            elif "備註" in pa["orig_row"]:
+                urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&column_name=備註&new_value={requests.utils.quote(new_spc_val)}")
+                
         if final_result_link:
             urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&column_name=Result&new_value={requests.utils.quote(final_result_link)}")
                 
@@ -292,16 +354,16 @@ with all_tabs[0]:
         enc_comment = requests.utils.quote(pa.get("comment", ""))
         act = pa["name"]
         
-        if act == "Check out": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Check out&comment={enc_comment}&time={enc_time}")
+        if act == "Check out": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Check%20out&comment={enc_comment}&time={enc_time}")
         elif act == "Scrap": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Scrap&comment={enc_comment}&time={enc_time}")
         elif act == "Unscrap": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Unscrap&comment={enc_comment}&time={enc_time}")
         elif act == "Hold": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Hold&comment={enc_comment}&time={enc_time}")
         elif act == "Unhold": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Unhold&comment={enc_comment}&time={enc_time}")
         elif act == "Bank": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Bank&comment={enc_comment}&time={enc_time}")
         elif act == "Jump / Skip Stage":
-            curr_step = str(pa["s_no"]).replace(".0", "").strip()
-            target_step = str(pa["jump_step"]).replace(".0", "").strip()
-            avail = [str(x).replace(".0", "").strip() for x in pa["avail_steps"]]
+            curr_step = clean_step(pa["s_no"])
+            target_step = clean_step(pa["jump_step"])
+            avail = [clean_step(x) for x in pa["avail_steps"]]
             
             try:
                 curr_idx = avail.index(curr_step)
@@ -312,35 +374,42 @@ with all_tabs[0]:
                 
             if tgt_idx < curr_idx:
                 for i in range(tgt_idx, curr_idx + 1):
-                    enc_step = requests.utils.quote(avail[i])
+                    enc_step = requests.utils.quote(str(avail[i]))
                     urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_step}&column_name=Check%20out%20Time&new_value=%20")
             elif tgt_idx > curr_idx:
-                enc_target = requests.utils.quote(target_step)
+                enc_target = requests.utils.quote(str(target_step))
                 urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Skip&comment={enc_comment}&time={enc_time}&target_step={enc_target}")
             
         if urls_to_send:
-            with st.spinner(f"Syncing to Cloud..."):
+            with st.spinner(f"Syncing to Cloud (Sequential Safe Mode)..."):
                 has_error = False
-                def send_req(url):
+                success_count = 0
+                
+                session = requests.Session()
+                for url in urls_to_send:
                     try:
-                        return requests.get(url, timeout=15, allow_redirects=False)
-                    except:
-                        return None
-                        
-                with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-                    results = executor.map(send_req, set(urls_to_send))
-                    
-                for res in results:
-                    if res and res.status_code not in [200, 302] and "Error" in res.text:
-                        st.error(f"Cloud Error: {res.text}")
+                        res = session.get(url, timeout=20, allow_redirects=True)
+                        if res.status_code not in [200, 302]:
+                            st.error(f"HTTP Error {res.status_code}: {res.text}")
+                            has_error = True
+                        elif "Error" in res.text or "Exception" in res.text or "找不到對應的 Wafer ID 與 Step" in res.text:
+                            st.error(f"GAS Error: {res.text}")
+                            has_error = True
+                        else:
+                            success_count += 1
+                    except Exception as e:
+                        st.error(f"Request Exception: {str(e)}")
                         has_error = True
 
                 if has_error:
-                    time.sleep(3)
+                    st.warning(f"⚠️ 請求遭遇異常 (成功 {success_count}/{len(urls_to_send)})，請截圖本畫面回報開發人員！")
+                    time.sleep(5)
                 else:
-                    st.success("Action Successfully Submitted!")
+                    st.success(f"Action Successfully Submitted! ({success_count} requests)")
                     time.sleep(1.2)
+                    
                 st.cache_data.clear()
+                st.session_state.clear_ongoing_selection = True
                 st.rerun()
 
     df_route, conn_status = fetch_route_data_via_csv("route_template")
@@ -375,7 +444,7 @@ with all_tabs[0]:
                 lot_owner = ""
                 
                 for _, row in w_group.iterrows():
-                    raw_s = str(row.get(step_col, "")).replace(".0", "").strip()
+                    raw_s = clean_step(row.get(step_col, ""))
                     if raw_s == "1":
                         lot_owner = str(row.get(owner_col, ""))
                         break
@@ -404,8 +473,33 @@ with all_tabs[0]:
                 if wip_idx == total_steps and not has_scrap: continue 
                 
                 if active_row is not None:
-                    raw_step = str(active_row.get(step_col, "")).replace(".0", "").strip()
-                    wip_step_no = str(wip_idx + 1) if raw_step in ["", "nan", "NaN", "None"] else raw_step
+                    raw_step = clean_step(active_row.get(step_col, ""))
+                    
+                    sub_steps = [clean_step(x) for x in w_group[step_col] if "." in clean_step(x)]
+                    has_sub_route = len(sub_steps) > 0
+                    
+                    curr_main_val = 0
+                    curr_sub_val = 0
+                    
+                    if "." in raw_step:
+                        parts = raw_step.split(".")
+                        curr_main_val = int(re.findall(r'\d+', parts[0])[0]) if re.findall(r'\d+', parts[0]) else 0
+                        curr_sub_val = int(re.findall(r'\d+', parts[1])[0]) if re.findall(r'\d+', parts[1]) else 0
+                    else:
+                        curr_main_val = int(re.findall(r'\d+', raw_step)[0]) if re.findall(r'\d+', raw_step) else 0
+                        if has_sub_route:
+                            sub_main_str = sub_steps[0].split(".")[0]
+                            sub_main_val = int(re.findall(r'\d+', sub_main_str)[0]) if re.findall(r'\d+', sub_main_str) else 0
+                            if curr_main_val > sub_main_val:
+                                curr_sub_val = len(sub_steps)
+                            else:
+                                curr_sub_val = 0
+                                
+                    if has_sub_route:
+                        actual_sub_val = raw_step.split(".")[1] if "." in raw_step else curr_sub_val
+                        wip_step_no = f"{curr_main_val}/92 (Sub: {actual_sub_val}/{len(sub_steps)})"
+                    else:
+                        wip_step_no = f"{curr_main_val}/92"
                     
                     s_owner = str(active_row.get(owner_col, ""))
                     s_desc = str(active_row.get(desc_col, ""))
@@ -416,14 +510,14 @@ with all_tabs[0]:
                     wip_data_list.append({
                         "Lot Owner": lot_owner,
                         "ID (Wafer)": wid,
-                        "Step": f"{wip_step_no}/92",
+                        "Step": wip_step_no,
                         "Stage Owner": s_owner,
                         "Module": s_module,
                         "Step Description": s_desc,
                         "Process Tool": s_tool,
                         "Recipe": s_recipe,
                         "_raw_step": raw_step,
-                        "_avail_steps": [str(x).replace(".0", "").strip() for x in w_group[step_col].tolist()],
+                        "_avail_steps": [clean_step(x) for x in w_group[step_col].tolist()],
                         "_row_dict": active_row.to_dict()
                     })
             
@@ -435,13 +529,21 @@ with all_tabs[0]:
                 if "ongoing_last_sel" not in st.session_state:
                     st.session_state.ongoing_last_sel = []
 
+                sel_state = "single-row"
+                if st.session_state.clear_ongoing_selection:
+                    st.session_state.ongoing_last_sel = []
+                    st.session_state.clear_ongoing_selection = False
+                    table_key = f"ongoing_wafer_table_{time.time()}" 
+                else:
+                    table_key = "ongoing_wafer_table"
+
                 selection = st.dataframe(
                     styled_df,
                     use_container_width=True,
                     hide_index=True,
                     on_select="rerun",
-                    selection_mode="single-row",
-                    key="ongoing_wafer_table"
+                    selection_mode=sel_state,
+                    key=table_key
                 )
                 
                 curr_sel = selection.get("selection", {}).get("rows", [])
@@ -454,6 +556,8 @@ with all_tabs[0]:
                         selected_item = wip_data_list[selected_idx]
                         
                         st.session_state.search_wafer_id_history = str(selected_item['ID (Wafer)']).strip()
+                        
+                        st.session_state.clear_ongoing_selection = True
                         
                         show_ongoing_action_dialog(
                             selected_item['ID (Wafer)'], 
@@ -494,10 +598,13 @@ with all_tabs[1]:
                 except Exception as e:
                     st.error(f"Upload error: {e}")
         
-        orig_comment = str(pa["orig_row"].get("Comments", "")).strip() or str(pa["orig_row"].get("備註", "")).strip()
-        if str(pa["spc"]).strip() != orig_comment:
-            urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&column_name=Comments&new_value={requests.utils.quote(str(pa['spc']).strip())}")
-            urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&column_name=SPC%20data&new_value={requests.utils.quote(str(pa['spc']).strip())}")
+        new_spc = str(pa['spc']).strip()
+        for col_name in ["SPC data", "Comments", "備註"]:
+            if col_name in pa["orig_row"]:
+                orig_val = str(pa["orig_row"].get(col_name, "")).strip()
+                if new_spc != orig_val:
+                    safe_val = new_spc if new_spc != "" else " "
+                    urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&column_name={requests.utils.quote(col_name)}&new_value={requests.utils.quote(safe_val)}")
 
         if final_result_link:
             urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&column_name=Result&new_value={requests.utils.quote(final_result_link)}")
@@ -511,27 +618,30 @@ with all_tabs[1]:
                 urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&column_name={requests.utils.quote(f_name)}&new_value={requests.utils.quote(safe_val)}")
 
         if urls_to_send:
-            with st.spinner("Syncing modifications to Cloud..."):
+            with st.spinner("Syncing modifications to Cloud (Sequential Safe Mode)..."):
                 has_error = False
-                
-                def send_req(url):
+                success_count = 0
+                session = requests.Session()
+                for url in urls_to_send:
                     try:
-                        return requests.get(url, timeout=15, allow_redirects=False)
-                    except:
-                        return None
-                        
-                with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-                    results = executor.map(send_req, set(urls_to_send))
-                    
-                for res in results:
-                    if res and res.status_code not in [200, 302] and "Error" in res.text:
-                        st.error(f"Cloud Error: {res.text}")
+                        res = session.get(url, timeout=20, allow_redirects=True)
+                        if res.status_code not in [200, 302]:
+                            st.error(f"HTTP Error {res.status_code}: {res.text}")
+                            has_error = True
+                        elif "Error" in res.text or "Exception" in res.text or "找不到對應的 Wafer ID 與 Step" in res.text:
+                            st.error(f"GAS Error: {res.text}")
+                            has_error = True
+                        else:
+                            success_count += 1
+                    except Exception as e:
+                        st.error(f"Request Exception: {str(e)}")
                         has_error = True
                         
                 if has_error:
-                    time.sleep(3)
+                    st.warning(f"⚠️ 請求遭遇異常 (成功 {success_count}/{len(urls_to_send)})，請截圖本畫面回報開發人員！")
+                    time.sleep(5)
                 else:
-                    st.success("Modifications Successfully Submitted!")
+                    st.success(f"Modifications Successfully Submitted! ({success_count} requests)")
                     time.sleep(1.2)
                 st.cache_data.clear()
                 st.rerun()
@@ -563,7 +673,7 @@ with all_tabs[1]:
             display_route = filtered_route.copy().reset_index(drop=True)
             
             if "Step" in display_route.columns:
-                display_route["Step"] = display_route["Step"].astype(str).str.replace(".0", "", regex=False)
+                display_route["Step"] = display_route["Step"].apply(clean_step)
             
             wip_row_idx = 0
             fco_col_hist = next((c for c in display_route.columns if "check out" in str(c).lower()), "Check out Time")
@@ -625,7 +735,7 @@ with all_tabs[1]:
             
             if selected_route_row and selected_route_row.get("selection", {}).get("rows"):
                 selected_idx = selected_route_row["selection"]["rows"][0]
-                target_step_no = str(original_display_route.iloc[selected_idx].get("Step", "")).replace(".0", "").strip()
+                target_step_no = clean_step(original_display_route.iloc[selected_idx].get("Step", ""))
                 target_row_data = original_display_route.iloc[selected_idx].to_dict()
                 
                 st.markdown("---")
@@ -636,7 +746,7 @@ with all_tabs[1]:
                     show_history_edit_dialog(search_id, target_step_no, target_row_data)
                 
                 log_wafer_col = [c for c in df_logs.columns if "Wafer" in c or "晶圓" in c][0]
-                clean_log_steps = df_logs["Step"].astype(str).str.replace(".0", "", regex=False).str.strip()
+                clean_log_steps = df_logs["Step"].apply(clean_step)
                 step_logs = df_logs[(df_logs[log_wafer_col].astype(str).str.upper() == search_id.upper()) & (clean_log_steps == target_step_no)]
                 
                 mother_result_val = str(original_display_route.iloc[selected_idx].get("Result", "")).strip()
@@ -749,11 +859,10 @@ with all_tabs[3]:
                 is_banked = False
                 bank_step_no, bank_comment = "", ""
                 
-                # 🎯 取得 Shuttle Owner 與團隊資訊
                 rep_owner = ""
                 rep_team = ""
                 for _, r in w_group.iterrows():
-                    raw_s = str(r.get(step_col, "")).replace(".0", "").strip()
+                    raw_s = clean_step(r.get(step_col, ""))
                     if raw_s == "1":
                         rep_owner = str(r.get(owner_col, ""))
                         rep_team = str(r.get(team_col, ""))
@@ -814,7 +923,8 @@ with all_tabs[3]:
                         enc_comment = requests.utils.quote("[KICK OFF] 從 Bank Wafers 批次出庫下線")
                         
                         for w, s in zip(selected_wids, selected_steps):
-                            urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={requests.utils.quote(str(w))}&step_no={requests.utils.quote(str(s))}&action=Kick%20off&comment={enc_comment}&time={enc_time}")
+                            enc_s = requests.utils.quote(str(s))
+                            urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={requests.utils.quote(str(w))}&step_no={enc_s}&action=Kick%20off&comment={enc_comment}&time={enc_time}")
                             
                         with st.spinner(f"Syncing Kick off for {len(selected_wids)} wafers..."):
                             has_err = False
@@ -859,11 +969,10 @@ with all_tabs[3]:
             for shuttle, s_group in df_route_bank.groupby(shuttle_col, sort=False):
                 if str(shuttle).strip() == "": continue
                 
-                # 🎯 取得 Shuttle Owner 與團隊資訊供統計總表使用
                 rep_owner = ""
                 rep_team = ""
                 for _, r in s_group.iterrows():
-                    raw_s = str(r.get(step_col, "")).replace(".0", "").strip()
+                    raw_s = clean_step(r.get(step_col, ""))
                     if raw_s == "1":
                         rep_owner = str(r.get(owner_col, ""))
                         rep_team = str(r.get(team_col, ""))
@@ -941,7 +1050,7 @@ with all_tabs[4]:
         desc_col = next((c for c in df_route.columns if "description" in str(c).lower()), "Step description")
         
         if wafer_col in df_route.columns:
-            html_table = """<style>.overview-table { width: 100%; border-collapse: collapse; font-family: sans-serif; font-size: 14px; margin-top: 10px; } .overview-table th { background-color: #f8f9fa; padding: 12px 10px; border: 1px solid #dee2e6; text-align: left; font-weight: bold; color: #495057; } .overview-table td { padding: 10px; border: 1px solid #dee2e6; text-align: left; vertical-align: middle; color: #212529; } .overview-table .merged-cell { text-align: center; vertical-align: middle; font-weight: bold; background-color: #ffffff; color: #0d6efd; } .overview-table .owner-team-cell { text-align: center; vertical-align: middle; background-color: #ffffff; } .prog-wrapper { display: flex; align-items: center; width: 100%; } .prog-container { background-color: #e9ecef; border-radius: 4px; flex-grow: 1; height: 16px; overflow: hidden; } .prog-bar { background-color: #28a745; height: 100%; border-radius: 4px; transition: width 0.4s ease; } .prog-text { margin-left: 10px; font-size: 13px; font-weight: 500; min-width: 35px; text-align: right; } .status-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }</style><table class="overview-table"><tr><th>Shuttle Name</th><th>Owner</th><th>團隊</th><th style="width: 90px; text-align: center;">已出貨</th><th>ID (Wafer)</th><th>Step</th><th>Status</th><th style="width: 200px;">進度條</th></tr>"""
+            html_table = """<style>.overview-table { width: 100%; border-collapse: collapse; font-family: sans-serif; font-size: 14px; margin-top: 10px; } .overview-table th { background-color: #f8f9fa; padding: 12px 10px; border: 1px solid #dee2e6; text-align: left; font-weight: bold; color: #495057; } .overview-table td { padding: 10px; border: 1px solid #dee2e6; text-align: left; vertical-align: middle; color: #212529; } .overview-table .merged-cell { text-align: center; vertical-align: middle; font-weight: bold; background-color: #ffffff; color: #0d6efd; } .overview-table .owner-team-cell { text-align: center; vertical-align: middle; background-color: #ffffff; } .prog-wrapper { display: flex; align-items: center; width: 100%; } .prog-container { background-color: #e9ecef; border-radius: 4px; flex-grow: 1; height: 16px; overflow: hidden; } .prog-bar { background-color: #28a745; height: 100%; border-radius: 4px; transition: width 0.4s ease; } .prog-text { margin-left: 10px; font-size: 13px; font-weight: 500; min-width: 45px; text-align: right; } .status-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }</style><table class="overview-table"><tr><th>Shuttle Name</th><th>Owner</th><th>團隊</th><th style="width: 90px; text-align: center;">已出貨</th><th>ID (Wafer)</th><th>Step</th><th>Status</th><th style="width: 250px;">進度條</th></tr>"""
             df_route[shuttle_col] = df_route[shuttle_col].fillna("")
             df_route[team_col] = df_route[team_col].fillna("")
             
@@ -965,17 +1074,11 @@ with all_tabs[4]:
                     w_group = s_group[s_group[wafer_col] == wid].reset_index(drop=True)
                     total_steps = len(w_group)
                     has_scrap, is_banked, wip_idx = False, False, total_steps  
-                    raw_last_step = str(w_group.iloc[-1].get(step_col, "")).replace(".0", "").strip()
-                    wip_step_no = str(total_steps) if raw_last_step in ["", "nan", "NaN", "None"] else raw_last_step
-                    status_html = '<span class="status-dot" style="background-color: #0d6efd;"></span> Shipped (已出貨)'
                     
                     for idx, row in w_group.iterrows():
                         fco = str(row.get(fco_col, "")).strip().upper()
                         if fco == "SCRP":
                             has_scrap, wip_idx = True, idx
-                            raw_step = str(row.get(step_col, "")).replace(".0", "").strip()
-                            wip_step_no = str(idx + 1) if raw_step in ["", "nan", "NaN", "None"] else raw_step
-                            status_html = f'<span class="status-dot" style="background-color: #dc3545;"></span> SCRAPPED: {row.get(desc_col, "")}'
                             break
                             
                     if not has_scrap:
@@ -983,19 +1086,76 @@ with all_tabs[4]:
                             fco = str(row.get(fco_col, "")).strip().upper()
                             if fco in ["", "NAN", "INPR", "HOLD", "BANK"]:
                                 wip_idx = idx
-                                raw_step = str(row.get(step_col, "")).replace(".0", "").strip()
-                                wip_step_no = str(idx + 1) if raw_step in ["", "nan", "NaN", "None"] else raw_step
-                                if fco == "HOLD": status_html = f'<span class="status-dot" style="background-color: #ffc107;"></span> HOLD: {row.get(desc_col, "")}'
-                                elif fco == "BANK": is_banked = True
-                                else: status_html = f'<span class="status-dot" style="background-color: #198754;"></span> INPR: {row.get(desc_col, "")}'
+                                if fco == "BANK": is_banked = True
                                 break
                                 
                     if is_banked: continue
                     is_shipped = True if (wip_idx == total_steps and not has_scrap) else False
-                    nums = re.findall(r'\d+', str(wip_step_no))
-                    progress_pct = min(int((int(nums[0]) if nums else 0) / 92 * 100), 100)
                     
-                    team_valid_wafers.append({"id": wid, "step": f"{wip_step_no}/92", "status": status_html, "is_shipped": is_shipped, "progress_pct": progress_pct})
+                    if wip_idx < total_steps:
+                        active_row = w_group.iloc[wip_idx]
+                        raw_step = clean_step(active_row.get(step_col, ""))
+                        fco_val = str(active_row.get(fco_col, "")).strip().upper()
+                        if fco_val == "SCRP":
+                            status_html = f'<span class="status-dot" style="background-color: #dc3545;"></span> SCRAPPED: {active_row.get(desc_col, "")}'
+                        elif fco_val == "HOLD":
+                            status_html = f'<span class="status-dot" style="background-color: #ffc107;"></span> HOLD: {active_row.get(desc_col, "")}'
+                        else:
+                            status_html = f'<span class="status-dot" style="background-color: #198754;"></span> INPR: {active_row.get(desc_col, "")}'
+                    else:
+                        raw_step = clean_step(w_group.iloc[-1].get(step_col, ""))
+                        status_html = '<span class="status-dot" style="background-color: #0d6efd;"></span> Shipped (已出貨)'
+                        
+                    wip_step_no = str(wip_idx + 1) if raw_step in ["", "nan", "NaN", "None"] else raw_step
+                    
+                    sub_steps = [clean_step(x) for x in w_group[step_col] if "." in clean_step(x)]
+                    has_sub_route = len(sub_steps) > 0
+                    
+                    curr_main_val = 0
+                    curr_sub_val = 0
+                    
+                    if "." in wip_step_no:
+                        parts = wip_step_no.split(".")
+                        curr_main_val = int(re.findall(r'\d+', parts[0])[0]) if re.findall(r'\d+', parts[0]) else 0
+                        curr_sub_val = int(re.findall(r'\d+', parts[1])[0]) if re.findall(r'\d+', parts[1]) else 0
+                        
+                        sub_total = sum(1 for s in w_group[step_col] if str(s).strip().startswith(f"{curr_main_val}."))
+                        if sub_total == 0: sub_total = 24 
+                        
+                        main_pct = min(int((curr_main_val / 92) * 100), 100)
+                        sub_pct = min(int((curr_sub_val / sub_total) * 100), 100)
+                        
+                        step_display = f"{curr_main_val}/92<br><span style='color: #17a2b8; font-weight: bold;'>{curr_sub_val}/{sub_total}</span>"
+                        prog_display = f'<div class="prog-wrapper" style="margin-bottom: 4px;"><div class="prog-container"><div class="prog-bar" style="width: {main_pct}%;"></div></div><div class="prog-text">{main_pct}%</div></div><div class="prog-wrapper"><div class="prog-container"><div class="prog-bar" style="width: {sub_pct}%; background-color: #17a2b8;"></div></div><div class="prog-text" style="color: #17a2b8;">{sub_pct}%</div></div>'
+                    else:
+                        curr_main_val = int(re.findall(r'\d+', wip_step_no)[0]) if re.findall(r'\d+', wip_step_no) else 0
+                        main_pct = min(int((curr_main_val / 92) * 100), 100)
+                        
+                        if has_sub_route:
+                            sub_main_str = sub_steps[0].split(".")[0]
+                            sub_main_val = int(re.findall(r'\d+', sub_main_str)[0]) if re.findall(r'\d+', sub_main_str) else 0
+                            
+                            sub_total = len(sub_steps)
+                            if curr_main_val > sub_main_val:
+                                curr_sub_val = sub_total
+                                sub_pct = 100
+                            else:
+                                curr_sub_val = 0
+                                sub_pct = 0
+                                
+                            step_display = f"{curr_main_val}/92<br><span style='color: #17a2b8; font-weight: bold;'>{curr_sub_val}/{sub_total}</span>"
+                            prog_display = f'<div class="prog-wrapper" style="margin-bottom: 4px;"><div class="prog-container"><div class="prog-bar" style="width: {main_pct}%;"></div></div><div class="prog-text">{main_pct}%</div></div><div class="prog-wrapper"><div class="prog-container"><div class="prog-bar" style="width: {sub_pct}%; background-color: #17a2b8;"></div></div><div class="prog-text" style="color: #17a2b8;">{sub_pct}%</div></div>'
+                        else:
+                            step_display = f"{curr_main_val}/92"
+                            prog_display = f'<div class="prog-wrapper"><div class="prog-container"><div class="prog-bar" style="width: {main_pct}%;"></div></div><div class="prog-text">{main_pct}%</div></div>'
+                    
+                    team_valid_wafers.append({
+                        "id": wid, 
+                        "step": step_display, 
+                        "status": status_html, 
+                        "is_shipped": is_shipped, 
+                        "prog_display": prog_display
+                    })
                     
                     if is_shipped:
                         all_shipped_data.append({
@@ -1003,7 +1163,7 @@ with all_tabs[4]:
                             "Owner": rep_owner,
                             "團隊": rep_team,
                             "ID (Wafer)": wid,
-                            "Step": f"{wip_step_no}/92",
+                            "Step": step_display.split("<br>")[0],
                             "Status": "🟢 Shipped (已出貨)"
                         })
                 
@@ -1025,22 +1185,21 @@ with all_tabs[4]:
                     
                     is_first_in_team = True
                     shipped_count = sum(1 for w in t_data["wafers"] if w["is_shipped"])
-                    max_progress_pct = max([w["progress_pct"] for w in inpr_wafers] + [0])
 
                     for w_data in inpr_wafers:
                         html_table += "<tr>"
                         if is_first_in_shuttle:
                             html_table += f'<td class="merged-cell" rowspan="{shuttle_inpr_count}">{shuttle}</td><td class="owner-team-cell" rowspan="{shuttle_inpr_count}">{s_data["owner"]}</td>'
                             is_first_in_shuttle = False
+                        
                         if is_first_in_team:
                             html_table += f'<td class="owner-team-cell" rowspan="{team_rowspan}">{t_data["team_name"]}</td><td class="merged-cell" rowspan="{team_rowspan}">{shipped_count}</td>'
+                            is_first_in_team = False
                         
                         html_table += f"<td>{w_data['id']}</td><td>{w_data['step']}</td><td>{w_data['status']}</td>"
-                        
-                        if is_first_in_team:
-                            html_table += f'<td rowspan="{team_rowspan}"><div class="prog-wrapper"><div class="prog-container"><div class="prog-bar" style="width: {max_progress_pct}%;"></div></div><div class="prog-text">{max_progress_pct}%</div></div></td>'
-                            is_first_in_team = False
+                        html_table += f"<td>{w_data['prog_display']}</td>"
                         html_table += "</tr>"
+                        
             html_table += "</table>"
             
             if has_inpr_wafers:
