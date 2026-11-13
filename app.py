@@ -153,7 +153,7 @@ def show_ongoing_action_dialog(tw_id, ts_no, target_row_dict, avail_steps):
         st.rerun()
 
     st.markdown("---")
-    with st.expander("📜 View Wafer History", expanded=True):
+    with st.expander("📜 View Wafer History"):
         df_route_hist, _ = fetch_route_data_via_csv("route_template")
         if not df_route_hist.empty:
             wafer_col_list = [c for c in df_route_hist.columns if "Wafer" in c or "wafer" in c]
@@ -246,18 +246,18 @@ def show_history_edit_dialog(tw_id, ts_no, target_row_dict):
     st.markdown("---")
     st.markdown("**Status Management (Rework / Undo)**")
     
-    # 🎯 全新日曆與時間選擇器設計
     current_fco = str(target_row_dict.get("Check out Time", "")).strip()
     st.markdown(f"**Current Status / Time:** `{current_fco if current_fco else 'Empty'}`")
     
+    # 🎯 綁定 key 讓 radio 變更時，可以強制更新頁面狀態
     fco_action = st.radio(
         "Modify Check out Time:",
         ["Keep Original (保持原本狀態)", "Set New Date & Time (設定新時間)", "Clear Time (清除時間以退站)"],
         horizontal=True,
-        label_visibility="collapsed"
+        label_visibility="collapsed",
+        key=f"fco_action_{tw_id}_{ts_no}"
     )
     
-    # 智慧預設值：嘗試解析原本的時間，若無法解析(例如原本是空值或HOLD)，就用現在時間
     default_date = datetime.datetime.now().date()
     default_time = datetime.datetime.now().time()
     
@@ -270,12 +270,14 @@ def show_history_edit_dialog(tw_id, ts_no, target_row_dict):
             pass
             
     cd1, cd2 = st.columns(2)
+    # 🎯 利用剛剛綁定的 session state 來決定 disabled 屬性
+    is_disabled = st.session_state[f"fco_action_{tw_id}_{ts_no}"] != "Set New Date & Time (設定新時間)"
+    
     with cd1:
-        sel_date = st.date_input("Select Date", value=default_date, disabled=(fco_action != "Set New Date & Time"))
+        sel_date = st.date_input("Select Date", value=default_date, disabled=is_disabled)
     with cd2:
-        sel_time = st.time_input("Select Time", value=default_time, step=60, disabled=(fco_action != "Set New Date & Time"))
+        sel_time = st.time_input("Select Time", value=default_time, step=60, disabled=is_disabled)
         
-    # 依據選擇組合最終要送出的 Check out Time 字串
     if fco_action == "Keep Original (保持原本狀態)":
         edit_fco = current_fco
     elif fco_action == "Clear Time (清除時間以退站)":
