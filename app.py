@@ -12,7 +12,7 @@ import concurrent.futures
 st.set_page_config(layout="wide", page_title="TSRI Lot Tracing System")
 
 if "search_wafer_id_history" not in st.session_state:
-    st.session_state.search_wafer_id_history = "LOT4-11F0"
+    st.session_state.search_wafer_id_history = ""
 
 # 🎯 使用遞增計數器管理 Ongoing 表格的選取重置，避免動態/靜態 Key 切換造成殘影與吃字
 if "ongoing_table_ver" not in st.session_state:
