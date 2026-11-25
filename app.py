@@ -12,17 +12,17 @@ import concurrent.futures
 st.set_page_config(layout="wide", page_title="TSRI Lot Tracing System")
 
 if "search_wafer_id_history" not in st.session_state:
-    st.session_state.search_wafer_id_history = ""
+    st.session_state.search_wafer_id_history = "LOT4-11F0"
 
-# 🎯 專門用來管理 Ongoing 表格選取狀態的動態 Key
-if "ongoing_table_key" not in st.session_state:
-    st.session_state.ongoing_table_key = "ongoing_wafer_table_0"
+if "clear_ongoing_selection" not in st.session_state:
+    st.session_state.clear_ongoing_selection = False
 
 st.markdown("<div style='font-size: 20px; font-weight: bold; padding-top: 1rem; padding-bottom: 1rem;'>TSRI Lot Tracing System</div>", unsafe_allow_html=True)
 
 MY_ORGANIZATION_GAS_URL = "https://script.google.com/macros/s/AKfycbxSpHeSlbCyMgn0cH60fh62eM_nYoaCwkSCZF1UJMTeC-3z1wQJ1RVLXge1kvzadmKM/exec"
 SPREADSHEET_ID = "1RQt29KIb4rkVo4A-Y3GouMAezYEBakb1q283d1sgdZU"
 
+# UI 顯示專用：統一格式化為整數或兩位小數 (如 68.10、68.14)
 def clean_step(val):
     s = str(val).strip()
     if not s or s in ["nan", "NaN", "None"]:
@@ -37,6 +37,17 @@ def clean_step(val):
     except:
         if s.endswith(".0"):
             return s[:-2]
+        return s
+
+# API 傳輸專用：四捨五入至小數點後兩位並去除尾數 0，符合 Google Sheets 底層數值比對
+def gas_safe_step(val):
+    s = str(val).strip()
+    try:
+        f = round(float(s), 2)
+        if f.is_integer():
+            return str(int(f))
+        return str(f)  # 68.10 -> "68.1"、68.20 -> "68.2"、68.139999 -> "68.14"
+    except:
         return s
 
 @st.cache_data(ttl=15)
@@ -246,8 +257,43 @@ def show_history_edit_dialog(tw_id, ts_no, target_row_dict):
     
     st.markdown("---")
     st.markdown("**Status Management (Rework / Undo)**")
+    
     current_fco = str(target_row_dict.get("Check out Time", "")).strip()
-    edit_fco = st.text_input("Check out Time (Clear this field to revert wafer to this step)", value=current_fco)
+    st.markdown(f"**Current Status / Time:** `{current_fco if current_fco else 'Empty'}`")
+    
+    fco_action = st.radio(
+        "Modify Check out Time:",
+        ["Keep Original (保持原本狀態)", "Set New Date & Time (設定新時間)", "Clear Time (清除時間以退站)"],
+        horizontal=True,
+        label_visibility="collapsed",
+        key=f"fco_action_{tw_id}_{ts_no}"
+    )
+    
+    default_date = datetime.datetime.now().date()
+    default_time = datetime.datetime.now().time()
+    
+    if current_fco:
+        try:
+            parsed_dt = pd.to_datetime(current_fco)
+            default_date = parsed_dt.date()
+            default_time = parsed_dt.time()
+        except:
+            pass
+            
+    cd1, cd2 = st.columns(2)
+    is_disabled = st.session_state[f"fco_action_{tw_id}_{ts_no}"] != "Set New Date & Time (設定新時間)"
+    
+    with cd1:
+        sel_date = st.date_input("Select Date", value=default_date, disabled=is_disabled)
+    with cd2:
+        sel_time = st.time_input("Select Time", value=default_time, step=60, disabled=is_disabled)
+        
+    if fco_action == "Keep Original (保持原本狀態)":
+        edit_fco = current_fco
+    elif fco_action == "Clear Time (清除時間以退站)":
+        edit_fco = ""
+    else:
+        edit_fco = f"{sel_date.strftime('%Y-%m-%d')} {sel_time.strftime('%H:%M:%S')}"
     
     if st.button("Confirm and Submit", type="primary", use_container_width=True):
         st.session_state.history_edit_action = {
@@ -280,7 +326,7 @@ with all_tabs[0]:
         urls_to_send = []
         
         enc_w_id = requests.utils.quote(str(pa["w_id"]))
-        enc_s_no = requests.utils.quote(str(pa["s_no"]))
+        enc_s_no = requests.utils.quote(gas_safe_step(pa["s_no"]))
         
         final_result_link = ""
         if pa["img"] is not None:
@@ -340,16 +386,17 @@ with all_tabs[0]:
                 
             if tgt_idx < curr_idx:
                 for i in range(tgt_idx, curr_idx + 1):
-                    enc_step = requests.utils.quote(str(avail[i]))
+                    enc_step = requests.utils.quote(gas_safe_step(avail[i]))
                     urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_step}&column_name=Check%20out%20Time&new_value=%20")
             elif tgt_idx > curr_idx:
-                enc_target = requests.utils.quote(str(target_step))
+                enc_target = requests.utils.quote(gas_safe_step(target_step))
                 urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Skip&comment={enc_comment}&time={enc_time}&target_step={enc_target}")
             
         if urls_to_send:
             with st.spinner(f"Syncing to Cloud (Sequential Safe Mode)..."):
                 has_error = False
                 success_count = 0
+                
                 session = requests.Session()
                 for url in urls_to_send:
                     try:
@@ -374,6 +421,7 @@ with all_tabs[0]:
                     time.sleep(1.2)
                     
                 st.cache_data.clear()
+                st.session_state.clear_ongoing_selection = True
                 st.rerun()
 
     df_route, conn_status = fetch_route_data_via_csv("route_template")
@@ -489,36 +537,46 @@ with all_tabs[0]:
                 df_wip = pd.DataFrame(wip_data_list)
                 display_df = df_wip[["Lot Owner", "ID (Wafer)", "Step", "Stage Owner", "Module", "Step Description", "Process Tool", "Recipe"]]
                 styled_df = display_df.style.set_properties(**{'text-align': 'center'})
+                
+                if "ongoing_last_sel" not in st.session_state:
+                    st.session_state.ongoing_last_sel = []
 
-                # 🎯 載入受保護的動態表格 Key
+                sel_state = "single-row"
+                if st.session_state.clear_ongoing_selection:
+                    st.session_state.ongoing_last_sel = []
+                    st.session_state.clear_ongoing_selection = False
+                    table_key = f"ongoing_wafer_table_{time.time()}" 
+                else:
+                    table_key = "ongoing_wafer_table"
+
                 selection = st.dataframe(
                     styled_df,
                     use_container_width=True,
                     hide_index=True,
                     on_select="rerun",
-                    selection_mode="single-row",
-                    key=st.session_state.ongoing_table_key
+                    selection_mode=sel_state,
+                    key=table_key
                 )
                 
                 curr_sel = selection.get("selection", {}).get("rows", [])
                 
-                # 🎯 核心體驗：一旦偵測到使用者勾選，立刻將表格的 Key 更新，
-                # 這樣一來，不論使用者是按 X 關閉、按 ESC，還是點擊 Submit，
-                # 當畫面重新整理時，表格會自動重置為「乾淨且沒有打勾」的狀態！
-                if curr_sel:
-                    st.session_state.ongoing_table_key = f"ongoing_wafer_table_{int(time.time() * 1000)}"
+                if curr_sel != st.session_state.ongoing_last_sel:
+                    st.session_state.ongoing_last_sel = curr_sel
                     
-                    selected_idx = curr_sel[0]
-                    selected_item = wip_data_list[selected_idx]
-                    
-                    st.session_state.search_wafer_id_history = str(selected_item['ID (Wafer)']).strip()
-                    
-                    show_ongoing_action_dialog(
-                        selected_item['ID (Wafer)'], 
-                        selected_item['_raw_step'], 
-                        selected_item['_row_dict'], 
-                        selected_item['_avail_steps']
-                    )
+                    if curr_sel:
+                        selected_idx = curr_sel[0]
+                        selected_item = wip_data_list[selected_idx]
+                        
+                        st.session_state.search_wafer_id_history = str(selected_item['ID (Wafer)']).strip()
+                        
+                        st.session_state.clear_ongoing_selection = True
+                        
+                        show_ongoing_action_dialog(
+                            selected_item['ID (Wafer)'], 
+                            selected_item['_raw_step'], 
+                            selected_item['_row_dict'], 
+                            selected_item['_avail_steps']
+                        )
             else:
                 st.info("No Ongoing Wafers at this moment.")
         else:
@@ -536,7 +594,7 @@ with all_tabs[1]:
         
         urls_to_send = []
         enc_w_id = requests.utils.quote(str(pa["w_id"]))
-        enc_s_no = requests.utils.quote(str(pa["s_no"]))
+        enc_s_no = requests.utils.quote(gas_safe_step(pa["s_no"]))
         
         final_result_link = ""
         if pa["img"] is not None:
@@ -837,7 +895,7 @@ with all_tabs[3]:
                         if fco in ["", "NAN", "INPR", "HOLD", "BANK"]:
                             if fco == "BANK":
                                 is_banked = True
-                                bank_step_no = str(row.get(step_col, "")).replace(".0", "")
+                                bank_step_no = clean_step(row.get(step_col, ""))
                                 bank_comment = str(row.get(comment_col, ""))
                             break
                             
@@ -877,7 +935,7 @@ with all_tabs[3]:
                         enc_comment = requests.utils.quote("[KICK OFF] 從 Bank Wafers 批次出庫下線")
                         
                         for w, s in zip(selected_wids, selected_steps):
-                            enc_s = requests.utils.quote(str(s))
+                            enc_s = requests.utils.quote(gas_safe_step(s))
                             urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={requests.utils.quote(str(w))}&step_no={enc_s}&action=Kick%20off&comment={enc_comment}&time={enc_time}")
                             
                         with st.spinner(f"Syncing Kick off for {len(selected_wids)} wafers..."):
