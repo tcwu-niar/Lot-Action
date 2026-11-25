@@ -14,8 +14,9 @@ st.set_page_config(layout="wide", page_title="TSRI Lot Tracing System")
 if "search_wafer_id_history" not in st.session_state:
     st.session_state.search_wafer_id_history = "LOT4-11F0"
 
-if "clear_ongoing_selection" not in st.session_state:
-    st.session_state.clear_ongoing_selection = False
+# 🎯 使用遞增計數器管理 Ongoing 表格的選取重置，避免動態/靜態 Key 切換造成殘影與吃字
+if "ongoing_table_ver" not in st.session_state:
+    st.session_state.ongoing_table_ver = 0
 
 st.markdown("<div style='font-size: 20px; font-weight: bold; padding-top: 1rem; padding-bottom: 1rem;'>TSRI Lot Tracing System</div>", unsafe_allow_html=True)
 
@@ -165,7 +166,7 @@ def show_ongoing_action_dialog(tw_id, ts_no, target_row_dict, avail_steps):
         st.rerun()
 
     st.markdown("---")
-    with st.expander("📜 View Wafer History"):
+    with st.expander("📜 View Wafer History", expanded=True):
         df_route_hist, _ = fetch_route_data_via_csv("route_template")
         if not df_route_hist.empty:
             wafer_col_list = [c for c in df_route_hist.columns if "Wafer" in c or "wafer" in c]
@@ -421,7 +422,7 @@ with all_tabs[0]:
                     time.sleep(1.2)
                     
                 st.cache_data.clear()
-                st.session_state.clear_ongoing_selection = True
+                st.session_state.ongoing_table_ver += 1
                 st.rerun()
 
     df_route, conn_status = fetch_route_data_via_csv("route_template")
@@ -538,45 +539,38 @@ with all_tabs[0]:
                 display_df = df_wip[["Lot Owner", "ID (Wafer)", "Step", "Stage Owner", "Module", "Step Description", "Process Tool", "Recipe"]]
                 styled_df = display_df.style.set_properties(**{'text-align': 'center'})
                 
-                if "ongoing_last_sel" not in st.session_state:
-                    st.session_state.ongoing_last_sel = []
-
-                sel_state = "single-row"
-                if st.session_state.clear_ongoing_selection:
-                    st.session_state.ongoing_last_sel = []
-                    st.session_state.clear_ongoing_selection = False
-                    table_key = f"ongoing_wafer_table_{time.time()}" 
-                else:
-                    table_key = "ongoing_wafer_table"
-
-                selection = st.dataframe(
+                # 🎯 使用 st.empty() 確保單一容器覆蓋，徹底消除上下雙表格殘影
+                table_placeholder = st.empty()
+                curr_table_key = f"ongoing_wafer_table_{st.session_state.ongoing_table_ver}"
+                
+                selection = table_placeholder.dataframe(
                     styled_df,
                     use_container_width=True,
                     hide_index=True,
                     on_select="rerun",
-                    selection_mode=sel_state,
-                    key=table_key
+                    selection_mode="single-row",
+                    key=curr_table_key
                 )
                 
                 curr_sel = selection.get("selection", {}).get("rows", [])
                 
-                if curr_sel != st.session_state.ongoing_last_sel:
-                    st.session_state.ongoing_last_sel = curr_sel
+                if curr_sel:
+                    selected_idx = curr_sel[0]
+                    selected_item = wip_data_list[selected_idx]
                     
-                    if curr_sel:
-                        selected_idx = curr_sel[0]
-                        selected_item = wip_data_list[selected_idx]
-                        
-                        st.session_state.search_wafer_id_history = str(selected_item['ID (Wafer)']).strip()
-                        
-                        st.session_state.clear_ongoing_selection = True
-                        
-                        show_ongoing_action_dialog(
-                            selected_item['ID (Wafer)'], 
-                            selected_item['_raw_step'], 
-                            selected_item['_row_dict'], 
-                            selected_item['_avail_steps']
-                        )
+                    st.session_state.search_wafer_id_history = str(selected_item['ID (Wafer)']).strip()
+                    
+                    # 🎯 遞增版本號並刪除舊 state：下次按 ESC、X 或送出後重繪時，表格會乾淨歸零且只需點一次就能觸發！
+                    st.session_state.ongoing_table_ver += 1
+                    if curr_table_key in st.session_state:
+                        del st.session_state[curr_table_key]
+                    
+                    show_ongoing_action_dialog(
+                        selected_item['ID (Wafer)'], 
+                        selected_item['_raw_step'], 
+                        selected_item['_row_dict'], 
+                        selected_item['_avail_steps']
+                    )
             else:
                 st.info("No Ongoing Wafers at this moment.")
         else:
