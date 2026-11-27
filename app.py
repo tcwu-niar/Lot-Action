@@ -13,7 +13,7 @@ import html as html_lib
 st.set_page_config(layout="wide", page_title="TSRI Lot Tracing System")
 
 if "search_wafer_id_history" not in st.session_state:
-    st.session_state.search_wafer_id_history = "LOT4-11F0"
+    st.session_state.search_wafer_id_history = ""
 
 if "ongoing_table_ver" not in st.session_state:
     st.session_state.ongoing_table_ver = 0
