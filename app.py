@@ -16,10 +16,9 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# 🎯 全域 RWD 響應式 CSS：確保電腦滿版美觀、手機維持正常比例與順暢觸控滑動
+# 全域 RWD 響應式 CSS：確保電腦滿版美觀、手機維持正常比例與順暢觸控滑動
 st.markdown("""
 <style>
-/* 頁籤列支援手機橫向滑動，避免擠壓換行 */
 div[data-baseweb="tab-list"] {
     overflow-x: auto !important;
     overflow-y: hidden !important;
@@ -33,7 +32,6 @@ div[data-baseweb="tab-list"] button {
     flex-shrink: 0 !important;
 }
 
-/* 自訂 HTML 表格響應式外框：電腦滿版，手機維持正常比例可左右滑動 */
 .rwd-table-scroll {
     width: 100%;
     overflow-x: auto;
@@ -43,7 +41,6 @@ div[data-baseweb="tab-list"] button {
     border-radius: 6px;
 }
 
-/* KSR 頂部標題列響應式排版 */
 .ksr-header {
     display: flex;
     justify-content: space-between;
@@ -76,7 +73,6 @@ div[data-baseweb="tab-list"] button {
     margin-bottom: 6px;
 }
 
-/* 手機與小尺寸螢幕專屬調整 (<= 768px) */
 @media screen and (max-width: 768px) {
     .block-container {
         padding-top: 2.2rem !important;
@@ -89,13 +85,11 @@ div[data-baseweb="tab-list"] button {
         padding-top: 0.4rem !important;
         padding-bottom: 0.5rem !important;
     }
-    /* 彈出視窗適應手機寬度 */
     div[role="dialog"] {
         width: 96vw !important;
         max-width: 96vw !important;
         margin: 0 auto !important;
     }
-    /* 放大按鈕與選項觸控區域 */
     .stButton > button {
         min-height: 42px !important;
         font-size: 15px !important;
@@ -104,7 +98,6 @@ div[data-baseweb="tab-list"] button {
         gap: 8px !important;
         flex-wrap: wrap !important;
     }
-    /* KSR 標題在手機改為上下置中堆疊，避免文字擠壓 */
     .ksr-header {
         flex-direction: column-reverse;
         align-items: center;
@@ -146,12 +139,10 @@ st.markdown("<div class='app-main-title' style='font-size: 20px; font-weight: bo
 MY_ORGANIZATION_GAS_URL = "https://script.google.com/macros/s/AKfycbxSpHeSlbCyMgn0cH60fh62eM_nYoaCwkSCZF1UJMTeC-3z1wQJ1RVLXge1kvzadmKM/exec"
 SPREADSHEET_ID = "1RQt29KIb4rkVo4A-Y3GouMAezYEBakb1q283d1sgdZU"
 
-# UI 顯示專用：統一格式化為整數或兩位小數 (如 68.10、68.14)
 def clean_step(val):
     s = str(val).strip()
     if not s or s in ["nan", "NaN", "None"]:
         return ""
-    
     try:
         f_val = float(s)
         if abs(f_val - round(f_val)) < 1e-6:
@@ -163,14 +154,13 @@ def clean_step(val):
             return s[:-2]
         return s
 
-# API 傳輸專用：四捨五入至小數點後兩位並去除尾數 0，符合 Google Sheets 底層數值比對
 def gas_safe_step(val):
     s = str(val).strip()
     try:
         f = round(float(s), 2)
         if f.is_integer():
             return str(int(f))
-        return str(f)  # 68.10 -> "68.1"、68.20 -> "68.2"、68.139999 -> "68.14"
+        return str(f)
     except:
         return s
 
@@ -199,7 +189,6 @@ def fetch_route_data_via_csv(sheet_name="route_template"):
     except Exception as e:
         return pd.DataFrame(), str(e)
 
-# 從 wafer_status 紀錄表建立 Hold Note 補齊字典 {(WAFER_ID_UPPER, CLEAN_STEP): latest_hold_note}
 def build_log_hold_note_map(df_logs):
     hold_map = {}
     if df_logs is None or df_logs.empty:
@@ -219,6 +208,451 @@ def build_log_hold_note_map(df_logs):
             elif act_v == "UNHOLD":
                 hold_map.pop(k, None)
     return hold_map
+
+# =========================================================================
+# 1.5 純向量無背景無標題 Process Flow SVG 產生器 (供 KSR 點擊區間顯示)
+# =========================================================================
+def build_process_flow_svgs():
+    C_SI = "#4A90D9"
+    C_OX = "#92D050"
+    C_M1 = "#BFBFBF"
+    C_GLUE = "#D9D9D9"
+    C_GLASS = "#DDEBF7"
+    C_PR = "#F49AC1"
+    C_LINER = "#FFFF00"
+    C_SEED = "#ED7D31"
+    C_CU = "#FFC000"
+    C_STUD = "#F8CBAD"
+    C_SN = "#BFBFBF"
+    C_TAPE = "#66CCFF"
+
+    def rct(x, y, w, h, fill, sw=1.2, dash=""):
+        d = f' stroke-dasharray="{dash}"' if dash else ""
+        return f'<rect x="{x:.1f}" y="{y:.1f}" width="{w:.1f}" height="{h:.1f}" fill="{fill}" stroke="#000" stroke-width="{sw}"{d}/>'
+
+    def txt(x, y, s, sz=10, col="#000", bold=True, rot=0):
+        fw = "bold" if bold else "normal"
+        tf = f' transform="rotate({rot} {x:.1f} {y:.1f})"' if rot else ""
+        return f'<text x="{x:.1f}" y="{y:.1f}" text-anchor="middle" dominant-baseline="central" font-size="{sz}" font-weight="{fw}" fill="{col}" font-family="sans-serif"{tf}>{s}</text>'
+
+    def sub_txt(x, y, prefix, sub, suffix, sz=14):
+        return (
+            f'<text x="{x:.1f}" y="{y:.1f}" text-anchor="middle" font-size="{sz}" font-weight="bold" fill="#000" font-family="sans-serif">'
+            f'{prefix}<tspan dy="4" font-size="{int(sz*0.72)}">{sub}</tspan><tspan dy="-4">{suffix}</tspan></text>'
+        )
+
+    def timeline_row(y_line, nodes, x1=45, x2=1145, arr_id="pf-arr"):
+        p = [f'<line x1="{x1}" y1="{y_line}" x2="{x2}" y2="{y_line}" stroke="#000" stroke-width="2.5" marker-end="url(#{arr_id})"/>']
+        for nx, title_html, step_num in nodes:
+            p.append(title_html)
+            p.append(f'<circle cx="{nx}" cy="{y_line}" r="11" fill="#fff" stroke="#000" stroke-width="2"/>')
+            if step_num:
+                p.append(txt(nx, y_line, step_num, sz=11, col="#000"))
+        return "".join(p)
+
+    def base_stack(cx, y_m1, w=170, has_glass=True):
+        x0 = cx - w / 2.0
+        s = [
+            rct(x0, y_m1, w, 11, C_M1),
+            txt(cx, y_m1 + 5.5, "T18-M1", sz=8.5, col="#fff")
+        ]
+        if has_glass:
+            s.extend([
+                rct(x0, y_m1 + 11, w, 9, C_GLUE),
+                txt(cx, y_m1 + 15.5, "Glue", sz=8, col="#000"),
+                rct(x0, y_m1 + 20, w, 11, C_GLASS),
+                txt(cx, y_m1 + 25.5, "Glass", sz=8.5, col="#000")
+            ])
+        return "".join(s)
+
+    # 3 柱 2 孔 TSV 結構基底 (總寬 170: 柱寬 46 * 3 + 孔寬 16 * 2 = 170)
+    def tsv_pillars_ox_si(cx, y_top, top_ox=True, si_etch=True, bot_ox_etch=True, ox_col_txt="#fff", bot_ox_col="#fff", si_col="#fff"):
+        x0 = cx - 85.0
+        pxs = [x0, x0 + 62.0, x0 + 124.0]
+        vxs = [x0 + 46.0, x0 + 108.0]
+        y_ox1 = y_top
+        y_si = y_top + 14.0
+        y_ox2 = y_si + 38.0
+        p = []
+        # Bottom OX
+        if not bot_ox_etch:
+            p.append(rct(x0, y_ox2, 170, 13, C_OX))
+            p.append(txt(cx, y_ox2 + 6.5, "OX", sz=9.5, col=bot_ox_col))
+        else:
+            for px in pxs:
+                p.append(rct(px, y_ox2, 46, 13, C_OX))
+                p.append(txt(px + 23, y_ox2 + 6.5, "OX", sz=9.5, col=bot_ox_col))
+        # Si
+        if not si_etch:
+            p.append(rct(x0, y_si, 170, 38, C_SI))
+            p.append(txt(cx, y_si + 19, "Si", sz=10, col=si_col))
+        else:
+            for px in pxs:
+                p.append(rct(px, y_si, 46, 38, C_SI))
+                p.append(txt(px + 23, y_si + 19, "Si", sz=10, col=si_col))
+        # Top OX
+        if top_ox == "full":
+            p.append(rct(x0, y_ox1, 170, 14, C_OX))
+            p.append(txt(cx, y_ox1 + 7, "OX", sz=9.5, col=ox_col_txt))
+        elif top_ox == "pillars":
+            for px in pxs:
+                p.append(rct(px, y_ox1, 46, 14, C_OX))
+                p.append(txt(px + 23, y_ox1 + 7, "OX", sz=9.5, col=ox_col_txt))
+        return "".join(p), pxs, vxs, y_ox1, y_si, y_ox2
+
+    # 已填滿 Liner + Seed + TSV Cu 並平坦化後的 3 柱 2 孔標準基底 (高 75: LinerTop 8 + OX 13 + Si 41 + OX 13)
+    def filled_tsv_core(cx, y_top, has_glass=True):
+        x0 = cx - 85.0
+        pxs = [x0, x0 + 62.0, x0 + 124.0]
+        vxs = [x0 + 46.0, x0 + 108.0]
+        p = []
+        y_lt = y_top
+        y_ox1 = y_top + 7.0
+        y_si = y_ox1 + 13.0
+        y_ox2 = y_si + 40.0
+        y_m1 = y_ox2 + 13.0
+        for px in pxs:
+            p.append(rct(px, y_lt, 46, 7, C_LINER))
+            p.append(rct(px, y_ox1, 46, 13, C_OX))
+            p.append(txt(px + 23, y_ox1 + 6.5, "OX", sz=9, col="#fff"))
+            p.append(rct(px, y_si, 46, 40, C_SI))
+            p.append(txt(px + 23, y_si + 20, "Si", sz=9.5, col="#fff"))
+            p.append(rct(px, y_ox2, 46, 13, C_OX))
+            p.append(txt(px + 23, y_ox2 + 6.5, "OX", sz=9, col="#fff"))
+        # 每個 Via 寬 16: 左 Liner(2.5) + Seed(1.5) + TSV Cu(8) + Seed(1.5) + 右 Liner(2.5)
+        for vx in vxs:
+            p.append(rct(vx, y_lt, 2.5, 73, C_LINER, sw=0.8))
+            p.append(rct(vx + 13.5, y_lt, 2.5, 73, C_LINER, sw=0.8))
+            p.append(rct(vx + 2.5, y_lt, 1.5, 73, C_SEED, sw=0.6))
+            p.append(rct(vx + 12.0, y_lt, 1.5, 73, C_SEED, sw=0.6))
+            p.append(rct(vx + 4.0, y_lt, 8.0, 73, C_CU, sw=0.9))
+            p.append(txt(vx + 8.0, y_lt + 37, "TSV Cu", sz=8.5, col="#000", rot=90))
+        p.append(base_stack(cx, y_m1, w=170, has_glass=has_glass))
+        return "".join(p), pxs, vxs, y_lt, y_m1
+
+    defs = (
+        '<defs><marker id="pf-arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto">'
+        '<path d="M 0 1 L 10 5 L 0 9 z" fill="#000"/></marker></defs>'
+    )
+
+    # ---------------------------------------------------------------------
+    # 1. W2W Bonding & Grinding
+    # ---------------------------------------------------------------------
+    xs5 = [145, 370, 595, 820, 1045]
+    s1 = [f'<svg viewBox="0 0 1190 275" style="width:100%; min-width:860px; height:auto; display:block;">{defs}']
+    s1.append(timeline_row(48, [
+        (xs5[0], txt(xs5[0], 20, "305 Glue on Wafer", sz=14), ""),
+        (xs5[1], txt(xs5[1], 20, "701 Glue on Glass", sz=14), ""),
+        (xs5[2], txt(xs5[2], 20, "W2W Bonding", sz=14), ""),
+        (xs5[3], txt(xs5[3], 20, "Wafer Edge Trim", sz=14), ""),
+        (xs5[4], txt(xs5[4], 20, "Wafer Grinding &amp; CMP(拋光)", sz=13.5), "")
+    ]))
+    # Node 1 & 2 top wafer stack
+    for idx in [0, 1]:
+        cx = xs5[idx]
+        x0 = cx - 85
+        s1.extend([
+            rct(x0, 82, 170, 16, C_GLUE), txt(cx, 90, "305 Glue", sz=9.5, col="#002080"),
+            rct(x0, 98, 170, 20, C_M1), txt(cx, 108, "Device (T18-M1)", sz=9.5, col="#000"),
+            rct(x0, 118, 170, 13, C_OX), txt(cx, 124.5, "OX", sz=9.5, col="#fff"),
+            rct(x0, 131, 170, 38, C_SI), txt(cx, 150, "Si", sz=10, col="#fff")
+        ])
+    # Node 2 bottom glass carrier
+    cx2 = xs5[1]
+    s1.extend([
+        rct(cx2 - 85, 205, 170, 18, C_GLUE), txt(cx2, 214, "701 Glue", sz=9.5, col="#002080"),
+        rct(cx2 - 85, 223, 170, 18, C_GLASS), txt(cx2, 232, "Glass", sz=9.5, col="#000")
+    ])
+    # Node 3: W2W Bonding (flipped)
+    cx3 = xs5[2]
+    s1.extend([
+        rct(cx3 - 85, 82, 170, 36, C_SI), txt(cx3, 100, "Si", sz=10, col="#fff"),
+        rct(cx3 - 85, 118, 170, 13, C_OX), txt(cx3, 124.5, "OX", sz=9.5, col="#fff"),
+        rct(cx3 - 85, 131, 170, 20, C_M1), txt(cx3, 141, "Device (T18-M1)", sz=9.5, col="#000"),
+        rct(cx3 - 85, 151, 170, 15, C_GLUE), txt(cx3, 158.5, "305 Glue", sz=9.5, col="#002080"),
+        rct(cx3 - 85, 166, 170, 15, C_GLUE), txt(cx3, 173.5, "701 Glue", sz=9.5, col="#002080"),
+        rct(cx3 - 85, 181, 170, 16, C_GLASS), txt(cx3, 189, "Glass", sz=9.5, col="#000")
+    ])
+    # Node 4: Wafer Edge Trim (stepped Si + sidewall 305 glue)
+    cx4 = xs5[3]
+    x4 = cx4 - 85
+    s1.append(
+        f'<polygon points="{x4+7},82 {x4+163},82 {x4+163},105 {x4+170},105 {x4+170},118 {x4},118 {x4},105 {x4+7},105" '
+        f'fill="{C_SI}" stroke="#000" stroke-width="1.2"/>'
+    )
+    s1.append(txt(cx4, 100, "Si", sz=10, col="#fff"))
+    s1.extend([
+        rct(x4 + 7, 118, 156, 13, C_OX), txt(cx4, 124.5, "OX", sz=9.5, col="#fff"),
+        rct(x4 + 7, 131, 156, 20, C_M1), txt(cx4, 141, "Device (T18-M1)", sz=9.5, col="#000"),
+        f'<polygon points="{x4},105 {x4+7},105 {x4+7},151 {x4+163},151 {x4+163},105 {x4+170},105 {x4+170},166 {x4},166" fill="{C_GLUE}" stroke="#000" stroke-width="1.2"/>',
+        txt(cx4, 158.5, "305 Glue", sz=9.5, col="#002080"),
+        rct(x4, 166, 170, 15, C_GLUE), txt(cx4, 173.5, "701 Glue", sz=9.5, col="#002080"),
+        rct(x4, 181, 170, 16, C_GLASS), txt(cx4, 189, "Glass", sz=9.5, col="#000")
+    ])
+    # Node 5: Wafer Grinding & CMP (thinned)
+    cx5 = xs5[4]
+    s1.extend([
+        rct(cx5 - 85, 104, 170, 34, C_SI), txt(cx5, 121, "Si", sz=10, col="#fff"),
+        rct(cx5 - 85, 138, 170, 12, C_OX), txt(cx5, 144, "OX", sz=9.5, col="#fff"),
+        base_stack(cx5, 150, w=170, has_glass=True)
+    ])
+    s1.append("</svg>")
+    svg_bonding = "".join(s1)
+
+    # ---------------------------------------------------------------------
+    # 2. TSV Etch Section
+    # ---------------------------------------------------------------------
+    s2 = [f'<svg viewBox="0 0 1190 225" style="width:100%; min-width:860px; height:auto; display:block;">{defs}']
+    s2.append(timeline_row(48, [
+        (xs5[0], sub_txt(xs5[0], 20, "Top SiO", "2", " CVD"), "37"),
+        (xs5[1], txt(xs5[1], 20, "LIT Patterning", sz=14), "40"),
+        (xs5[2], sub_txt(xs5[2], 20, "Surface SiO", "2", " Etch"), "45"),
+        (xs5[3], txt(xs5[3], 20, "Bosch Si Etch", sz=14), "47"),
+        (xs5[4], sub_txt(xs5[4], 20, "1st BT SiO", "2", " Etch"), "52")
+    ]))
+    configs_etch = [
+        (xs5[0], False, "full", False, False, "#002080", "#fff", "#fff"),
+        (xs5[1], True, "full", False, False, "#fff", "#fff", "#fff"),
+        (xs5[2], True, "pillars", False, False, "#002080", "#fff", "#fff"),
+        (xs5[3], True, "pillars", True, False, "#fff", "#fff", "#002080"),
+        (xs5[4], True, "pillars", True, True, "#fff", "#002080", "#fff"),
+    ]
+    for cx, has_pr, t_ox, s_et, b_et, t_col, b_col, s_col in configs_etch:
+        body_svg, pxs, _, y_ox1, _, y_ox2 = tsv_pillars_ox_si(
+            cx, 102, top_ox=t_ox, si_etch=s_et, bot_ox_etch=b_et,
+            ox_col_txt=t_col, bot_ox_col=b_col, si_col=s_col
+        )
+        if has_pr:
+            for px in pxs:
+                s2.append(rct(px, 82, 46, 20, C_PR))
+                s2.append(txt(px + 23, 92, "PR", sz=9.5, col="#000"))
+        s2.append(body_svg)
+        s2.append(base_stack(cx, y_ox2 + 13, w=170, has_glass=True))
+    s2.append("</svg>")
+    svg_etch = "".join(s2)
+
+    # ---------------------------------------------------------------------
+    # 3. TSV Cu ECP (TSV Cu Section)
+    # ---------------------------------------------------------------------
+    xs4 = [210, 465, 720, 975]
+    s3 = [f'<svg viewBox="0 0 1190 235" style="width:100%; min-width:820px; height:auto; display:block;">{defs}']
+    n2_lbl = (
+        sub_txt(xs4[1], 14, "2nd Bottom SiO", "2", " Etch", sz=13.5).replace('fill="#000"', 'fill="#1c3faa"') +
+        txt(xs4[1], 32, "(蝕刻完M1會裸露)", sz=12.5, col="#1c3faa")
+    )
+    s3.append(timeline_row(56, [
+        (xs4[0], sub_txt(xs4[0], 24, "Liner SiO", "2", " CVD"), "60"),
+        (xs4[1], n2_lbl, "61"),
+        (xs4[2], txt(xs4[2], 24, "Ti/Cu seed layer", sz=14), "64"),
+        (xs4[3], txt(xs4[3], 24, "TSV Cu ECP", sz=14), "66")
+    ], x1=90, x2=1110))
+
+    for i, cx in enumerate(xs4):
+        x0 = cx - 85.0
+        pxs = [x0, x0 + 62.0, x0 + 124.0]
+        vxs = [x0 + 46.0, x0 + 108.0]
+        y_lt, y_ox1, y_si, y_ox2, y_m1 = 88.0, 102.0, 115.0, 153.0, 166.0
+        # 3 pillars
+        for px in pxs:
+            s3.append(rct(px, y_lt, 46, 14, C_LINER))
+            s3.append(txt(px + 23, y_lt + 7, "Liner", sz=9.5, col="#000"))
+            s3.append(rct(px, y_ox1, 46, 13, C_OX))
+            s3.append(txt(px + 23, y_ox1 + 6.5, "OX", sz=9, col="#fff"))
+            s3.append(rct(px, y_si, 46, 38, C_SI))
+            s3.append(txt(px + 23, y_si + 19, "Si", sz=9.5, col="#fff"))
+            s3.append(rct(px, y_ox2, 46, 13, C_OX))
+            s3.append(txt(px + 23, y_ox2 + 6.5, "OX", sz=9, col="#fff"))
+        # Via sidewalls & bottoms
+        for vx in vxs:
+            s3.append(rct(vx, y_lt, 3.0, 78, C_LINER, sw=0.9))
+            s3.append(rct(vx + 13.0, y_lt, 3.0, 78, C_LINER, sw=0.9))
+            if i == 0:
+                # Step 60: Liner covering bottom of via
+                s3.append(rct(vx, y_m1 - 6, 16.0, 6, C_LINER, sw=0.9))
+            elif i == 1:
+                # Step 61: 2nd bottom etch dashed blue line
+                s3.append(f'<line x1="{vx+3:.1f}" y1="{y_ox2:.1f}" x2="{vx+13:.1f}" y2="{y_ox2:.1f}" stroke="#0000ff" stroke-width="1.8" stroke-dasharray="2,2"/>')
+            elif i == 2:
+                # Step 64: conformal Ti/Cu seed layer
+                s3.append(rct(vx + 3.0, y_lt - 2, 1.8, 80, C_SEED, sw=0.6))
+                s3.append(rct(vx + 11.2, y_lt - 2, 1.8, 80, C_SEED, sw=0.6))
+                s3.append(rct(vx + 3.0, y_m1 - 2.5, 10.0, 2.5, C_SEED, sw=0.6))
+            elif i == 3:
+                # Step 66: TSV Cu ECP filled
+                s3.append(rct(vx + 3.0, y_lt - 2, 1.5, 80, C_SEED, sw=0.6))
+                s3.append(rct(vx + 11.5, y_lt - 2, 1.5, 80, C_SEED, sw=0.6))
+                s3.append(rct(vx + 4.5, y_lt - 2, 7.0, 80, C_CU, sw=0.9))
+                s3.append(txt(vx + 8.0, y_lt + 39, "TSV Cu", sz=8.5, col="#002080", rot=90))
+        if i in [2, 3]:
+            for px in pxs:
+                s3.append(rct(px, y_lt - 2.5, 46, 2.5, C_SEED, sw=0.6))
+        s3.append(base_stack(cx, y_m1, w=170, has_glass=True))
+    s3.append("</svg>")
+    svg_cu_ecp = "".join(s3)
+
+    # ---------------------------------------------------------------------
+    # 4. Cu Pad (RDL) - 雙排共 10 個製程階段
+    # ---------------------------------------------------------------------
+    s4 = [f'<svg viewBox="0 0 1190 455" style="width:100%; min-width:860px; height:auto; display:block;">{defs}']
+    # 第一排: Cu ECP (Over) -> Cu CMP -> RDL Pattern by C4 Mask -> Cu Etch -> PR Remove
+    s4.append(timeline_row(44, [
+        (xs5[0], txt(xs5[0], 18, "Cu ECP (Over)", sz=14), ""),
+        (xs5[1], txt(xs5[1], 18, "Cu CMP", sz=14), ""),
+        (xs5[2], txt(xs5[2], 18, "RDL Pattern by C4 Mask", sz=13.5), ""),
+        (xs5[3], txt(xs5[3], 18, "Cu Etch", sz=14), ""),
+        (xs5[4], txt(xs5[4], 18, "PR Remove", sz=14), "")
+    ]))
+    for i, cx in enumerate(xs5):
+        core_svg, pxs, vxs, y_lt, _ = filled_tsv_core(cx, 102, has_glass=True)
+        s4.append(core_svg)
+        x0 = cx - 85.0
+        # 覆蓋於兩顆 TSV Via 上方的 Cu Pad 位置
+        pads_x = [vxs[0] - 11.0, vxs[1] - 11.0]  # 寬 38 居中於 16px via
+        if i == 0:
+            # Cu Overburden
+            s4.append(rct(x0, 84, 170, 18, C_CU))
+            s4.append(txt(cx, 93, "TSV Cu (Over)", sz=9.5, col="#000"))
+        elif i == 1:
+            # Cu CMP (薄銅層齊平/微凸於上方)
+            s4.append(rct(x0, 95, 170, 7, C_CU))
+        elif i == 2:
+            s4.append(rct(x0, 95, 170, 7, C_CU))
+            for pdx in pads_x:
+                s4.append(rct(pdx, 81, 38, 14, C_PR))
+                s4.append(txt(pdx + 19, 88, "PR", sz=9, col="#002080"))
+        elif i == 3:
+            for pdx in pads_x:
+                s4.append(rct(pdx, 94, 38, 8, C_CU))
+                s4.append(txt(pdx + 19, 98, "Cu", sz=8, col="#002080"))
+                s4.append(rct(pdx, 80, 38, 14, C_PR))
+                s4.append(txt(pdx + 19, 87, "PR", sz=9, col="#002080"))
+        elif i == 4:
+            for pdx in pads_x:
+                s4.append(rct(pdx, 94, 38, 8, C_CU))
+                s4.append(txt(pdx + 19, 98, "Cu", sz=8, col="#002080"))
+
+    # 第二排: SiO2 CVD -> SiO2 CMP -> LIT Pattern for SiO2 Etch -> SiO2 Etch -> PR Remove
+    s4.append(timeline_row(268, [
+        (xs5[0], sub_txt(xs5[0], 242, "SiO", "2", " CVD"), ""),
+        (xs5[1], sub_txt(xs5[1], 242, "SiO", "2", " CMP"), ""),
+        (xs5[2], sub_txt(xs5[2], 242, "LIT Pattern for SiO", "2", " Etch", sz=13.5), ""),
+        (xs5[3], sub_txt(xs5[3], 242, "SiO", "2", " Etch"), ""),
+        (xs5[4], txt(xs5[4], 242, "PR Remove", sz=14), "")
+    ]))
+    for i, cx in enumerate(xs5):
+        core_svg, pxs, vxs, y_lt, _ = filled_tsv_core(cx, 336, has_glass=True)
+        x0 = cx - 85.0
+        pads_x = [vxs[0] - 11.0, vxs[1] - 11.0]
+        # 先畫 OX 鈍化保護層，再疊上 Cu Pad 以呈現包覆效果
+        if i == 0:
+            s4.append(rct(x0, 306, 170, 30, C_OX))
+            s4.append(txt(cx, 318, "OX", sz=9.5, col="#002080"))
+        elif i in [1, 2]:
+            s4.append(rct(x0, 316, 170, 20, C_OX))
+            s4.append(txt(cx, 323, "OX", sz=9, col="#002080" if i == 1 else "#000"))
+        elif i in [3, 4]:
+            # 開孔露出 Cu Pad 中央 (三段式 OX 保護層)
+            ox_segs = [(x0, 39.0), (x0 + 69.0, 32.0), (x0 + 131.0, 39.0)]
+            for sx, sw_ox in ox_segs:
+                s4.append(rct(sx, 316, sw_ox, 20, C_OX))
+                s4.append(txt(sx + sw_ox / 2.0, 326, "OX", sz=8.5, col="#002080"))
+        if i in [2, 3]:
+            pr_segs = [(x0, 39.0), (x0 + 69.0, 32.0), (x0 + 131.0, 39.0)]
+            for sx, sw_pr in pr_segs:
+                s4.append(rct(sx, 302, sw_pr, 14, C_PR))
+                s4.append(txt(sx + sw_pr / 2.0, 309, "PR", sz=8.5, col="#002080"))
+        s4.append(core_svg)
+        for pdx in pads_x:
+            s4.append(rct(pdx, 328, 38, 8, C_CU))
+            s4.append(txt(pdx + 19, 332, "Cu", sz=8, col="#000"))
+    s4.append("</svg>")
+    svg_cu_pad = "".join(s4)
+
+    # ---------------------------------------------------------------------
+    # 5. Bumping Section
+    # ---------------------------------------------------------------------
+    xb4 = [175, 425, 675, 925]
+    s5 = [f'<svg viewBox="0 0 1190 250" style="width:100%; min-width:820px; height:auto; display:block;">{defs}']
+    s5.append(timeline_row(48, [
+        (xb4[0], txt(xb4[0], 20, "Ti/Cu seed layer", sz=14), ""),
+        (xb4[1], txt(xb4[1], 20, "JSR Patterning", sz=14), ""),
+        (xb4[2], txt(xb4[2], 20, "Cu Stud + Sn/Ag Bump", sz=14), ""),
+        (xb4[3], txt(xb4[3], 20, "JSR Remove", sz=14), "")
+    ], x1=65, x2=1120))
+    for i, cx in enumerate(xb4):
+        x0 = cx - 85.0
+        core_svg, pxs, vxs, y_lt, _ = filled_tsv_core(cx, 126, has_glass=True)
+        pads_x = [vxs[0] - 11.0, vxs[1] - 11.0]
+        ox_segs = [(x0, 39.0), (x0 + 69.0, 32.0), (x0 + 131.0, 39.0)]
+        for sx, sw_ox in ox_segs:
+            s5.append(rct(sx, 108, sw_ox, 18, C_OX))
+            s5.append(txt(sx + sw_ox / 2.0, 117, "OX", sz=8.5, col="#fff"))
+        s5.append(core_svg)
+        for pdx in pads_x:
+            s5.append(rct(pdx, 118, 38, 8, C_CU))
+            s5.append(txt(pdx + 19, 122, "Cu", sz=8, col="#000"))
+        # Conformal orange seed line across OX & Cu Pad openings
+        if i in [0, 1, 2]:
+            s5.append(f'<polyline points="{x0},107 {x0+39},107 {x0+39},117 {x0+69},117 {x0+69},107 {x0+101},107 {x0+101},117 {x0+131},117 {x0+131},107 {x0+170},107" fill="none" stroke="{C_SEED}" stroke-width="2.5"/>')
+        if i in [1, 2]:
+            for sx, sw_j in ox_segs:
+                s5.append(rct(sx, 80, sw_j, 26, C_PR))
+                s5.append(txt(sx + sw_j / 2.0, 93, "JSR", sz=8.5, col="#002080" if i == 1 else "#000"))
+        if i in [2, 3]:
+            open_xs = [x0 + 39.0, x0 + 101.0]  # 寬 30 的 Bump 開口
+            for ox_p in open_xs:
+                if i == 3:
+                    s5.append(rct(ox_p, 115, 30, 3, C_SEED, sw=0.6))
+                s5.append(rct(ox_p, 105, 30, 11, C_STUD))
+                s5.append(txt(ox_p + 15, 110.5, "Cu", sz=8, col="#002080"))
+                s5.append(rct(ox_p, 80, 30, 25, C_SN))
+                s5.append(txt(ox_p + 15, 92.5, "SnAg", sz=8.5, col="#002080"))
+    s5.append("</svg>")
+    svg_bump = "".join(s5)
+
+    # ---------------------------------------------------------------------
+    # 6. Dicing Section
+    # ---------------------------------------------------------------------
+    s6 = [f'<svg viewBox="0 0 1190 250" style="width:100%; min-width:860px; height:auto; display:block;">{defs}']
+    s6.append(timeline_row(48, [
+        (xs5[0], txt(xs5[0], 20, "Cu/Ti seed layer Etch", sz=14), "83"),
+        (xs5[1], txt(xs5[1], 20, "Bump cover by PR", sz=14), "88"),
+        (xs5[2], txt(xs5[2], 20, "Dicing tape lamination", sz=14), "89"),
+        (xs5[3], txt(xs5[3], 20, "Laser Debond", sz=14), "90"),
+        (xs5[4], txt(xs5[4], 20, "Dicing &amp; Pick-up Chip-let", sz=13.5), "91")
+    ]))
+    for i, cx in enumerate(xs5):
+        has_gls = (i < 3)
+        core_svg, pxs, vxs, y_lt, _ = filled_tsv_core(cx, 126, has_glass=has_gls)
+        x0 = cx - 85.0
+        # PR 保護層 (i == 1, 2, 3)
+        if i in [1, 2, 3]:
+            s6.append(rct(x0, 94, 170, 32, C_PR))
+            s6.append(txt(cx, 110, "PR", sz=9.5, col="#002080" if i == 1 else "#000"))
+        # Blue Tape (i == 2, 3)
+        if i in [2, 3]:
+            s6.append(rct(x0, 74, 170, 20, C_TAPE))
+            s6.append(txt(cx, 84, "Blue Tape", sz=9.5, col="#002080" if i == 2 else "#000"))
+        s6.append(core_svg)
+        # Bumps on top of vias
+        for vx in vxs:
+            bx = vx - 10.0  # 寬 36
+            s6.append(rct(bx, 123, 36, 3.5, C_SEED, sw=0.7))
+            s6.append(rct(bx + 2, 111, 32, 12, C_STUD))
+            s6.append(txt(bx + 18, 117, "Cu", sz=8.5, col="#000"))
+            s6.append(rct(bx + 2, 97, 32, 14, C_SN))
+            s6.append(txt(bx + 18, 104, "Sn", sz=8.5, col="#000"))
+    s6.append("</svg>")
+    svg_dicing = "".join(s6)
+
+    return {
+        "bonding": svg_bonding,
+        "etch": svg_etch,
+        "cu_ecp": svg_cu_ecp,
+        "cu_pad": svg_cu_pad,
+        "bump": svg_bump,
+        "dicing": svg_dicing,
+    }
 
 # =========================================================================
 # 2. 將所有彈出視窗定義在全域
@@ -843,7 +1277,6 @@ with all_tabs[1]:
             time.sleep(1)
             st.rerun()
     
-    # 🎯 使用底部對齊取代空白佔位符，在手機垂直堆疊時不會產生突兀空白
     col_input1, col_input2 = st.columns([3, 1], vertical_alignment="bottom")
     with col_input1: 
         search_id = st.text_input("Please Key in Wafer ID", key="search_wafer_id_history")
@@ -972,7 +1405,6 @@ with all_tabs[1]:
                 if not mother_spc_val: mother_spc_val = str(original_display_route.iloc[selected_idx].get("備註", "")).strip()
 
                 if not step_logs.empty:
-                    # 🎯 加入 rwd-table-scroll 與 min-width: 650px，手機版可左右滑動不擠壓
                     html_parts = ['<div class="rwd-table-scroll" style="font-size: 14px;"><table style="width: 100%; min-width: 650px; border-collapse: collapse; border: 1px solid #ddd;">']
                     html_parts.append('<tr style="background-color: #f8f9fa; color: #333;"><th style="padding: 10px; border: 1px solid #ddd; text-align: center; width: 12%;">動作 (Action)</th><th style="padding: 10px; border: 1px solid #ddd; text-align: center; width: 20%;">日期與時間</th><th style="padding: 10px; border: 1px solid #ddd; text-align: center; width: 26%;">Action Record</th><th style="padding: 10px; border: 1px solid #ddd; text-align: center; width: 22%;">SPC data</th><th style="padding: 10px; border: 1px solid #ddd; text-align: center; width: 20%;">Result (檢驗圖片)</th></tr>')
                     
@@ -1245,7 +1677,7 @@ with all_tabs[3]:
         st.info("💡 目前雲端母表尚無資料。")
 
 # =========================================================================
-# 📊 頁籤 5: Wafer Overview (支援 RWD 正常比例橫向滑動)
+# 📊 頁籤 5: Wafer Overview
 # =========================================================================
 with all_tabs[4]:
     st.markdown("<div style='font-size: 20px; font-weight: bold; padding-bottom: 0.5rem;'>Active Interposer Wafer Status</div>", unsafe_allow_html=True)
@@ -1262,7 +1694,6 @@ with all_tabs[4]:
         desc_col = next((c for c in df_route.columns if "description" in str(c).lower()), "Step description")
         
         if wafer_col in df_route.columns:
-            # 🎯 設定 min-width: 860px 並包進 .rwd-table-scroll，確保手機上進度條與文字維持正常比例不變形
             html_table = (
                 '<style>'
                 '.overview-table { width: 100%; min-width: 860px; border-collapse: collapse; font-family: sans-serif; font-size: 14px; }'
@@ -1450,7 +1881,7 @@ with all_tabs[4]:
             st.warning("⚠️ 母表中找不到 Wafer ID 欄位。")
 
 # =========================================================================
-# 📈 頁籤 6: Key Stage Report (KSR) - 支援手機正常比例滑動與點擊檢視
+# 📈 頁籤 6: Key Stage Report (KSR) - 點擊區間名稱直接顯示無背景無標題 Process Flow
 # =========================================================================
 with all_tabs[5]:
     st.markdown(
@@ -1595,18 +2026,9 @@ with all_tabs[5]:
                         status_cat = "Normal Run"
                         bar_color = "#009944"
 
-                    sw_display = f"{shuttle_val} ({str(wid).strip()})"
-                    if fco_status == "HOLD":
-                        sw_with_note = f"{sw_display} [Hold: {hold_note_str if hold_note_str else '無備註'}]"
-                    elif fco_status == "SCRP" and hold_note_str:
-                        sw_with_note = f"{sw_display} [Scrap: {hold_note_str}]"
-                    else:
-                        sw_with_note = sw_display
-
                     ksr_records.append({
                         "Wafer ID": str(wid).strip(),
                         "Shuttle": shuttle_val,
-                        "Shuttle_Wafer": sw_with_note,
                         "Step": step_str,
                         "Step_Label": axis_lbl,
                         "Section": get_section_name(step_str),
@@ -1622,7 +2044,6 @@ with all_tabs[5]:
 
                 step_totals = []
                 for (step_s, step_lbl, x_p, sec_s), grp in df_items.groupby(["Step", "Step_Label", "x_pos", "Section"], sort=False):
-                    all_wafers_str = " | ".join(grp["Shuttle_Wafer"].tolist())
                     desc_sample = grp["Step Description"].iloc[0] if not grp.empty else ""
                     display_full_step = f"{step_lbl} ({step_s})" if step_lbl != step_s else step_s
                     step_totals.append({
@@ -1631,7 +2052,6 @@ with all_tabs[5]:
                         "Display_Step": display_full_step,
                         "Section": sec_s,
                         "Total": len(grp),
-                        "All Wafers": all_wafers_str,
                         "Desc": desc_sample,
                         "x_pos": x_p,
                         "items": grp.to_dict("records")
@@ -1653,13 +2073,13 @@ with all_tabs[5]:
                 unit_h = max_bar_area_h / float(max_cnt)
 
                 sections_meta = [
-                    ("W2W Bonding", B_POS[1], B_POS[27]),
-                    ("Grinding", B_POS[27], B_POS[37]),
-                    ("TSV Etch Section", B_POS[37], B_POS[61]),
-                    ("TSV Cu ECP", B_POS[61], B_POS[68]),
-                    ("Cu Pad (RDL)", B_POS[68], B_POS[69]),
-                    ("Bumping Section", B_POS[69], B_POS[88]),
-                    ("Dicing", B_POS[88], B_POS[92]),
+                    ("sec_w2w", "W2W Bonding", B_POS[1], B_POS[27]),
+                    ("sec_grinding", "Grinding", B_POS[27], B_POS[37]),
+                    ("sec_etch", "TSV Etch Section", B_POS[37], B_POS[61]),
+                    ("sec_cu_ecp", "TSV Cu ECP", B_POS[61], B_POS[68]),
+                    ("sec_cu_pad", "Cu Pad (RDL)", B_POS[68], B_POS[69]),
+                    ("sec_bump", "Bumping Section", B_POS[69], B_POS[88]),
+                    ("sec_dicing", "Dicing", B_POS[88], B_POS[92]),
                 ]
                 boundaries = [
                     ("1", B_POS[1]),
@@ -1690,12 +2110,23 @@ with all_tabs[5]:
                         svg_parts.append(f'<line x1="{px:.1f}" y1="{base_y - 6:.1f}" x2="{px:.1f}" y2="{base_y + 6:.1f}" stroke="#999999" stroke-width="1.5" />')
                         svg_parts.append(f'<text x="{px:.1f}" y="{base_y + 24:.1f}" text-anchor="middle" font-size="13" fill="#999999" font-family="sans-serif">{b_lbl}</text>')
 
-                for s_name, sx1, sx2 in sections_meta:
+                # 頂部各區間雙向箭頭 + 可點擊透明感應區 (綁定純 CSS Radio 切換下方 Process Flow)
+                sec_click_labels = []
+                for s_id, s_name, sx1, sx2 in sections_meta:
                     px1 = to_px_x(sx1) + 4.0
                     px2 = to_px_x(sx2) - 4.0
                     pmid = (px1 + px2) / 2.0
                     svg_parts.append(f'<line x1="{px1:.1f}" y1="{sec_y:.1f}" x2="{px2:.1f}" y2="{sec_y:.1f}" stroke="#666666" stroke-width="1.5" marker-start="url(#ksr-arr-l)" marker-end="url(#ksr-arr-r)" />')
-                    svg_parts.append(f'<text x="{pmid:.1f}" y="{sec_y - 8:.1f}" text-anchor="middle" font-size="13.5" fill="#777777" font-family="sans-serif">{html_lib.escape(s_name)}</text>')
+                    svg_parts.append(f'<text class="sec-svg-txt-{s_id}" x="{pmid:.1f}" y="{sec_y - 8:.1f}" text-anchor="middle" font-size="13.5" fill="#777777" font-family="sans-serif">{html_lib.escape(s_name)}</text>')
+                    l_pct = (px1 / svg_w) * 100.0
+                    w_pct = ((px2 - px1) / svg_w) * 100.0
+                    # 點擊區間時開啟對應 Process Flow；若已選取時還提供重設透明鈕收合
+                    sec_click_labels.append(
+                        f'<label for="pf_rad_{s_id}" class="ksr-sec-hit hit-open-{s_id}" title="點擊顯示 {html_lib.escape(s_name)} Process Flow" '
+                        f'style="left: {l_pct:.2f}%; width: {w_pct:.2f}%;"></label>'
+                        f'<label for="pf_rad_none" class="ksr-sec-hit hit-close-{s_id}" title="點擊收合 Process Flow" '
+                        f'style="left: {l_pct:.2f}%; width: {w_pct:.2f}%;"></label>'
+                    )
 
                 axis_end_x = svg_w - pad_r + 18.0
                 svg_parts.append(f'<line x1="{pad_l - 15:.1f}" y1="{base_y:.1f}" x2="{axis_end_x:.1f}" y2="{base_y:.1f}" stroke="#000000" stroke-width="2" marker-end="url(#ksr-axis-r)" />')
@@ -1751,7 +2182,6 @@ with all_tabs[5]:
                     wafer_lines_html = "".join(wafer_lines_list)
                     desc_txt = html_lib.escape(s_row["Desc"])
 
-                    # 🎯 加入 tabindex="0" 讓手機版點擊長條也能觸發顯示浮動視窗
                     overlay_divs.append(
                         f'<div class="ksr-hit" tabindex="0" style="left: calc({left_pct:.2f}% - 14px); top: {top_pct:.2f}%; height: {height_pct:.2f}%;">'
                         f'<div class="ksr-tip" style="{tip_pos_style}">'
@@ -1765,26 +2195,8 @@ with all_tabs[5]:
 
                 svg_parts.append('</svg>')
 
-                # 🎯 RWD 圖表容器：電腦版 100% 無捲軸，手機版維持 880px 正常比例可順暢左右滑動，並支援點擊顯示 Tooltip
-                ksr_html = (
-                    '<style>'
-                    '.ksr-wrap { position: relative; width: 100%; background: #ffffff; border: 1px solid #e9ecef; border-radius: 8px; padding: 14px 10px 18px 10px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }'
-                    '.ksr-stage { position: relative; width: 100%; min-width: 880px; }'
-                    '.ksr-hit { position: absolute; width: 28px; cursor: pointer; z-index: 10; outline: none; -webkit-tap-highlight-color: transparent; }'
-                    '.ksr-hit:hover, .ksr-hit:focus, .ksr-hit:active { background: rgba(13, 110, 253, 0.1); border-radius: 4px; }'
-                    '.ksr-tip { display: none; position: absolute; bottom: 102%; min-width: 220px; max-width: 340px; background: rgba(33, 37, 41, 0.96); color: #ffffff; padding: 10px 14px; border-radius: 6px; font-size: 12.5px; white-space: nowrap; z-index: 999; box-shadow: 0 4px 14px rgba(0,0,0,0.25); pointer-events: none; line-height: 1.45; }'
-                    '.ksr-hit:hover .ksr-tip, .ksr-hit:focus .ksr-tip, .ksr-hit:active .ksr-tip { display: block; }'
-                    '@media screen and (max-width: 920px) {'
-                    '  .ksr-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; padding-top: 75px; }'
-                    '}'
-                    '</style>'
-                    '<div class="mobile-swipe-hint">📱 手機檢視可左右滑動圖表，直接輕點長條即可顯示 Shuttle / Wafer 明細</div>'
-                    f'<div class="ksr-wrap"><div class="ksr-stage">{"".join(svg_parts)}{"".join(overlay_divs)}</div></div>'
-                )
-
-                st.markdown(ksr_html, unsafe_allow_html=True)
-                st.caption("💡 提示：電腦版將滑鼠移至長條上（手機版直接點擊長條），即可檢視該站點停留的所有 Shuttle Name、Wafer ID 與 Hold Note。")
-
+                # Hold Lots 摘要 HTML (維持顯示在 KSR 圖表下方)
+                hold_summary_html = ""
                 df_holds = df_items[df_items["Status"] == "Hold Wafer"]
                 if not df_holds.empty:
                     hold_cards = []
@@ -1798,22 +2210,86 @@ with all_tabs[5]:
                             f'<span style="color: #c92a2a; font-weight: bold;">Hold Note: {h_note}</span>'
                             f'</div>'
                         )
-                    st.markdown(
-                        '<div style="background-color: #f8f0fc; border-left: 4px solid #92278f; padding: 10px 16px; border-radius: 4px; margin-bottom: 12px;">'
+                    hold_summary_html = (
+                        '<div style="background-color: #f8f0fc; border-left: 4px solid #92278f; padding: 10px 16px; border-radius: 4px; margin: 10px 0 14px 0;">'
                         '<div style="font-weight: bold; color: #92278f; font-size: 15px; margin-bottom: 4px;">⚠️ Current Hold Lots (暫停在製清單)</div>'
                         f'{"".join(hold_cards)}'
-                        '</div>',
-                        unsafe_allow_html=True
+                        '</div>'
                     )
 
-                with st.expander("📋 檢視各站點 Shuttle / Wafer ID 明細表"):
-                    df_detail_view = df_totals[["Section", "Display_Step", "Total", "All Wafers"]].rename(columns={
-                        "Section": "製程區間 (Section)",
-                        "Display_Step": "站點 (Step No.)",
-                        "Total": "片數",
-                        "All Wafers": "Shuttle / Wafer ID 清單 (含 Hold Note)"
-                    })
-                    st.dataframe(df_detail_view, hide_index=True, use_container_width=True)
+                # 載入 6 組無背景、無標題的純向量 Process Flow 圖
+                pf_svgs = build_process_flow_svgs()
+
+                ksr_interactive_html = (
+                    '<style>'
+                    '.pf-rad { display: none !important; }'
+                    '.ksr-wrap { position: relative; width: 100%; background: #ffffff; border: 1px solid #e9ecef; border-radius: 8px; padding: 14px 10px 18px 10px; margin-bottom: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }'
+                    '.ksr-stage { position: relative; width: 100%; min-width: 880px; }'
+                    '.ksr-sec-hit { position: absolute; top: 3%; height: 17%; cursor: pointer; z-index: 15; border-radius: 6px; transition: background 0.15s ease; }'
+                    '.ksr-sec-hit:hover { background: rgba(13, 110, 253, 0.09); }'
+                    '.hit-close-sec_w2w, .hit-close-sec_grinding, .hit-close-sec_etch, .hit-close-sec_cu_ecp, .hit-close-sec_cu_pad, .hit-close-sec_bump, .hit-close-sec_dicing { display: none; }'
+                    '#pf_rad_sec_w2w:checked ~ .ksr-wrap .hit-open-sec_w2w { display: none; }'
+                    '#pf_rad_sec_w2w:checked ~ .ksr-wrap .hit-close-sec_w2w { display: block; background: rgba(13, 110, 253, 0.12); }'
+                    '#pf_rad_sec_w2w:checked ~ .ksr-wrap .sec-svg-txt-sec_w2w { fill: #0d6efd !important; font-weight: bold; }'
+                    '#pf_rad_sec_grinding:checked ~ .ksr-wrap .hit-open-sec_grinding { display: none; }'
+                    '#pf_rad_sec_grinding:checked ~ .ksr-wrap .hit-close-sec_grinding { display: block; background: rgba(13, 110, 253, 0.12); }'
+                    '#pf_rad_sec_grinding:checked ~ .ksr-wrap .sec-svg-txt-sec_grinding { fill: #0d6efd !important; font-weight: bold; }'
+                    '#pf_rad_sec_etch:checked ~ .ksr-wrap .hit-open-sec_etch { display: none; }'
+                    '#pf_rad_sec_etch:checked ~ .ksr-wrap .hit-close-sec_etch { display: block; background: rgba(13, 110, 253, 0.12); }'
+                    '#pf_rad_sec_etch:checked ~ .ksr-wrap .sec-svg-txt-sec_etch { fill: #0d6efd !important; font-weight: bold; }'
+                    '#pf_rad_sec_cu_ecp:checked ~ .ksr-wrap .hit-open-sec_cu_ecp { display: none; }'
+                    '#pf_rad_sec_cu_ecp:checked ~ .ksr-wrap .hit-close-sec_cu_ecp { display: block; background: rgba(13, 110, 253, 0.12); }'
+                    '#pf_rad_sec_cu_ecp:checked ~ .ksr-wrap .sec-svg-txt-sec_cu_ecp { fill: #0d6efd !important; font-weight: bold; }'
+                    '#pf_rad_sec_cu_pad:checked ~ .ksr-wrap .hit-open-sec_cu_pad { display: none; }'
+                    '#pf_rad_sec_cu_pad:checked ~ .ksr-wrap .hit-close-sec_cu_pad { display: block; background: rgba(13, 110, 253, 0.12); }'
+                    '#pf_rad_sec_cu_pad:checked ~ .ksr-wrap .sec-svg-txt-sec_cu_pad { fill: #0d6efd !important; font-weight: bold; }'
+                    '#pf_rad_sec_bump:checked ~ .ksr-wrap .hit-open-sec_bump { display: none; }'
+                    '#pf_rad_sec_bump:checked ~ .ksr-wrap .hit-close-sec_bump { display: block; background: rgba(13, 110, 253, 0.12); }'
+                    '#pf_rad_sec_bump:checked ~ .ksr-wrap .sec-svg-txt-sec_bump { fill: #0d6efd !important; font-weight: bold; }'
+                    '#pf_rad_sec_dicing:checked ~ .ksr-wrap .hit-open-sec_dicing { display: none; }'
+                    '#pf_rad_sec_dicing:checked ~ .ksr-wrap .hit-close-sec_dicing { display: block; background: rgba(13, 110, 253, 0.12); }'
+                    '#pf_rad_sec_dicing:checked ~ .ksr-wrap .sec-svg-txt-sec_dicing { fill: #0d6efd !important; font-weight: bold; }'
+                    '.ksr-hit { position: absolute; width: 28px; cursor: pointer; z-index: 10; outline: none; -webkit-tap-highlight-color: transparent; }'
+                    '.ksr-hit:hover, .ksr-hit:focus, .ksr-hit:active { background: rgba(13, 110, 253, 0.1); border-radius: 4px; }'
+                    '.ksr-tip { display: none; position: absolute; bottom: 102%; min-width: 220px; max-width: 340px; background: rgba(33, 37, 41, 0.96); color: #ffffff; padding: 10px 14px; border-radius: 6px; font-size: 12.5px; white-space: nowrap; z-index: 999; box-shadow: 0 4px 14px rgba(0,0,0,0.25); pointer-events: none; line-height: 1.45; }'
+                    '.ksr-hit:hover .ksr-tip, .ksr-hit:focus .ksr-tip, .ksr-hit:active .ksr-tip { display: block; }'
+                    /* 下方無背景無標題 Process Flow 面板 */
+                    '.pf-flow-panel { display: none; width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; padding: 16px 4px 8px 4px; margin-top: 6px; background: transparent; border: none; }'
+                    '#pf_rad_sec_w2w:checked ~ .pf-panel-bonding, #pf_rad_sec_grinding:checked ~ .pf-panel-bonding { display: block; }'
+                    '#pf_rad_sec_etch:checked ~ .pf-panel-etch { display: block; }'
+                    '#pf_rad_sec_cu_ecp:checked ~ .pf-panel-cu_ecp { display: block; }'
+                    '#pf_rad_sec_cu_pad:checked ~ .pf-panel-cu_pad { display: block; }'
+                    '#pf_rad_sec_bump:checked ~ .pf-panel-bump { display: block; }'
+                    '#pf_rad_sec_dicing:checked ~ .pf-panel-dicing { display: block; }'
+                    '@media screen and (max-width: 920px) {'
+                    '  .ksr-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; padding-top: 75px; }'
+                    '}'
+                    '</style>'
+                    '<div>'
+                    '<input type="radio" name="ksr_pf_sel" id="pf_rad_none" class="pf-rad" checked>'
+                    '<input type="radio" name="ksr_pf_sel" id="pf_rad_sec_w2w" class="pf-rad">'
+                    '<input type="radio" name="ksr_pf_sel" id="pf_rad_sec_grinding" class="pf-rad">'
+                    '<input type="radio" name="ksr_pf_sel" id="pf_rad_sec_etch" class="pf-rad">'
+                    '<input type="radio" name="ksr_pf_sel" id="pf_rad_sec_cu_ecp" class="pf-rad">'
+                    '<input type="radio" name="ksr_pf_sel" id="pf_rad_sec_cu_pad" class="pf-rad">'
+                    '<input type="radio" name="ksr_pf_sel" id="pf_rad_sec_bump" class="pf-rad">'
+                    '<input type="radio" name="ksr_pf_sel" id="pf_rad_sec_dicing" class="pf-rad">'
+                    '<div class="mobile-swipe-hint">📱 手機可左右滑動圖表；輕點長條看 Wafer 明細，輕點上方區間名稱顯示 Process Flow</div>'
+                    f'<div class="ksr-wrap"><div class="ksr-stage">{"".join(svg_parts)}{"".join(sec_click_labels)}{"".join(overlay_divs)}</div></div>'
+                    '<div style="font-size: 12.5px; color: #6c757d; margin-bottom: 8px;">'
+                    '💡 提示：滑鼠移至長條上可檢視 Shuttle / Wafer ID；<b>直接點擊圖表上方的區間名稱（如 W2W Bonding、TSV Etch Section 等）</b>即可在下方展開對應 Process Flow（再次點擊可收合）。'
+                    '</div>'
+                    f'{hold_summary_html}'
+                    f'<div class="pf-flow-panel pf-panel-bonding">{pf_svgs["bonding"]}</div>'
+                    f'<div class="pf-flow-panel pf-panel-etch">{pf_svgs["etch"]}</div>'
+                    f'<div class="pf-flow-panel pf-panel-cu_ecp">{pf_svgs["cu_ecp"]}</div>'
+                    f'<div class="pf-flow-panel pf-panel-cu_pad">{pf_svgs["cu_pad"]}</div>'
+                    f'<div class="pf-flow-panel pf-panel-bump">{pf_svgs["bump"]}</div>'
+                    f'<div class="pf-flow-panel pf-panel-dicing">{pf_svgs["dicing"]}</div>'
+                    '</div>'
+                )
+
+                st.markdown(ksr_interactive_html, unsafe_allow_html=True)
             else:
                 st.info("目前產線上沒有任何在製中 (WIP) 的晶圓可供繪製圖表。")
         else:
