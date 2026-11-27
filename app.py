@@ -76,6 +76,27 @@ def fetch_route_data_via_csv(sheet_name="route_template"):
     except Exception as e:
         return pd.DataFrame(), str(e)
 
+# 從 wafer_status 紀錄表建立 Hold Note 補齊字典 {(WAFER_ID_UPPER, CLEAN_STEP): latest_hold_note}
+def build_log_hold_note_map(df_logs):
+    hold_map = {}
+    if df_logs is None or df_logs.empty:
+        return hold_map
+    lw_cols = [c for c in df_logs.columns if "wafer" in str(c).lower() or "晶圓" in str(c)]
+    ls_col = next((c for c in df_logs.columns if "step" in str(c).lower()), "Step")
+    lh_col = next((c for c in df_logs.columns if "hold note" in str(c).lower()), "Hold Note")
+    la_col = next((c for c in df_logs.columns if "action" in str(c).lower()), "Action")
+    if lw_cols and ls_col in df_logs.columns and lh_col in df_logs.columns:
+        lw_col = lw_cols[0]
+        for _, lrow in df_logs.iterrows():
+            k = (str(lrow.get(lw_col, "")).strip().upper(), clean_step(lrow.get(ls_col, "")))
+            act_v = str(lrow.get(la_col, "")).strip().upper()
+            note_v = str(lrow.get(lh_col, "")).strip()
+            if act_v == "HOLD" and note_v:
+                hold_map[k] = note_v
+            elif act_v == "UNHOLD":
+                hold_map.pop(k, None)
+    return hold_map
+
 # =========================================================================
 # 2. 將所有彈出視窗定義在全域
 # =========================================================================
@@ -168,6 +189,7 @@ def show_ongoing_action_dialog(tw_id, ts_no, target_row_dict, avail_steps):
     st.markdown("---")
     with st.expander("📜 View Wafer History", expanded=True):
         df_route_hist, _ = fetch_route_data_via_csv("route_template")
+        df_logs_hist, _ = fetch_route_data_via_csv("wafer_status")
         if not df_route_hist.empty:
             wafer_col_list = [c for c in df_route_hist.columns if "Wafer" in c or "wafer" in c]
             if wafer_col_list:
@@ -178,7 +200,19 @@ def show_ongoing_action_dialog(tw_id, ts_no, target_row_dict, avail_steps):
                     if "Step" in display_route.columns:
                         display_route["Step"] = display_route["Step"].apply(clean_step)
                     
+                    # 若母表的 Hold Note 為空，自動從 wafer_status 補齊顯示
+                    hn_col_hist = next((c for c in display_route.columns if str(c).strip().lower() == "hold note"), None)
+                    if hn_col_hist and not df_logs_hist.empty:
+                        hold_map_hist = build_log_hold_note_map(df_logs_hist)
+                        wid_upper = str(tw_id).strip().upper()
+                        for idx, r in display_route.iterrows():
+                            if not str(r.get(hn_col_hist, "")).strip():
+                                s_clean = clean_step(r.get("Step", ""))
+                                if (wid_upper, s_clean) in hold_map_hist:
+                                    display_route.at[idx, hn_col_hist] = hold_map_hist[(wid_upper, s_clean)]
+
                     wip_row_idx = 0
+                    wip_is_hold = False
                     fco_col_hist = next((c for c in display_route.columns if "check out" in str(c).lower()), "Check out Time")
                     has_scrap = False
                     for idx, row in display_route.iterrows():
@@ -192,6 +226,8 @@ def show_ongoing_action_dialog(tw_id, ts_no, target_row_dict, avail_steps):
                             co_val = str(row.get(fco_col_hist, "")).strip().upper()
                             if co_val in ["", "NAN", "INPR", "HOLD", "BANK"]:
                                 wip_row_idx = idx
+                                if co_val == "HOLD":
+                                    wip_is_hold = True
                                 break
 
                     target_cols_order = [
@@ -214,11 +250,14 @@ def show_ongoing_action_dialog(tw_id, ts_no, target_row_dict, avail_steps):
                     }
                     for col_name in display_route_show.columns:
                         c_lower = str(col_name).lower().strip()
-                        if c_lower in ["step description", "recipe"]:
+                        if c_lower in ["step description", "recipe", "hold note"]:
                             col_cfg[col_name] = st.column_config.TextColumn(width="large")
 
+                    # HOLD 狀態改為反黃底色，一般進行中維持反綠底色
                     def highlight_wip_row(row):
                         if row.name == wip_row_idx and not has_scrap:
+                            if wip_is_hold:
+                                return ['background-color: #fff3cd; color: #856404; font-weight: bold;'] * len(row)
                             return ['background-color: #d4edda; color: #155724; font-weight: bold;'] * len(row)
                         return [''] * len(row)
                     
@@ -250,8 +289,14 @@ def show_history_edit_dialog(tw_id, ts_no, target_row_dict):
     if not current_comment: current_comment = str(target_row_dict.get("Comments", "")).strip()
     if not current_comment: current_comment = str(target_row_dict.get("備註", "")).strip()
     
-    st.markdown("**Data**")
-    spc_data = st.text_input("Update Action Record & Data:", value=current_comment, label_visibility="collapsed")
+    cd_spc, cd_hn = st.columns(2)
+    with cd_spc:
+        st.markdown("**SPC Data**")
+        spc_data = st.text_input("Update SPC Data:", value=current_comment, label_visibility="collapsed")
+    with cd_hn:
+        st.markdown("**Hold Note**")
+        hn_col_key = next((k for k in target_row_dict.keys() if str(k).strip().lower() == "hold note"), "Hold Note")
+        edit_hold_note = st.text_input("Update Hold Note:", value=str(target_row_dict.get(hn_col_key, "")).strip(), label_visibility="collapsed")
     
     st.markdown("**Result Image**")
     result_image = st.file_uploader("Upload new image to overwrite", type=["png", "jpg", "jpeg"], key=f"hist_img_{tw_id}_{ts_no}")
@@ -301,6 +346,8 @@ def show_history_edit_dialog(tw_id, ts_no, target_row_dict):
             "w_id": tw_id,
             "s_no": ts_no,
             "spc": spc_data,
+            "hold_note": edit_hold_note,
+            "hn_col_name": hn_col_key,
             "img": result_image,
             "tool": edit_tool,
             "recipe": edit_recipe,
@@ -371,15 +418,29 @@ with all_tabs[0]:
             urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&column_name=Result&new_value={requests.utils.quote(final_result_link)}")
                 
         enc_time = requests.utils.quote(now_str)
-        enc_comment = requests.utils.quote(pa.get("comment", ""))
+        raw_comment_str = str(pa.get("comment", "")).strip()
+        enc_comment = requests.utils.quote(raw_comment_str)
         act = pa["name"]
+        hn_actual_col = next((k for k in pa["orig_row"].keys() if str(k).strip().lower() == "hold note"), None)
         
-        if act == "Check out": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Check%20out&comment={enc_comment}&time={enc_time}")
-        elif act == "Scrap": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Scrap&comment={enc_comment}&time={enc_time}")
-        elif act == "Unscrap": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Unscrap&comment={enc_comment}&time={enc_time}")
-        elif act == "Hold": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Hold&comment={enc_comment}&time={enc_time}")
-        elif act == "Unhold": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Unhold&comment={enc_comment}&time={enc_time}")
-        elif act == "Bank": urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Bank&comment={enc_comment}&time={enc_time}")
+        if act == "Check out":
+            urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Check%20out&comment={enc_comment}&time={enc_time}")
+        elif act == "Scrap":
+            urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Scrap&comment={enc_comment}&time={enc_time}")
+        elif act == "Unscrap":
+            urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Unscrap&comment={enc_comment}&time={enc_time}")
+        elif act == "Hold":
+            urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Hold&comment={enc_comment}&time={enc_time}")
+            # 🎯 同步將 Hold 原因寫入母表 route_template 的 Hold Note 欄位
+            if hn_actual_col and raw_comment_str:
+                urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&column_name={requests.utils.quote(hn_actual_col)}&new_value={enc_comment}")
+        elif act == "Unhold":
+            urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Unhold&comment={enc_comment}&time={enc_time}")
+            # 🎯 解 Hold 時，同步清空母表 route_template 的 Hold Note 欄位
+            if hn_actual_col:
+                urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&column_name={requests.utils.quote(hn_actual_col)}&new_value=%20")
+        elif act == "Bank":
+            urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Bank&comment={enc_comment}&time={enc_time}")
         elif act == "Jump / Skip Stage":
             curr_step = clean_step(pa["s_no"])
             target_step = clean_step(pa["jump_step"])
@@ -620,6 +681,9 @@ with all_tabs[1]:
             urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&column_name=Result&new_value={requests.utils.quote(final_result_link)}")
 
         fields = {"Process Tool": pa["tool"], "Recipe": pa["recipe"], "Check point": pa["cp"], "Check out Time": pa.get("fco", "")}
+        if pa.get("hn_col_name") in pa["orig_row"]:
+            fields[pa["hn_col_name"]] = pa.get("hold_note", "")
+
         for f_name, f_val in fields.items():
             orig_val = str(pa["orig_row"].get(f_name, "")).strip()
             new_v_str = str(f_val).strip()
@@ -684,8 +748,21 @@ with all_tabs[1]:
             
             if "Step" in display_route.columns:
                 display_route["Step"] = display_route["Step"].apply(clean_step)
+
+            # 保留母表原始列供比對，同時將 wafer_status 中的 Hold Note 動態補入空白的 Hold Note 欄位顯示
+            original_display_route = display_route.copy()
+            hn_col_main = next((c for c in display_route.columns if str(c).strip().lower() == "hold note"), None)
+            if hn_col_main:
+                hold_map_main = build_log_hold_note_map(df_logs)
+                wid_upper = str(search_id).strip().upper()
+                for idx, r in display_route.iterrows():
+                    if not str(r.get(hn_col_main, "")).strip():
+                        s_clean = clean_step(r.get("Step", ""))
+                        if (wid_upper, s_clean) in hold_map_main:
+                            display_route.at[idx, hn_col_main] = hold_map_main[(wid_upper, s_clean)]
             
             wip_row_idx = 0
+            wip_is_hold = False
             fco_col_hist = next((c for c in display_route.columns if "check out" in str(c).lower()), "Check out Time")
             has_scrap = False
             for idx, row in display_route.iterrows():
@@ -699,9 +776,9 @@ with all_tabs[1]:
                     co_val = str(row.get(fco_col_hist, "")).strip().upper()
                     if co_val in ["", "NAN", "INPR", "HOLD", "BANK"]:
                         wip_row_idx = idx
+                        if co_val == "HOLD":
+                            wip_is_hold = True
                         break
-
-            original_display_route = display_route.copy()
 
             target_cols_order = [
                 "step", "stage owner", "step description", "process tool", "recipe", 
@@ -723,11 +800,14 @@ with all_tabs[1]:
             }
             for col_name in display_route_show.columns:
                 c_lower = str(col_name).lower().strip()
-                if c_lower in ["step description", "recipe"]:
+                if c_lower in ["step description", "recipe", "hold note"]:
                     col_cfg[col_name] = st.column_config.TextColumn(width="large")
 
+            # 🎯 若當前站點為 HOLD 則改為反黃底色，一般進行中維持反綠底色
             def highlight_wip_row(row):
                 if row.name == wip_row_idx and not has_scrap:
+                    if wip_is_hold:
+                        return ['background-color: #fff3cd; color: #856404; font-weight: bold;'] * len(row)
                     return ['background-color: #d4edda; color: #155724; font-weight: bold;'] * len(row)
                 return [''] * len(row)
             
@@ -747,6 +827,11 @@ with all_tabs[1]:
                 selected_idx = selected_route_row["selection"]["rows"][0]
                 target_step_no = clean_step(original_display_route.iloc[selected_idx].get("Step", ""))
                 target_row_data = original_display_route.iloc[selected_idx].to_dict()
+                # 若母表原本無 Hold Note 但已由 log 補齊，將預填值帶入編輯對話框方便同步回母表
+                if hn_col_main and not str(target_row_data.get(hn_col_main, "")).strip():
+                    filled_hn = str(display_route.iloc[selected_idx].get(hn_col_main, "")).strip()
+                    if filled_hn:
+                        target_row_data[hn_col_main] = filled_hn
                 
                 st.markdown("---")
                 
@@ -1260,23 +1345,8 @@ with all_tabs[5]:
         desc_col = next((c for c in df_ksr.columns if "description" in str(c).lower()), "Step description")
         hold_note_col = next((c for c in df_ksr.columns if "hold note" in str(c).lower() or "hold_note" in str(c).lower()), "Hold Note")
 
-        # 建立來自 wafer_status 歷史紀錄表的 Hold Note 備援查詢字典 {(WAFER_ID_UPPER, CLEAN_STEP): latest_note}
-        log_hold_map = {}
-        if not df_ksr_logs.empty:
-            lw_cols = [c for c in df_ksr_logs.columns if "wafer" in str(c).lower() or "晶圓" in str(c)]
-            ls_col = next((c for c in df_ksr_logs.columns if "step" in str(c).lower()), "Step")
-            lh_col = next((c for c in df_ksr_logs.columns if "hold note" in str(c).lower()), "Hold Note")
-            la_col = next((c for c in df_ksr_logs.columns if "action" in str(c).lower()), "Action")
-            if lw_cols and ls_col in df_ksr_logs.columns and lh_col in df_ksr_logs.columns:
-                lw_col = lw_cols[0]
-                for _, lrow in df_ksr_logs.iterrows():
-                    note_v = str(lrow.get(lh_col, "")).strip()
-                    act_v = str(lrow.get(la_col, "")).strip().upper()
-                    if note_v and act_v in ["HOLD", "SCRAP", "SCRP", ""]:
-                        k = (str(lrow.get(lw_col, "")).strip().upper(), clean_step(lrow.get(ls_col, "")))
-                        log_hold_map[k] = note_v
+        log_hold_map = build_log_hold_note_map(df_ksr_logs)
 
-        # 依照示意圖比例分配 7 大製程區間的視覺座標 (總寬度 0.0 ~ 100.0)
         B_POS = {
             1: 0.0,
             27: 15.5,
@@ -1370,7 +1440,6 @@ with all_tabs[5]:
                                 is_banked = True
                             break
 
-                # 排除已入庫 (Bank) 與已出貨 (Shipped) 的晶圓
                 if is_banked or (wip_idx == total_steps and not has_scrap):
                     continue
 
@@ -1380,7 +1449,6 @@ with all_tabs[5]:
                     axis_lbl = format_step_label(step_str)
                     fco_status = str(active_row.get(fco_col, "")).strip().upper()
                     
-                    # 優先從母表抓取 Hold Note，若無則從 wafer_status 歷史紀錄補齊
                     hold_note_str = str(active_row.get(hold_note_col, "")).strip()
                     if not hold_note_str:
                         hold_note_str = log_hold_map.get((str(wid).strip().upper(), step_str), "")
@@ -1420,7 +1488,6 @@ with all_tabs[5]:
             if ksr_records:
                 df_items = pd.DataFrame(ksr_records)
 
-                # 依站點聚合明細表與繪圖資料
                 step_totals = []
                 for (step_s, step_lbl, x_p, sec_s), grp in df_items.groupby(["Step", "Step_Label", "x_pos", "Section"], sort=False):
                     all_wafers_str = " | ".join(grp["Shuttle_Wafer"].tolist())
@@ -1439,7 +1506,6 @@ with all_tabs[5]:
                     })
                 df_totals = pd.DataFrame(step_totals).sort_values("x_pos")
 
-                # 建立純原生 SVG + CSS Hover 浮動資訊圖表
                 svg_w = 1200.0
                 svg_h = 340.0
                 pad_l = 35.0
@@ -1484,7 +1550,6 @@ with all_tabs[5]:
                     '</defs>'
                 )
 
-                # 1. 垂直灰色分界虛線與邊界步數 (1, 27, 37, 61, 68, 69, 88, 92)
                 active_px_list = [to_px_x(r["x_pos"]) for _, r in df_totals.iterrows()]
                 for b_lbl, bx in boundaries:
                     px = to_px_x(bx)
@@ -1493,7 +1558,6 @@ with all_tabs[5]:
                         svg_parts.append(f'<line x1="{px:.1f}" y1="{base_y - 6:.1f}" x2="{px:.1f}" y2="{base_y + 6:.1f}" stroke="#999999" stroke-width="1.5" />')
                         svg_parts.append(f'<text x="{px:.1f}" y="{base_y + 24:.1f}" text-anchor="middle" font-size="13" fill="#999999" font-family="sans-serif">{b_lbl}</text>')
 
-                # 2. 頂部製程區間雙向箭頭與文字
                 for s_name, sx1, sx2 in sections_meta:
                     px1 = to_px_x(sx1) + 4.0
                     px2 = to_px_x(sx2) - 4.0
@@ -1501,13 +1565,11 @@ with all_tabs[5]:
                     svg_parts.append(f'<line x1="{px1:.1f}" y1="{sec_y:.1f}" x2="{px2:.1f}" y2="{sec_y:.1f}" stroke="#666666" stroke-width="1.5" marker-start="url(#ksr-arr-l)" marker-end="url(#ksr-arr-r)" />')
                     svg_parts.append(f'<text x="{pmid:.1f}" y="{sec_y - 8:.1f}" text-anchor="middle" font-size="13.5" fill="#777777" font-family="sans-serif">{html_lib.escape(s_name)}</text>')
 
-                # 3. 底部黑色主橫軸與右側「片數 / Step」
                 axis_end_x = svg_w - pad_r + 18.0
                 svg_parts.append(f'<line x1="{pad_l - 15:.1f}" y1="{base_y:.1f}" x2="{axis_end_x:.1f}" y2="{base_y:.1f}" stroke="#000000" stroke-width="2" marker-end="url(#ksr-axis-r)" />')
                 svg_parts.append(f'<text x="{axis_end_x + 8:.1f}" y="{base_y - 10:.1f}" text-anchor="start" font-size="14" font-weight="bold" fill="#000000" font-family="sans-serif">片數</text>')
                 svg_parts.append(f'<text x="{axis_end_x + 8:.1f}" y="{base_y + 24:.1f}" text-anchor="start" font-size="14" font-weight="bold" fill="#000000" font-family="sans-serif">Step</text>')
 
-                # 4. 繪製各站點堆疊長條圖、頂端片數與底部 Step No.
                 bar_w = 10.0
                 overlay_divs = []
                 status_order = {"Normal Run": 0, "Hold Wafer": 1, "Scrap (報廢)": 2}
@@ -1537,7 +1599,6 @@ with all_tabs[5]:
                     svg_parts.append(f'<line x1="{px:.1f}" y1="{base_y:.1f}" x2="{px:.1f}" y2="{base_y + 7:.1f}" stroke="#000000" stroke-width="2" />')
                     svg_parts.append(f'<text x="{px:.1f}" y="{base_y + 24:.1f}" text-anchor="middle" font-size="13" font-weight="bold" fill="#000000" font-family="sans-serif">{html_lib.escape(s_row["Step_Label"])}</text>')
 
-                    # 透明感應區與浮動提示框 (Tooltip 內顯示 Hold Note)
                     left_pct = (px / svg_w) * 100.0
                     top_pct = ((top_bar_y - 18.0) / svg_h) * 100.0
                     height_pct = (((base_y + 28.0) - (top_bar_y - 18.0)) / svg_h) * 100.0
@@ -1586,7 +1647,6 @@ with all_tabs[5]:
                 st.markdown(ksr_html, unsafe_allow_html=True)
                 st.caption("💡 提示：將滑鼠游標移至任一長條圖或步數上，即可浮動檢視該站點停留的所有 Shuttle Name、Wafer ID 與 Hold Note。")
 
-                # 若產線上有 Hold Wafer，於圖表正下方自動醒目列出 Hold Lot 與 Hold Note 摘要
                 df_holds = df_items[df_items["Status"] == "Hold Wafer"]
                 if not df_holds.empty:
                     hold_cards = []
