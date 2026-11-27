@@ -8,17 +8,140 @@ import concurrent.futures
 import html as html_lib
 
 # =========================================================================
-# 1. 系統全域基礎配置與資料載入
+# 1. 系統全域基礎配置、RWD 響應式樣式與資料載入
 # =========================================================================
-st.set_page_config(layout="wide", page_title="TSRI Lot Tracing System")
+st.set_page_config(
+    layout="wide",
+    page_title="TSRI Lot Tracing System",
+    initial_sidebar_state="collapsed"
+)
+
+# 🎯 全域 RWD 響應式 CSS：確保電腦滿版美觀、手機維持正常比例與順暢觸控滑動
+st.markdown("""
+<style>
+/* 頁籤列支援手機橫向滑動，避免擠壓換行 */
+div[data-baseweb="tab-list"] {
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    flex-wrap: nowrap !important;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+    gap: 6px;
+}
+div[data-baseweb="tab-list"] button {
+    white-space: nowrap !important;
+    flex-shrink: 0 !important;
+}
+
+/* 自訂 HTML 表格響應式外框：電腦滿版，手機維持正常比例可左右滑動 */
+.rwd-table-scroll {
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    margin-top: 8px;
+    margin-bottom: 12px;
+    border-radius: 6px;
+}
+
+/* KSR 頂部標題列響應式排版 */
+.ksr-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    border-bottom: 3px solid #b8860b;
+    padding-bottom: 8px;
+    margin-bottom: 16px;
+    gap: 12px;
+}
+.ksr-legend {
+    font-size: 13px;
+    line-height: 1.6;
+    font-weight: bold;
+    min-width: 150px;
+}
+.ksr-title {
+    font-size: 30px;
+    font-weight: bold;
+    color: #b30000;
+    text-align: center;
+    flex-grow: 1;
+}
+.ksr-spacer {
+    min-width: 150px;
+}
+.mobile-swipe-hint {
+    display: none;
+    font-size: 12px;
+    color: #6c757d;
+    margin-bottom: 6px;
+}
+
+/* 手機與小尺寸螢幕專屬調整 (<= 768px) */
+@media screen and (max-width: 768px) {
+    .block-container {
+        padding-top: 2.2rem !important;
+        padding-left: 0.75rem !important;
+        padding-right: 0.75rem !important;
+        padding-bottom: 2rem !important;
+    }
+    .app-main-title {
+        font-size: 18px !important;
+        padding-top: 0.4rem !important;
+        padding-bottom: 0.5rem !important;
+    }
+    /* 彈出視窗適應手機寬度 */
+    div[role="dialog"] {
+        width: 96vw !important;
+        max-width: 96vw !important;
+        margin: 0 auto !important;
+    }
+    /* 放大按鈕與選項觸控區域 */
+    .stButton > button {
+        min-height: 42px !important;
+        font-size: 15px !important;
+    }
+    div[role="radiogroup"] {
+        gap: 8px !important;
+        flex-wrap: wrap !important;
+    }
+    /* KSR 標題在手機改為上下置中堆疊，避免文字擠壓 */
+    .ksr-header {
+        flex-direction: column-reverse;
+        align-items: center;
+        text-align: center;
+        gap: 6px;
+    }
+    .ksr-title {
+        font-size: 22px;
+    }
+    .ksr-legend {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        justify-content: center;
+        min-width: unset;
+        font-size: 12px;
+    }
+    .ksr-legend br {
+        display: none;
+    }
+    .ksr-spacer {
+        display: none;
+    }
+    .mobile-swipe-hint {
+        display: block;
+    }
+}
+</style>
+""", unsafe_allow_html=True)
 
 if "search_wafer_id_history" not in st.session_state:
-    st.session_state.search_wafer_id_history = ""
+    st.session_state.search_wafer_id_history = "LOT4-11F0"
 
 if "ongoing_table_ver" not in st.session_state:
     st.session_state.ongoing_table_ver = 0
 
-st.markdown("<div style='font-size: 20px; font-weight: bold; padding-top: 1rem; padding-bottom: 1rem;'>TSRI Lot Tracing System</div>", unsafe_allow_html=True)
+st.markdown("<div class='app-main-title' style='font-size: 20px; font-weight: bold; padding-top: 1rem; padding-bottom: 1rem;'>TSRI Lot Tracing System</div>", unsafe_allow_html=True)
 
 MY_ORGANIZATION_GAS_URL = "https://script.google.com/macros/s/AKfycbxSpHeSlbCyMgn0cH60fh62eM_nYoaCwkSCZF1UJMTeC-3z1wQJ1RVLXge1kvzadmKM/exec"
 SPREADSHEET_ID = "1RQt29KIb4rkVo4A-Y3GouMAezYEBakb1q283d1sgdZU"
@@ -200,7 +323,6 @@ def show_ongoing_action_dialog(tw_id, ts_no, target_row_dict, avail_steps):
                     if "Step" in display_route.columns:
                         display_route["Step"] = display_route["Step"].apply(clean_step)
                     
-                    # 若母表的 Hold Note 為空，自動從 wafer_status 補齊顯示
                     hn_col_hist = next((c for c in display_route.columns if str(c).strip().lower() == "hold note"), None)
                     if hn_col_hist and not df_logs_hist.empty:
                         hold_map_hist = build_log_hold_note_map(df_logs_hist)
@@ -253,7 +375,6 @@ def show_ongoing_action_dialog(tw_id, ts_no, target_row_dict, avail_steps):
                         if c_lower in ["step description", "recipe", "hold note"]:
                             col_cfg[col_name] = st.column_config.TextColumn(width="large")
 
-                    # HOLD 狀態改為反黃底色，一般進行中維持反綠底色
                     def highlight_wip_row(row):
                         if row.name == wip_row_idx and not has_scrap:
                             if wip_is_hold:
@@ -431,12 +552,10 @@ with all_tabs[0]:
             urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Unscrap&comment={enc_comment}&time={enc_time}")
         elif act == "Hold":
             urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Hold&comment={enc_comment}&time={enc_time}")
-            # 🎯 同步將 Hold 原因寫入母表 route_template 的 Hold Note 欄位
             if hn_actual_col and raw_comment_str:
                 urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&column_name={requests.utils.quote(hn_actual_col)}&new_value={enc_comment}")
         elif act == "Unhold":
             urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Unhold&comment={enc_comment}&time={enc_time}")
-            # 🎯 解 Hold 時，同步清空母表 route_template 的 Hold Note 欄位
             if hn_actual_col:
                 urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&column_name={requests.utils.quote(hn_actual_col)}&new_value=%20")
         elif act == "Bank":
@@ -724,11 +843,11 @@ with all_tabs[1]:
             time.sleep(1)
             st.rerun()
     
-    col_input1, col_input2 = st.columns(2)
+    # 🎯 使用底部對齊取代空白佔位符，在手機垂直堆疊時不會產生突兀空白
+    col_input1, col_input2 = st.columns([3, 1], vertical_alignment="bottom")
     with col_input1: 
         search_id = st.text_input("Please Key in Wafer ID", key="search_wafer_id_history")
     with col_input2:
-        st.write(" "); st.write(" ")
         if st.button("Refresh Data", use_container_width=True, key="history_refresh"):
             st.cache_data.clear(); st.rerun()
 
@@ -749,7 +868,6 @@ with all_tabs[1]:
             if "Step" in display_route.columns:
                 display_route["Step"] = display_route["Step"].apply(clean_step)
 
-            # 保留母表原始列供比對，同時將 wafer_status 中的 Hold Note 動態補入空白的 Hold Note 欄位顯示
             original_display_route = display_route.copy()
             hn_col_main = next((c for c in display_route.columns if str(c).strip().lower() == "hold note"), None)
             if hn_col_main:
@@ -803,7 +921,6 @@ with all_tabs[1]:
                 if c_lower in ["step description", "recipe", "hold note"]:
                     col_cfg[col_name] = st.column_config.TextColumn(width="large")
 
-            # 🎯 若當前站點為 HOLD 則改為反黃底色，一般進行中維持反綠底色
             def highlight_wip_row(row):
                 if row.name == wip_row_idx and not has_scrap:
                     if wip_is_hold:
@@ -827,7 +944,6 @@ with all_tabs[1]:
                 selected_idx = selected_route_row["selection"]["rows"][0]
                 target_step_no = clean_step(original_display_route.iloc[selected_idx].get("Step", ""))
                 target_row_data = original_display_route.iloc[selected_idx].to_dict()
-                # 若母表原本無 Hold Note 但已由 log 補齊，將預填值帶入編輯對話框方便同步回母表
                 if hn_col_main and not str(target_row_data.get(hn_col_main, "")).strip():
                     filled_hn = str(display_route.iloc[selected_idx].get(hn_col_main, "")).strip()
                     if filled_hn:
@@ -835,7 +951,7 @@ with all_tabs[1]:
                 
                 st.markdown("---")
                 
-                hc1, hc2 = st.columns([4, 1])
+                hc1, hc2 = st.columns([4, 1], vertical_alignment="center")
                 hc1.markdown(f"<div style='font-size: 20px; font-weight: bold;'>Step {target_step_no} Action History</div>", unsafe_allow_html=True)
                 if hc2.button("Edit Data", use_container_width=True, type="secondary"):
                     show_history_edit_dialog(search_id, target_step_no, target_row_data)
@@ -856,8 +972,9 @@ with all_tabs[1]:
                 if not mother_spc_val: mother_spc_val = str(original_display_route.iloc[selected_idx].get("備註", "")).strip()
 
                 if not step_logs.empty:
-                    html_parts = ['<div style="font-size: 12pt;"><table style="width: 100%; border-collapse: collapse; border: 1px solid #ddd;">']
-                    html_parts.append('<tr style="background-color: #f8f9fa; color: #333;"><th style="padding: 10px; border: 1px solid #ddd; text-align: center; width: 10%;">動作 (Action)</th><th style="padding: 10px; border: 1px solid #ddd; text-align: center; width: 20%;">日期與時間</th><th style="padding: 10px; border: 1px solid #ddd; text-align: center; width: 25%;">Action Record</th><th style="padding: 10px; border: 1px solid #ddd; text-align: center; width: 25%;">SPC data</th><th style="padding: 10px; border: 1px solid #ddd; text-align: center; width: 20%;">Result (檢驗圖片)</th></tr>')
+                    # 🎯 加入 rwd-table-scroll 與 min-width: 650px，手機版可左右滑動不擠壓
+                    html_parts = ['<div class="rwd-table-scroll" style="font-size: 14px;"><table style="width: 100%; min-width: 650px; border-collapse: collapse; border: 1px solid #ddd;">']
+                    html_parts.append('<tr style="background-color: #f8f9fa; color: #333;"><th style="padding: 10px; border: 1px solid #ddd; text-align: center; width: 12%;">動作 (Action)</th><th style="padding: 10px; border: 1px solid #ddd; text-align: center; width: 20%;">日期與時間</th><th style="padding: 10px; border: 1px solid #ddd; text-align: center; width: 26%;">Action Record</th><th style="padding: 10px; border: 1px solid #ddd; text-align: center; width: 22%;">SPC data</th><th style="padding: 10px; border: 1px solid #ddd; text-align: center; width: 20%;">Result (檢驗圖片)</th></tr>')
                     
                     for _, log_row in step_logs.iterrows():
                         action_val = str(log_row.get("Action", "")).strip()
@@ -872,7 +989,7 @@ with all_tabs[1]:
                         bg_color = "#fff3cd" if action_val.upper() == "HOLD" else "#ffffff"
                         text_color = "#d9534f" if action_val.upper() == "HOLD" else "#000000"
                         
-                        html_parts.append(f'<tr style="background-color: {bg_color};"><td style="padding: 10px; border: 1px solid #ddd; text-align: center; font-weight: bold;">{action_val}</td><td style="padding: 10px; border: 1px solid #ddd; text-align: center;">{time_val}</td><td style="padding: 10px; border: 1px solid #ddd; text-align: center; color: {text_color}; font-weight: bold;">{hold_note_val}</td><td style="padding: 10px; border: 1px solid #ddd; text-align: center;">{spc_val}</td><td style="padding: 10px; border: 1px solid #ddd; text-align: center;">{result_html}</td></tr>')
+                        html_parts.append(f'<tr style="background-color: {bg_color};"><td style="padding: 10px; border: 1px solid #ddd; text-align: center; font-weight: bold;">{action_val}</td><td style="padding: 10px; border: 1px solid #ddd; text-align: center; white-space: nowrap;">{time_val}</td><td style="padding: 10px; border: 1px solid #ddd; text-align: center; color: {text_color}; font-weight: bold;">{hold_note_val}</td><td style="padding: 10px; border: 1px solid #ddd; text-align: center;">{spc_val}</td><td style="padding: 10px; border: 1px solid #ddd; text-align: center;">{result_html}</td></tr>')
                     html_parts.append('</table></div>')
                     st.markdown("".join(html_parts), unsafe_allow_html=True)
                 
@@ -881,7 +998,7 @@ with all_tabs[1]:
                     if mother_result_val.startswith("http"):
                         st.markdown("---")
                         st.markdown("**Uploaded Result Image:**")
-                        st.markdown(f"<a href='{mother_result_val}' target='_blank'><img src='{mother_result_val}' style='max-height: 250px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); cursor: zoom-in;'></a>", unsafe_allow_html=True)
+                        st.markdown(f"<a href='{mother_result_val}' target='_blank'><img src='{mother_result_val}' style='max-width: 100%; max-height: 250px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); cursor: zoom-in;'></a>", unsafe_allow_html=True)
                     elif mother_result_val:
                         st.markdown(f"**Saved Result Record:** {mother_result_val}")
     else:
@@ -1128,10 +1245,11 @@ with all_tabs[3]:
         st.info("💡 目前雲端母表尚無資料。")
 
 # =========================================================================
-# 📊 頁籤 5: Wafer Overview 
+# 📊 頁籤 5: Wafer Overview (支援 RWD 正常比例橫向滑動)
 # =========================================================================
 with all_tabs[4]:
     st.markdown("<div style='font-size: 20px; font-weight: bold; padding-bottom: 0.5rem;'>Active Interposer Wafer Status</div>", unsafe_allow_html=True)
+    st.markdown("<div class='mobile-swipe-hint'>📱 手機檢視可左右滑動表格以維持最佳比例</div>", unsafe_allow_html=True)
     df_route, conn_status = fetch_route_data_via_csv("route_template")
     
     if not df_route.empty:
@@ -1144,7 +1262,23 @@ with all_tabs[4]:
         desc_col = next((c for c in df_route.columns if "description" in str(c).lower()), "Step description")
         
         if wafer_col in df_route.columns:
-            html_table = """<style>.overview-table { width: 100%; border-collapse: collapse; font-family: sans-serif; font-size: 14px; margin-top: 10px; } .overview-table th { background-color: #f8f9fa; padding: 12px 10px; border: 1px solid #dee2e6; text-align: left; font-weight: bold; color: #495057; } .overview-table td { padding: 10px; border: 1px solid #dee2e6; text-align: left; vertical-align: middle; color: #212529; } .overview-table .merged-cell { text-align: center; vertical-align: middle; font-weight: bold; background-color: #ffffff; color: #0d6efd; } .overview-table .owner-team-cell { text-align: center; vertical-align: middle; background-color: #ffffff; } .prog-wrapper { display: flex; align-items: center; width: 100%; } .prog-container { background-color: #e9ecef; border-radius: 4px; flex-grow: 1; height: 16px; overflow: hidden; } .prog-bar { background-color: #28a745; height: 100%; border-radius: 4px; transition: width 0.4s ease; } .prog-text { margin-left: 10px; font-size: 13px; font-weight: 500; min-width: 45px; text-align: right; } .status-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }</style><table class="overview-table"><tr><th>Shuttle Name</th><th>Owner</th><th>團隊</th><th style="width: 90px; text-align: center;">已出貨</th><th>ID (Wafer)</th><th>Step</th><th>Status</th><th style="width: 250px;">進度條</th></tr>"""
+            # 🎯 設定 min-width: 860px 並包進 .rwd-table-scroll，確保手機上進度條與文字維持正常比例不變形
+            html_table = (
+                '<style>'
+                '.overview-table { width: 100%; min-width: 860px; border-collapse: collapse; font-family: sans-serif; font-size: 14px; }'
+                '.overview-table th { background-color: #f8f9fa; padding: 12px 10px; border: 1px solid #dee2e6; text-align: left; font-weight: bold; color: #495057; white-space: nowrap; }'
+                '.overview-table td { padding: 10px; border: 1px solid #dee2e6; text-align: left; vertical-align: middle; color: #212529; }'
+                '.overview-table .merged-cell { text-align: center; vertical-align: middle; font-weight: bold; background-color: #ffffff; color: #0d6efd; white-space: nowrap; }'
+                '.overview-table .owner-team-cell { text-align: center; vertical-align: middle; background-color: #ffffff; }'
+                '.prog-wrapper { display: flex; align-items: center; width: 100%; min-width: 180px; }'
+                '.prog-container { background-color: #e9ecef; border-radius: 4px; flex-grow: 1; height: 16px; overflow: hidden; }'
+                '.prog-bar { background-color: #28a745; height: 100%; border-radius: 4px; transition: width 0.4s ease; }'
+                '.prog-text { margin-left: 10px; font-size: 13px; font-weight: 500; min-width: 45px; text-align: right; }'
+                '.status-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }'
+                '</style>'
+                '<div class="rwd-table-scroll"><table class="overview-table">'
+                '<tr><th>Shuttle Name</th><th>Owner</th><th>團隊</th><th style="width: 75px; text-align: center;">已出貨</th><th>ID (Wafer)</th><th>Step</th><th>Status</th><th style="width: 220px;">進度條</th></tr>'
+            )
             df_route[shuttle_col] = df_route[shuttle_col].fillna("")
             df_route[team_col] = df_route[team_col].fillna("")
             
@@ -1289,11 +1423,11 @@ with all_tabs[4]:
                             html_table += f'<td class="owner-team-cell" rowspan="{team_rowspan}">{t_data["team_name"]}</td><td class="merged-cell" rowspan="{team_rowspan}">{shipped_count}</td>'
                             is_first_in_team = False
                         
-                        html_table += f"<td>{w_data['id']}</td><td>{w_data['step']}</td><td>{w_data['status']}</td>"
+                        html_table += f"<td style='white-space: nowrap;'>{w_data['id']}</td><td style='white-space: nowrap;'>{w_data['step']}</td><td>{w_data['status']}</td>"
                         html_table += f"<td>{w_data['prog_display']}</td>"
                         html_table += "</tr>"
                         
-            html_table += "</table>"
+            html_table += "</table></div>"
             
             if has_inpr_wafers:
                 st.markdown(html_table, unsafe_allow_html=True)
@@ -1316,20 +1450,18 @@ with all_tabs[4]:
             st.warning("⚠️ 母表中找不到 Wafer ID 欄位。")
 
 # =========================================================================
-# 📈 頁籤 6: Key Stage Report (KSR)
+# 📈 頁籤 6: Key Stage Report (KSR) - 支援手機正常比例滑動與點擊檢視
 # =========================================================================
 with all_tabs[5]:
     st.markdown(
-        '<div style="display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 3px solid #b8860b; padding-bottom: 8px; margin-bottom: 16px;">'
-        '<div style="font-size: 13px; line-height: 1.6; font-weight: bold; min-width: 150px;">'
+        '<div class="ksr-header">'
+        '<div class="ksr-legend">'
         '<span style="color: #009944;">■ 綠: Normal Run</span><br>'
         '<span style="color: #92278f;">■ 紫: Hold Wafer</span><br>'
         '<span style="color: #d9534f;">■ 紅: 報廢 (SCRP)</span>'
         '</div>'
-        '<div style="font-size: 30px; font-weight: bold; color: #b30000; text-align: center; flex-grow: 1;">'
-        'Wafer in Process by Stage'
-        '</div>'
-        '<div style="min-width: 150px;"></div>'
+        '<div class="ksr-title">Wafer in Process by Stage</div>'
+        '<div class="ksr-spacer"></div>'
         '</div>',
         unsafe_allow_html=True
     )
@@ -1619,8 +1751,9 @@ with all_tabs[5]:
                     wafer_lines_html = "".join(wafer_lines_list)
                     desc_txt = html_lib.escape(s_row["Desc"])
 
+                    # 🎯 加入 tabindex="0" 讓手機版點擊長條也能觸發顯示浮動視窗
                     overlay_divs.append(
-                        f'<div class="ksr-hit" style="left: calc({left_pct:.2f}% - 12px); top: {top_pct:.2f}%; height: {height_pct:.2f}%;">'
+                        f'<div class="ksr-hit" tabindex="0" style="left: calc({left_pct:.2f}% - 14px); top: {top_pct:.2f}%; height: {height_pct:.2f}%;">'
                         f'<div class="ksr-tip" style="{tip_pos_style}">'
                         f'<div style="font-weight: bold; font-size: 13px; color: #ffd43b; border-bottom: 1px solid #495057; padding-bottom: 4px; margin-bottom: 4px;">'
                         f'Step {html_lib.escape(s_row["Display_Step"])} ｜ {html_lib.escape(s_row["Section"])} ({total_cnt} 片)'
@@ -1632,20 +1765,25 @@ with all_tabs[5]:
 
                 svg_parts.append('</svg>')
 
+                # 🎯 RWD 圖表容器：電腦版 100% 無捲軸，手機版維持 880px 正常比例可順暢左右滑動，並支援點擊顯示 Tooltip
                 ksr_html = (
                     '<style>'
                     '.ksr-wrap { position: relative; width: 100%; background: #ffffff; border: 1px solid #e9ecef; border-radius: 8px; padding: 14px 10px 18px 10px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }'
-                    '.ksr-stage { position: relative; width: 100%; }'
-                    '.ksr-hit { position: absolute; width: 24px; cursor: pointer; z-index: 10; }'
-                    '.ksr-hit:hover { background: rgba(13, 110, 253, 0.08); border-radius: 4px; }'
+                    '.ksr-stage { position: relative; width: 100%; min-width: 880px; }'
+                    '.ksr-hit { position: absolute; width: 28px; cursor: pointer; z-index: 10; outline: none; -webkit-tap-highlight-color: transparent; }'
+                    '.ksr-hit:hover, .ksr-hit:focus, .ksr-hit:active { background: rgba(13, 110, 253, 0.1); border-radius: 4px; }'
                     '.ksr-tip { display: none; position: absolute; bottom: 102%; min-width: 220px; max-width: 340px; background: rgba(33, 37, 41, 0.96); color: #ffffff; padding: 10px 14px; border-radius: 6px; font-size: 12.5px; white-space: nowrap; z-index: 999; box-shadow: 0 4px 14px rgba(0,0,0,0.25); pointer-events: none; line-height: 1.45; }'
-                    '.ksr-hit:hover .ksr-tip { display: block; }'
+                    '.ksr-hit:hover .ksr-tip, .ksr-hit:focus .ksr-tip, .ksr-hit:active .ksr-tip { display: block; }'
+                    '@media screen and (max-width: 920px) {'
+                    '  .ksr-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; padding-top: 75px; }'
+                    '}'
                     '</style>'
+                    '<div class="mobile-swipe-hint">📱 手機檢視可左右滑動圖表，直接輕點長條即可顯示 Shuttle / Wafer 明細</div>'
                     f'<div class="ksr-wrap"><div class="ksr-stage">{"".join(svg_parts)}{"".join(overlay_divs)}</div></div>'
                 )
 
                 st.markdown(ksr_html, unsafe_allow_html=True)
-                st.caption("💡 提示：將滑鼠游標移至任一長條圖或步數上，即可浮動檢視該站點停留的所有 Shuttle Name、Wafer ID 與 Hold Note。")
+                st.caption("💡 提示：電腦版將滑鼠移至長條上（手機版直接點擊長條），即可檢視該站點停留的所有 Shuttle Name、Wafer ID 與 Hold Note。")
 
                 df_holds = df_items[df_items["Status"] == "Hold Wafer"]
                 if not df_holds.empty:
@@ -1654,7 +1792,7 @@ with all_tabs[5]:
                         st_disp = f"{hrow['Step_Label']} ({hrow['Step']})" if hrow['Step_Label'] != hrow['Step'] else hrow['Step']
                         h_note = html_lib.escape(hrow["Hold_Note"]) if hrow["Hold_Note"] else "無備註"
                         hold_cards.append(
-                            f'<div style="margin: 4px 0; font-size: 14px;">'
+                            f'<div style="margin: 4px 0; font-size: 14px; line-height: 1.5;">'
                             f'<span style="color: #92278f; font-weight: bold;">● Step {html_lib.escape(st_disp)}</span> ｜ '
                             f'<b>{html_lib.escape(hrow["Shuttle"])} ({html_lib.escape(hrow["Wafer ID"])})</b> — '
                             f'<span style="color: #c92a2a; font-weight: bold;">Hold Note: {h_note}</span>'
