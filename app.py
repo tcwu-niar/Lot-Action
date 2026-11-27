@@ -265,7 +265,6 @@ def build_process_flow_svgs():
             ])
         return "".join(s)
 
-    # 3 柱 2 孔 TSV 結構基底 (總寬 170: 柱寬 46 * 3 + 孔寬 16 * 2 = 170)
     def tsv_pillars_ox_si(cx, y_top, top_ox=True, si_etch=True, bot_ox_etch=True, ox_col_txt="#fff", bot_ox_col="#fff", si_col="#fff"):
         x0 = cx - 85.0
         pxs = [x0, x0 + 62.0, x0 + 124.0]
@@ -274,7 +273,6 @@ def build_process_flow_svgs():
         y_si = y_top + 14.0
         y_ox2 = y_si + 38.0
         p = []
-        # Bottom OX
         if not bot_ox_etch:
             p.append(rct(x0, y_ox2, 170, 13, C_OX))
             p.append(txt(cx, y_ox2 + 6.5, "OX", sz=9.5, col=bot_ox_col))
@@ -282,7 +280,6 @@ def build_process_flow_svgs():
             for px in pxs:
                 p.append(rct(px, y_ox2, 46, 13, C_OX))
                 p.append(txt(px + 23, y_ox2 + 6.5, "OX", sz=9.5, col=bot_ox_col))
-        # Si
         if not si_etch:
             p.append(rct(x0, y_si, 170, 38, C_SI))
             p.append(txt(cx, y_si + 19, "Si", sz=10, col=si_col))
@@ -290,7 +287,6 @@ def build_process_flow_svgs():
             for px in pxs:
                 p.append(rct(px, y_si, 46, 38, C_SI))
                 p.append(txt(px + 23, y_si + 19, "Si", sz=10, col=si_col))
-        # Top OX
         if top_ox == "full":
             p.append(rct(x0, y_ox1, 170, 14, C_OX))
             p.append(txt(cx, y_ox1 + 7, "OX", sz=9.5, col=ox_col_txt))
@@ -300,7 +296,6 @@ def build_process_flow_svgs():
                 p.append(txt(px + 23, y_ox1 + 7, "OX", sz=9.5, col=ox_col_txt))
         return "".join(p), pxs, vxs, y_ox1, y_si, y_ox2
 
-    # 已填滿 Liner + Seed + TSV Cu 並平坦化後的 3 柱 2 孔標準基底 (高 75: LinerTop 8 + OX 13 + Si 41 + OX 13)
     def filled_tsv_core(cx, y_top, has_glass=True):
         x0 = cx - 85.0
         pxs = [x0, x0 + 62.0, x0 + 124.0]
@@ -319,7 +314,6 @@ def build_process_flow_svgs():
             p.append(txt(px + 23, y_si + 20, "Si", sz=9.5, col="#fff"))
             p.append(rct(px, y_ox2, 46, 13, C_OX))
             p.append(txt(px + 23, y_ox2 + 6.5, "OX", sz=9, col="#fff"))
-        # 每個 Via 寬 16: 左 Liner(2.5) + Seed(1.5) + TSV Cu(8) + Seed(1.5) + 右 Liner(2.5)
         for vx in vxs:
             p.append(rct(vx, y_lt, 2.5, 73, C_LINER, sw=0.8))
             p.append(rct(vx + 13.5, y_lt, 2.5, 73, C_LINER, sw=0.8))
@@ -335,9 +329,7 @@ def build_process_flow_svgs():
         '<path d="M 0 1 L 10 5 L 0 9 z" fill="#000"/></marker></defs>'
     )
 
-    # ---------------------------------------------------------------------
     # 1. W2W Bonding & Grinding
-    # ---------------------------------------------------------------------
     xs5 = [145, 370, 595, 820, 1045]
     s1 = [f'<svg viewBox="0 0 1190 275" style="width:100%; min-width:860px; height:auto; display:block;">{defs}']
     s1.append(timeline_row(48, [
@@ -347,7 +339,6 @@ def build_process_flow_svgs():
         (xs5[3], txt(xs5[3], 20, "Wafer Edge Trim", sz=14), ""),
         (xs5[4], txt(xs5[4], 20, "Wafer Grinding &amp; CMP(拋光)", sz=13.5), "")
     ]))
-    # Node 1 & 2 top wafer stack
     for idx in [0, 1]:
         cx = xs5[idx]
         x0 = cx - 85
@@ -357,13 +348,11 @@ def build_process_flow_svgs():
             rct(x0, 118, 170, 13, C_OX), txt(cx, 124.5, "OX", sz=9.5, col="#fff"),
             rct(x0, 131, 170, 38, C_SI), txt(cx, 150, "Si", sz=10, col="#fff")
         ])
-    # Node 2 bottom glass carrier
     cx2 = xs5[1]
     s1.extend([
         rct(cx2 - 85, 205, 170, 18, C_GLUE), txt(cx2, 214, "701 Glue", sz=9.5, col="#002080"),
         rct(cx2 - 85, 223, 170, 18, C_GLASS), txt(cx2, 232, "Glass", sz=9.5, col="#000")
     ])
-    # Node 3: W2W Bonding (flipped)
     cx3 = xs5[2]
     s1.extend([
         rct(cx3 - 85, 82, 170, 36, C_SI), txt(cx3, 100, "Si", sz=10, col="#fff"),
@@ -373,7 +362,6 @@ def build_process_flow_svgs():
         rct(cx3 - 85, 166, 170, 15, C_GLUE), txt(cx3, 173.5, "701 Glue", sz=9.5, col="#002080"),
         rct(cx3 - 85, 181, 170, 16, C_GLASS), txt(cx3, 189, "Glass", sz=9.5, col="#000")
     ])
-    # Node 4: Wafer Edge Trim (stepped Si + sidewall 305 glue)
     cx4 = xs5[3]
     x4 = cx4 - 85
     s1.append(
@@ -389,7 +377,6 @@ def build_process_flow_svgs():
         rct(x4, 166, 170, 15, C_GLUE), txt(cx4, 173.5, "701 Glue", sz=9.5, col="#002080"),
         rct(x4, 181, 170, 16, C_GLASS), txt(cx4, 189, "Glass", sz=9.5, col="#000")
     ])
-    # Node 5: Wafer Grinding & CMP (thinned)
     cx5 = xs5[4]
     s1.extend([
         rct(cx5 - 85, 104, 170, 34, C_SI), txt(cx5, 121, "Si", sz=10, col="#fff"),
@@ -399,9 +386,7 @@ def build_process_flow_svgs():
     s1.append("</svg>")
     svg_bonding = "".join(s1)
 
-    # ---------------------------------------------------------------------
     # 2. TSV Etch Section
-    # ---------------------------------------------------------------------
     s2 = [f'<svg viewBox="0 0 1190 225" style="width:100%; min-width:860px; height:auto; display:block;">{defs}']
     s2.append(timeline_row(48, [
         (xs5[0], sub_txt(xs5[0], 20, "Top SiO", "2", " CVD"), "37"),
@@ -431,9 +416,7 @@ def build_process_flow_svgs():
     s2.append("</svg>")
     svg_etch = "".join(s2)
 
-    # ---------------------------------------------------------------------
     # 3. TSV Cu ECP (TSV Cu Section)
-    # ---------------------------------------------------------------------
     xs4 = [210, 465, 720, 975]
     s3 = [f'<svg viewBox="0 0 1190 235" style="width:100%; min-width:820px; height:auto; display:block;">{defs}']
     n2_lbl = (
@@ -452,7 +435,6 @@ def build_process_flow_svgs():
         pxs = [x0, x0 + 62.0, x0 + 124.0]
         vxs = [x0 + 46.0, x0 + 108.0]
         y_lt, y_ox1, y_si, y_ox2, y_m1 = 88.0, 102.0, 115.0, 153.0, 166.0
-        # 3 pillars
         for px in pxs:
             s3.append(rct(px, y_lt, 46, 14, C_LINER))
             s3.append(txt(px + 23, y_lt + 7, "Liner", sz=9.5, col="#000"))
@@ -462,23 +444,18 @@ def build_process_flow_svgs():
             s3.append(txt(px + 23, y_si + 19, "Si", sz=9.5, col="#fff"))
             s3.append(rct(px, y_ox2, 46, 13, C_OX))
             s3.append(txt(px + 23, y_ox2 + 6.5, "OX", sz=9, col="#fff"))
-        # Via sidewalls & bottoms
         for vx in vxs:
             s3.append(rct(vx, y_lt, 3.0, 78, C_LINER, sw=0.9))
             s3.append(rct(vx + 13.0, y_lt, 3.0, 78, C_LINER, sw=0.9))
             if i == 0:
-                # Step 60: Liner covering bottom of via
                 s3.append(rct(vx, y_m1 - 6, 16.0, 6, C_LINER, sw=0.9))
             elif i == 1:
-                # Step 61: 2nd bottom etch dashed blue line
                 s3.append(f'<line x1="{vx+3:.1f}" y1="{y_ox2:.1f}" x2="{vx+13:.1f}" y2="{y_ox2:.1f}" stroke="#0000ff" stroke-width="1.8" stroke-dasharray="2,2"/>')
             elif i == 2:
-                # Step 64: conformal Ti/Cu seed layer
                 s3.append(rct(vx + 3.0, y_lt - 2, 1.8, 80, C_SEED, sw=0.6))
                 s3.append(rct(vx + 11.2, y_lt - 2, 1.8, 80, C_SEED, sw=0.6))
                 s3.append(rct(vx + 3.0, y_m1 - 2.5, 10.0, 2.5, C_SEED, sw=0.6))
             elif i == 3:
-                # Step 66: TSV Cu ECP filled
                 s3.append(rct(vx + 3.0, y_lt - 2, 1.5, 80, C_SEED, sw=0.6))
                 s3.append(rct(vx + 11.5, y_lt - 2, 1.5, 80, C_SEED, sw=0.6))
                 s3.append(rct(vx + 4.5, y_lt - 2, 7.0, 80, C_CU, sw=0.9))
@@ -490,11 +467,8 @@ def build_process_flow_svgs():
     s3.append("</svg>")
     svg_cu_ecp = "".join(s3)
 
-    # ---------------------------------------------------------------------
-    # 4. Cu Pad (RDL) - 雙排共 10 個製程階段
-    # ---------------------------------------------------------------------
+    # 4. Cu Pad (RDL)
     s4 = [f'<svg viewBox="0 0 1190 455" style="width:100%; min-width:860px; height:auto; display:block;">{defs}']
-    # 第一排: Cu ECP (Over) -> Cu CMP -> RDL Pattern by C4 Mask -> Cu Etch -> PR Remove
     s4.append(timeline_row(44, [
         (xs5[0], txt(xs5[0], 18, "Cu ECP (Over)", sz=14), ""),
         (xs5[1], txt(xs5[1], 18, "Cu CMP", sz=14), ""),
@@ -506,14 +480,11 @@ def build_process_flow_svgs():
         core_svg, pxs, vxs, y_lt, _ = filled_tsv_core(cx, 102, has_glass=True)
         s4.append(core_svg)
         x0 = cx - 85.0
-        # 覆蓋於兩顆 TSV Via 上方的 Cu Pad 位置
-        pads_x = [vxs[0] - 11.0, vxs[1] - 11.0]  # 寬 38 居中於 16px via
+        pads_x = [vxs[0] - 11.0, vxs[1] - 11.0]
         if i == 0:
-            # Cu Overburden
             s4.append(rct(x0, 84, 170, 18, C_CU))
             s4.append(txt(cx, 93, "TSV Cu (Over)", sz=9.5, col="#000"))
         elif i == 1:
-            # Cu CMP (薄銅層齊平/微凸於上方)
             s4.append(rct(x0, 95, 170, 7, C_CU))
         elif i == 2:
             s4.append(rct(x0, 95, 170, 7, C_CU))
@@ -531,7 +502,6 @@ def build_process_flow_svgs():
                 s4.append(rct(pdx, 94, 38, 8, C_CU))
                 s4.append(txt(pdx + 19, 98, "Cu", sz=8, col="#002080"))
 
-    # 第二排: SiO2 CVD -> SiO2 CMP -> LIT Pattern for SiO2 Etch -> SiO2 Etch -> PR Remove
     s4.append(timeline_row(268, [
         (xs5[0], sub_txt(xs5[0], 242, "SiO", "2", " CVD"), ""),
         (xs5[1], sub_txt(xs5[1], 242, "SiO", "2", " CMP"), ""),
@@ -543,7 +513,6 @@ def build_process_flow_svgs():
         core_svg, pxs, vxs, y_lt, _ = filled_tsv_core(cx, 336, has_glass=True)
         x0 = cx - 85.0
         pads_x = [vxs[0] - 11.0, vxs[1] - 11.0]
-        # 先畫 OX 鈍化保護層，再疊上 Cu Pad 以呈現包覆效果
         if i == 0:
             s4.append(rct(x0, 306, 170, 30, C_OX))
             s4.append(txt(cx, 318, "OX", sz=9.5, col="#002080"))
@@ -551,7 +520,6 @@ def build_process_flow_svgs():
             s4.append(rct(x0, 316, 170, 20, C_OX))
             s4.append(txt(cx, 323, "OX", sz=9, col="#002080" if i == 1 else "#000"))
         elif i in [3, 4]:
-            # 開孔露出 Cu Pad 中央 (三段式 OX 保護層)
             ox_segs = [(x0, 39.0), (x0 + 69.0, 32.0), (x0 + 131.0, 39.0)]
             for sx, sw_ox in ox_segs:
                 s4.append(rct(sx, 316, sw_ox, 20, C_OX))
@@ -568,9 +536,7 @@ def build_process_flow_svgs():
     s4.append("</svg>")
     svg_cu_pad = "".join(s4)
 
-    # ---------------------------------------------------------------------
     # 5. Bumping Section
-    # ---------------------------------------------------------------------
     xb4 = [175, 425, 675, 925]
     s5 = [f'<svg viewBox="0 0 1190 250" style="width:100%; min-width:820px; height:auto; display:block;">{defs}']
     s5.append(timeline_row(48, [
@@ -591,7 +557,6 @@ def build_process_flow_svgs():
         for pdx in pads_x:
             s5.append(rct(pdx, 118, 38, 8, C_CU))
             s5.append(txt(pdx + 19, 122, "Cu", sz=8, col="#000"))
-        # Conformal orange seed line across OX & Cu Pad openings
         if i in [0, 1, 2]:
             s5.append(f'<polyline points="{x0},107 {x0+39},107 {x0+39},117 {x0+69},117 {x0+69},107 {x0+101},107 {x0+101},117 {x0+131},117 {x0+131},107 {x0+170},107" fill="none" stroke="{C_SEED}" stroke-width="2.5"/>')
         if i in [1, 2]:
@@ -599,7 +564,7 @@ def build_process_flow_svgs():
                 s5.append(rct(sx, 80, sw_j, 26, C_PR))
                 s5.append(txt(sx + sw_j / 2.0, 93, "JSR", sz=8.5, col="#002080" if i == 1 else "#000"))
         if i in [2, 3]:
-            open_xs = [x0 + 39.0, x0 + 101.0]  # 寬 30 的 Bump 開口
+            open_xs = [x0 + 39.0, x0 + 101.0]
             for ox_p in open_xs:
                 if i == 3:
                     s5.append(rct(ox_p, 115, 30, 3, C_SEED, sw=0.6))
@@ -610,9 +575,7 @@ def build_process_flow_svgs():
     s5.append("</svg>")
     svg_bump = "".join(s5)
 
-    # ---------------------------------------------------------------------
     # 6. Dicing Section
-    # ---------------------------------------------------------------------
     s6 = [f'<svg viewBox="0 0 1190 250" style="width:100%; min-width:860px; height:auto; display:block;">{defs}']
     s6.append(timeline_row(48, [
         (xs5[0], txt(xs5[0], 20, "Cu/Ti seed layer Etch", sz=14), "83"),
@@ -625,18 +588,15 @@ def build_process_flow_svgs():
         has_gls = (i < 3)
         core_svg, pxs, vxs, y_lt, _ = filled_tsv_core(cx, 126, has_glass=has_gls)
         x0 = cx - 85.0
-        # PR 保護層 (i == 1, 2, 3)
         if i in [1, 2, 3]:
             s6.append(rct(x0, 94, 170, 32, C_PR))
             s6.append(txt(cx, 110, "PR", sz=9.5, col="#002080" if i == 1 else "#000"))
-        # Blue Tape (i == 2, 3)
         if i in [2, 3]:
             s6.append(rct(x0, 74, 170, 20, C_TAPE))
             s6.append(txt(cx, 84, "Blue Tape", sz=9.5, col="#002080" if i == 2 else "#000"))
         s6.append(core_svg)
-        # Bumps on top of vias
         for vx in vxs:
-            bx = vx - 10.0  # 寬 36
+            bx = vx - 10.0
             s6.append(rct(bx, 123, 36, 3.5, C_SEED, sw=0.7))
             s6.append(rct(bx + 2, 111, 32, 12, C_STUD))
             s6.append(txt(bx + 18, 117, "Cu", sz=8.5, col="#000"))
@@ -2110,7 +2070,6 @@ with all_tabs[5]:
                         svg_parts.append(f'<line x1="{px:.1f}" y1="{base_y - 6:.1f}" x2="{px:.1f}" y2="{base_y + 6:.1f}" stroke="#999999" stroke-width="1.5" />')
                         svg_parts.append(f'<text x="{px:.1f}" y="{base_y + 24:.1f}" text-anchor="middle" font-size="13" fill="#999999" font-family="sans-serif">{b_lbl}</text>')
 
-                # 頂部各區間雙向箭頭 + 可點擊透明感應區 (綁定純 CSS Radio 切換下方 Process Flow)
                 sec_click_labels = []
                 for s_id, s_name, sx1, sx2 in sections_meta:
                     px1 = to_px_x(sx1) + 4.0
@@ -2120,7 +2079,6 @@ with all_tabs[5]:
                     svg_parts.append(f'<text class="sec-svg-txt-{s_id}" x="{pmid:.1f}" y="{sec_y - 8:.1f}" text-anchor="middle" font-size="13.5" fill="#777777" font-family="sans-serif">{html_lib.escape(s_name)}</text>')
                     l_pct = (px1 / svg_w) * 100.0
                     w_pct = ((px2 - px1) / svg_w) * 100.0
-                    # 點擊區間時開啟對應 Process Flow；若已選取時還提供重設透明鈕收合
                     sec_click_labels.append(
                         f'<label for="pf_rad_{s_id}" class="ksr-sec-hit hit-open-{s_id}" title="點擊顯示 {html_lib.escape(s_name)} Process Flow" '
                         f'style="left: {l_pct:.2f}%; width: {w_pct:.2f}%;"></label>'
@@ -2195,7 +2153,6 @@ with all_tabs[5]:
 
                 svg_parts.append('</svg>')
 
-                # Hold Lots 摘要 HTML (維持顯示在 KSR 圖表下方)
                 hold_summary_html = ""
                 df_holds = df_items[df_items["Status"] == "Hold Wafer"]
                 if not df_holds.empty:
@@ -2217,7 +2174,6 @@ with all_tabs[5]:
                         '</div>'
                     )
 
-                # 載入 6 組無背景、無標題的純向量 Process Flow 圖
                 pf_svgs = build_process_flow_svgs()
 
                 ksr_interactive_html = (
@@ -2253,7 +2209,6 @@ with all_tabs[5]:
                     '.ksr-hit:hover, .ksr-hit:focus, .ksr-hit:active { background: rgba(13, 110, 253, 0.1); border-radius: 4px; }'
                     '.ksr-tip { display: none; position: absolute; bottom: 102%; min-width: 220px; max-width: 340px; background: rgba(33, 37, 41, 0.96); color: #ffffff; padding: 10px 14px; border-radius: 6px; font-size: 12.5px; white-space: nowrap; z-index: 999; box-shadow: 0 4px 14px rgba(0,0,0,0.25); pointer-events: none; line-height: 1.45; }'
                     '.ksr-hit:hover .ksr-tip, .ksr-hit:focus .ksr-tip, .ksr-hit:active .ksr-tip { display: block; }'
-                    /* 下方無背景無標題 Process Flow 面板 */
                     '.pf-flow-panel { display: none; width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; padding: 16px 4px 8px 4px; margin-top: 6px; background: transparent; border: none; }'
                     '#pf_rad_sec_w2w:checked ~ .pf-panel-bonding, #pf_rad_sec_grinding:checked ~ .pf-panel-bonding { display: block; }'
                     '#pf_rad_sec_etch:checked ~ .pf-panel-etch { display: block; }'
@@ -2266,7 +2221,7 @@ with all_tabs[5]:
                     '}'
                     '</style>'
                     '<div>'
-                    '<input type="radio" name="ksr_pf_sel" id="pf_rad_none" class="pf-rad" checked>'
+                    '<input type="radio" name="ksr_pf_sel" id="pf_rad_none" class="pf-rad">'
                     '<input type="radio" name="ksr_pf_sel" id="pf_rad_sec_w2w" class="pf-rad">'
                     '<input type="radio" name="ksr_pf_sel" id="pf_rad_sec_grinding" class="pf-rad">'
                     '<input type="radio" name="ksr_pf_sel" id="pf_rad_sec_etch" class="pf-rad">'
