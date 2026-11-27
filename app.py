@@ -13,7 +13,7 @@ import html as html_lib
 st.set_page_config(layout="wide", page_title="TSRI Lot Tracing System")
 
 if "search_wafer_id_history" not in st.session_state:
-    st.session_state.search_wafer_id_history = ""
+    st.session_state.search_wafer_id_history = "LOT4-11F0"
 
 if "ongoing_table_ver" not in st.session_state:
     st.session_state.ongoing_table_ver = 0
@@ -1250,6 +1250,7 @@ with all_tabs[5]:
     )
 
     df_ksr, _ = fetch_route_data_via_csv("route_template")
+    df_ksr_logs, _ = fetch_route_data_via_csv("wafer_status")
     
     if not df_ksr.empty:
         wafer_col = next((c for c in df_ksr.columns if str(c).strip().lower() in ["wafer id", "id", "wafer"]), "Wafer ID")
@@ -1257,9 +1258,25 @@ with all_tabs[5]:
         shuttle_col = next((c for c in df_ksr.columns if "shuttle" in str(c).lower()), "Shuttle Name")
         fco_col = next((c for c in df_ksr.columns if "check out" in str(c).lower()), "Check out Time")
         desc_col = next((c for c in df_ksr.columns if "description" in str(c).lower()), "Step description")
+        hold_note_col = next((c for c in df_ksr.columns if "hold note" in str(c).lower() or "hold_note" in str(c).lower()), "Hold Note")
+
+        # 建立來自 wafer_status 歷史紀錄表的 Hold Note 備援查詢字典 {(WAFER_ID_UPPER, CLEAN_STEP): latest_note}
+        log_hold_map = {}
+        if not df_ksr_logs.empty:
+            lw_cols = [c for c in df_ksr_logs.columns if "wafer" in str(c).lower() or "晶圓" in str(c)]
+            ls_col = next((c for c in df_ksr_logs.columns if "step" in str(c).lower()), "Step")
+            lh_col = next((c for c in df_ksr_logs.columns if "hold note" in str(c).lower()), "Hold Note")
+            la_col = next((c for c in df_ksr_logs.columns if "action" in str(c).lower()), "Action")
+            if lw_cols and ls_col in df_ksr_logs.columns and lh_col in df_ksr_logs.columns:
+                lw_col = lw_cols[0]
+                for _, lrow in df_ksr_logs.iterrows():
+                    note_v = str(lrow.get(lh_col, "")).strip()
+                    act_v = str(lrow.get(la_col, "")).strip().upper()
+                    if note_v and act_v in ["HOLD", "SCRAP", "SCRP", ""]:
+                        k = (str(lrow.get(lw_col, "")).strip().upper(), clean_step(lrow.get(ls_col, "")))
+                        log_hold_map[k] = note_v
 
         # 依照示意圖比例分配 7 大製程區間的視覺座標 (總寬度 0.0 ~ 100.0)
-        # 1 | W2W Bonding (15.5) | 27 | Grinding (9.5) | 37 | TSV Etch Section (20.5) | 61 | TSV Cu ECP (10.5) | 68 | Cu Pad (RDL) (15.0) | 69 | Bumping Section (17.5) | 88 | Dicing (11.5) | 92
         B_POS = {
             1: 0.0,
             27: 15.5,
@@ -1276,7 +1293,6 @@ with all_tabs[5]:
                 parts = step_str.split(".")
                 s_val = int(re.findall(r'\d+', parts[1])[0]) if re.findall(r'\d+', parts[1]) else 1
                 s_val = max(1, min(s_val, 24))
-                # 將 68.01 ~ 68.24 (C1 ~ C24) 均勻映射於 68 與 69 邊界虛線之間，預留左右安全邊距避免壓線
                 span = B_POS[69] - B_POS[68]
                 return B_POS[68] + (s_val / 25.0) * span
             else:
@@ -1298,7 +1314,6 @@ with all_tabs[5]:
                     return B_POS[88] + ((m_val - 88) / 4.0) * (B_POS[92] - B_POS[88])
 
         def format_step_label(step_str):
-            # 若為小數點支線站點 (如 68.01 ~ 68.24)，顯示為 C1 ~ C24
             if "." in step_str:
                 parts = step_str.split(".")
                 s_val = int(re.findall(r'\d+', parts[1])[0]) if re.findall(r'\d+', parts[1]) else 1
@@ -1365,6 +1380,11 @@ with all_tabs[5]:
                     axis_lbl = format_step_label(step_str)
                     fco_status = str(active_row.get(fco_col, "")).strip().upper()
                     
+                    # 優先從母表抓取 Hold Note，若無則從 wafer_status 歷史紀錄補齊
+                    hold_note_str = str(active_row.get(hold_note_col, "")).strip()
+                    if not hold_note_str:
+                        hold_note_str = log_hold_map.get((str(wid).strip().upper(), step_str), "")
+
                     if fco_status == "SCRP":
                         status_cat = "Scrap (報廢)"
                         bar_color = "#d9534f"
@@ -1375,15 +1395,24 @@ with all_tabs[5]:
                         status_cat = "Normal Run"
                         bar_color = "#009944"
 
+                    sw_display = f"{shuttle_val} ({str(wid).strip()})"
+                    if fco_status == "HOLD":
+                        sw_with_note = f"{sw_display} [Hold: {hold_note_str if hold_note_str else '無備註'}]"
+                    elif fco_status == "SCRP" and hold_note_str:
+                        sw_with_note = f"{sw_display} [Scrap: {hold_note_str}]"
+                    else:
+                        sw_with_note = sw_display
+
                     ksr_records.append({
                         "Wafer ID": str(wid).strip(),
                         "Shuttle": shuttle_val,
-                        "Shuttle_Wafer": f"{shuttle_val} ({str(wid).strip()})",
+                        "Shuttle_Wafer": sw_with_note,
                         "Step": step_str,
                         "Step_Label": axis_lbl,
                         "Section": get_section_name(step_str),
                         "Status": status_cat,
                         "Color": bar_color,
+                        "Hold_Note": hold_note_str,
                         "Step Description": str(active_row.get(desc_col, "")).strip(),
                         "x_pos": step_to_x_pos(step_str)
                     })
@@ -1460,12 +1489,11 @@ with all_tabs[5]:
                 for b_lbl, bx in boundaries:
                     px = to_px_x(bx)
                     svg_parts.append(f'<line x1="{px:.1f}" y1="15" x2="{px:.1f}" y2="{base_y + 42:.1f}" stroke="#dcdcdc" stroke-width="1.5" stroke-dasharray="5,4" />')
-                    # 若邊界站點本身沒有在製晶圓，才顯示淺灰色邊界數字，避免與黑色粗體重疊
                     if all(abs(px - apx) > 10.0 for apx in active_px_list):
                         svg_parts.append(f'<line x1="{px:.1f}" y1="{base_y - 6:.1f}" x2="{px:.1f}" y2="{base_y + 6:.1f}" stroke="#999999" stroke-width="1.5" />')
                         svg_parts.append(f'<text x="{px:.1f}" y="{base_y + 24:.1f}" text-anchor="middle" font-size="13" fill="#999999" font-family="sans-serif">{b_lbl}</text>')
 
-                # 2. 頂部製程區間雙向箭頭與文字 (全部統一灰色，不特別標色)
+                # 2. 頂部製程區間雙向箭頭與文字
                 for s_name, sx1, sx2 in sections_meta:
                     px1 = to_px_x(sx1) + 4.0
                     px2 = to_px_x(sx2) - 4.0
@@ -1479,7 +1507,7 @@ with all_tabs[5]:
                 svg_parts.append(f'<text x="{axis_end_x + 8:.1f}" y="{base_y - 10:.1f}" text-anchor="start" font-size="14" font-weight="bold" fill="#000000" font-family="sans-serif">片數</text>')
                 svg_parts.append(f'<text x="{axis_end_x + 8:.1f}" y="{base_y + 24:.1f}" text-anchor="start" font-size="14" font-weight="bold" fill="#000000" font-family="sans-serif">Step</text>')
 
-                # 4. 繪製各站點堆疊長條圖、頂端片數與底部 Step No. (RDL 站點顯示 C1~C24)
+                # 4. 繪製各站點堆疊長條圖、頂端片數與底部 Step No.
                 bar_w = 10.0
                 overlay_divs = []
                 status_order = {"Normal Run": 0, "Hold Wafer": 1, "Scrap (報廢)": 2}
@@ -1505,21 +1533,29 @@ with all_tabs[5]:
                     total_cnt = int(s_row["Total"])
                     top_bar_y = base_y - total_cnt * unit_h
 
-                    # 長條頂部片數與底部黑色粗體標籤 (例如 55, 67, C1~C24, 69)
                     svg_parts.append(f'<text x="{px:.1f}" y="{top_bar_y - 8:.1f}" text-anchor="middle" font-size="15" font-weight="bold" fill="#000000" font-family="sans-serif">{total_cnt}</text>')
                     svg_parts.append(f'<line x1="{px:.1f}" y1="{base_y:.1f}" x2="{px:.1f}" y2="{base_y + 7:.1f}" stroke="#000000" stroke-width="2" />')
                     svg_parts.append(f'<text x="{px:.1f}" y="{base_y + 24:.1f}" text-anchor="middle" font-size="13" font-weight="bold" fill="#000000" font-family="sans-serif">{html_lib.escape(s_row["Step_Label"])}</text>')
 
-                    # 透明感應區與浮動提示框 (Tooltip)
+                    # 透明感應區與浮動提示框 (Tooltip 內顯示 Hold Note)
                     left_pct = (px / svg_w) * 100.0
                     top_pct = ((top_bar_y - 18.0) / svg_h) * 100.0
                     height_pct = (((base_y + 28.0) - (top_bar_y - 18.0)) / svg_h) * 100.0
-                    tip_pos_style = "right: 0; transform: translateX(0);" if left_pct > 82 else ("left: 0; transform: translateX(0);" if left_pct < 18 else "left: 50%; transform: translateX(-50%);")
+                    tip_pos_style = "right: 0; transform: translateX(0);" if left_pct > 80 else ("left: 0; transform: translateX(0);" if left_pct < 20 else "left: 50%; transform: translateX(-50%);")
 
-                    wafer_lines_html = "".join([
-                        f'<div style="margin-top: 3px;"><span style="color: {it["Color"]};">●</span> {html_lib.escape(it["Shuttle"])} <b>({html_lib.escape(it["Wafer ID"])})</b></div>'
-                        for it in items_sorted
-                    ])
+                    wafer_lines_list = []
+                    for it in items_sorted:
+                        line_str = f'<div style="margin-top: 4px;"><span style="color: {it["Color"]};">●</span> {html_lib.escape(it["Shuttle"])} <b>({html_lib.escape(it["Wafer ID"])})</b>'
+                        if it["Status"] == "Hold Wafer":
+                            h_txt = html_lib.escape(it["Hold_Note"]) if it["Hold_Note"] else "無備註 (No Hold Note)"
+                            line_str += f'<div style="color: #e599f7; font-size: 11.5px; margin-left: 14px; white-space: normal;">↳ Hold Note: {h_txt}</div>'
+                        elif it["Status"] == "Scrap (報廢)" and it["Hold_Note"]:
+                            s_txt = html_lib.escape(it["Hold_Note"])
+                            line_str += f'<div style="color: #ffa8a8; font-size: 11.5px; margin-left: 14px; white-space: normal;">↳ Scrap Note: {s_txt}</div>'
+                        line_str += '</div>'
+                        wafer_lines_list.append(line_str)
+
+                    wafer_lines_html = "".join(wafer_lines_list)
                     desc_txt = html_lib.escape(s_row["Desc"])
 
                     overlay_divs.append(
@@ -1541,21 +1577,43 @@ with all_tabs[5]:
                     '.ksr-stage { position: relative; width: 100%; }'
                     '.ksr-hit { position: absolute; width: 24px; cursor: pointer; z-index: 10; }'
                     '.ksr-hit:hover { background: rgba(13, 110, 253, 0.08); border-radius: 4px; }'
-                    '.ksr-tip { display: none; position: absolute; bottom: 102%; background: rgba(33, 37, 41, 0.96); color: #ffffff; padding: 10px 14px; border-radius: 6px; font-size: 12.5px; white-space: nowrap; z-index: 999; box-shadow: 0 4px 14px rgba(0,0,0,0.25); pointer-events: none; line-height: 1.45; }'
+                    '.ksr-tip { display: none; position: absolute; bottom: 102%; min-width: 220px; max-width: 340px; background: rgba(33, 37, 41, 0.96); color: #ffffff; padding: 10px 14px; border-radius: 6px; font-size: 12.5px; white-space: nowrap; z-index: 999; box-shadow: 0 4px 14px rgba(0,0,0,0.25); pointer-events: none; line-height: 1.45; }'
                     '.ksr-hit:hover .ksr-tip { display: block; }'
                     '</style>'
                     f'<div class="ksr-wrap"><div class="ksr-stage">{"".join(svg_parts)}{"".join(overlay_divs)}</div></div>'
                 )
 
                 st.markdown(ksr_html, unsafe_allow_html=True)
-                st.caption("💡 提示：將滑鼠游標移至任一長條圖或步數上，即可浮動檢視該站點停留的所有 Shuttle Name 與 Wafer ID。")
+                st.caption("💡 提示：將滑鼠游標移至任一長條圖或步數上，即可浮動檢視該站點停留的所有 Shuttle Name、Wafer ID 與 Hold Note。")
+
+                # 若產線上有 Hold Wafer，於圖表正下方自動醒目列出 Hold Lot 與 Hold Note 摘要
+                df_holds = df_items[df_items["Status"] == "Hold Wafer"]
+                if not df_holds.empty:
+                    hold_cards = []
+                    for _, hrow in df_holds.iterrows():
+                        st_disp = f"{hrow['Step_Label']} ({hrow['Step']})" if hrow['Step_Label'] != hrow['Step'] else hrow['Step']
+                        h_note = html_lib.escape(hrow["Hold_Note"]) if hrow["Hold_Note"] else "無備註"
+                        hold_cards.append(
+                            f'<div style="margin: 4px 0; font-size: 14px;">'
+                            f'<span style="color: #92278f; font-weight: bold;">● Step {html_lib.escape(st_disp)}</span> ｜ '
+                            f'<b>{html_lib.escape(hrow["Shuttle"])} ({html_lib.escape(hrow["Wafer ID"])})</b> — '
+                            f'<span style="color: #c92a2a; font-weight: bold;">Hold Note: {h_note}</span>'
+                            f'</div>'
+                        )
+                    st.markdown(
+                        '<div style="background-color: #f8f0fc; border-left: 4px solid #92278f; padding: 10px 16px; border-radius: 4px; margin-bottom: 12px;">'
+                        '<div style="font-weight: bold; color: #92278f; font-size: 15px; margin-bottom: 4px;">⚠️ Current Hold Lots (暫停在製清單)</div>'
+                        f'{"".join(hold_cards)}'
+                        '</div>',
+                        unsafe_allow_html=True
+                    )
 
                 with st.expander("📋 檢視各站點 Shuttle / Wafer ID 明細表"):
                     df_detail_view = df_totals[["Section", "Display_Step", "Total", "All Wafers"]].rename(columns={
                         "Section": "製程區間 (Section)",
                         "Display_Step": "站點 (Step No.)",
                         "Total": "片數",
-                        "All Wafers": "Shuttle / Wafer ID 清單"
+                        "All Wafers": "Shuttle / Wafer ID 清單 (含 Hold Note)"
                     })
                     st.dataframe(df_detail_view, hide_index=True, use_container_width=True)
             else:
