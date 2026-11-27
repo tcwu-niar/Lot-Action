@@ -5,7 +5,6 @@ import datetime
 import time      
 import re
 import concurrent.futures
-import altair as alt
 
 # =========================================================================
 # 1. 系統全域基礎配置與資料載入
@@ -13,17 +12,16 @@ import altair as alt
 st.set_page_config(layout="wide", page_title="TSRI Lot Tracing System")
 
 if "search_wafer_id_history" not in st.session_state:
-    st.session_state.search_wafer_id_history = "LOT4-11F0"
+    st.session_state.search_wafer_id_history = ""
 
-if "ongoing_table_ver" not in st.session_state:
-    st.session_state.ongoing_table_ver = 0
+if "clear_ongoing_selection" not in st.session_state:
+    st.session_state.clear_ongoing_selection = False
 
-st.markdown("<div style='font-size: 20px; font-weight: bold; padding-top: 1rem; padding-bottom: 1rem;'>TSRI Lot Tracing System</div>", unsafe_allow_html=True)
+st.markdown("<div style='font-size: 20px; font-weight: bold; padding-top: 1rem; padding-bottom: 1rem;'>TSRI Lot Tracing System-UAT Enviornment</div>", unsafe_allow_html=True)
 
-MY_ORGANIZATION_GAS_URL = "https://script.google.com/macros/s/AKfycbxSpHeSlbCyMgn0cH60fh62eM_nYoaCwkSCZF1UJMTeC-3z1wQJ1RVLXge1kvzadmKM/exec"
-SPREADSHEET_ID = "1RQt29KIb4rkVo4A-Y3GouMAezYEBakb1q283d1sgdZU"
+MY_ORGANIZATION_GAS_URL = "https://script.google.com/macros/s/AKfycbx9pptKpV0dUDtGifGCbQnO33d42eUbbODnjVq_g4yitOviXtq6_8TdMo7VT7HL9dC-6w/exec"
+SPREADSHEET_ID = "1HIcyPgjoHWA3Wgj8gohyEN2s-kF5A6OGEWuR0wDqULU"
 
-# UI 顯示專用：統一格式化為整數或兩位小數 (如 68.10、68.14)
 def clean_step(val):
     s = str(val).strip()
     if not s or s in ["nan", "NaN", "None"]:
@@ -38,17 +36,6 @@ def clean_step(val):
     except:
         if s.endswith(".0"):
             return s[:-2]
-        return s
-
-# API 傳輸專用：四捨五入至小數點後兩位並去除尾數 0，符合 Google Sheets 底層數值比對
-def gas_safe_step(val):
-    s = str(val).strip()
-    try:
-        f = round(float(s), 2)
-        if f.is_integer():
-            return str(int(f))
-        return str(f)  # 68.10 -> "68.1"、68.20 -> "68.2"、68.139999 -> "68.14"
-    except:
         return s
 
 @st.cache_data(ttl=15)
@@ -77,7 +64,7 @@ def fetch_route_data_via_csv(sheet_name="route_template"):
         return pd.DataFrame(), str(e)
 
 # =========================================================================
-# 2. 將所有彈出視窗定義在全域
+# 2. 🎯 將所有彈出視窗定義在全域
 # =========================================================================
 
 @st.dialog(" ", width="large")
@@ -166,7 +153,7 @@ def show_ongoing_action_dialog(tw_id, ts_no, target_row_dict, avail_steps):
         st.rerun()
 
     st.markdown("---")
-    with st.expander("📜 View Wafer History", expanded=True):
+    with st.expander("📜 View Wafer History"):
         df_route_hist, _ = fetch_route_data_via_csv("route_template")
         if not df_route_hist.empty:
             wafer_col_list = [c for c in df_route_hist.columns if "Wafer" in c or "wafer" in c]
@@ -262,6 +249,7 @@ def show_history_edit_dialog(tw_id, ts_no, target_row_dict):
     current_fco = str(target_row_dict.get("Check out Time", "")).strip()
     st.markdown(f"**Current Status / Time:** `{current_fco if current_fco else 'Empty'}`")
     
+    # 🎯 綁定 key 讓 radio 變更時，可以強制更新頁面狀態
     fco_action = st.radio(
         "Modify Check out Time:",
         ["Keep Original (保持原本狀態)", "Set New Date & Time (設定新時間)", "Clear Time (清除時間以退站)"],
@@ -282,6 +270,7 @@ def show_history_edit_dialog(tw_id, ts_no, target_row_dict):
             pass
             
     cd1, cd2 = st.columns(2)
+    # 🎯 利用剛剛綁定的 session state 來決定 disabled 屬性
     is_disabled = st.session_state[f"fco_action_{tw_id}_{ts_no}"] != "Set New Date & Time (設定新時間)"
     
     with cd1:
@@ -310,15 +299,7 @@ def show_history_edit_dialog(tw_id, ts_no, target_row_dict):
         }
         st.rerun()
 
-# 🎯 新增第 6 個頁籤：Key Stage Report (KSR)
-all_tabs = st.tabs([
-    "🔍 Ongoing Wafer", 
-    "📜 Wafer History", 
-    "📤 Upload New Wafer", 
-    "📦 Bank Wafers", 
-    "📊 Wafer Overview", 
-    "📈 Key Stage Report (KSR)"
-])
+all_tabs = st.tabs(["🔍 Ongoing Wafer", "📜 Wafer History", "📤 Upload New Wafer", "📦 Bank Wafers", "📊 Wafer Overview"])
 
 # =========================================================================
 # 🔍 頁籤 1: Ongoing Wafer 
@@ -335,7 +316,7 @@ with all_tabs[0]:
         urls_to_send = []
         
         enc_w_id = requests.utils.quote(str(pa["w_id"]))
-        enc_s_no = requests.utils.quote(gas_safe_step(pa["s_no"]))
+        enc_s_no = requests.utils.quote(str(pa["s_no"]))
         
         final_result_link = ""
         if pa["img"] is not None:
@@ -395,10 +376,10 @@ with all_tabs[0]:
                 
             if tgt_idx < curr_idx:
                 for i in range(tgt_idx, curr_idx + 1):
-                    enc_step = requests.utils.quote(gas_safe_step(avail[i]))
+                    enc_step = requests.utils.quote(str(avail[i]))
                     urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_step}&column_name=Check%20out%20Time&new_value=%20")
             elif tgt_idx > curr_idx:
-                enc_target = requests.utils.quote(gas_safe_step(target_step))
+                enc_target = requests.utils.quote(str(target_step))
                 urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={enc_w_id}&step_no={enc_s_no}&action=Skip&comment={enc_comment}&time={enc_time}&target_step={enc_target}")
             
         if urls_to_send:
@@ -430,7 +411,7 @@ with all_tabs[0]:
                     time.sleep(1.2)
                     
                 st.cache_data.clear()
-                st.session_state.ongoing_table_ver += 1
+                st.session_state.clear_ongoing_selection = True
                 st.rerun()
 
     df_route, conn_status = fetch_route_data_via_csv("route_template")
@@ -447,6 +428,7 @@ with all_tabs[0]:
         
         if wafer_col in df_route.columns:
             def get_lot_number(wid):
+                import re
                 match = re.search(r'lot(\d+)', str(wid).lower())
                 return int(match.group(1)) if match else 999999
                 
@@ -546,36 +528,45 @@ with all_tabs[0]:
                 display_df = df_wip[["Lot Owner", "ID (Wafer)", "Step", "Stage Owner", "Module", "Step Description", "Process Tool", "Recipe"]]
                 styled_df = display_df.style.set_properties(**{'text-align': 'center'})
                 
-                table_placeholder = st.empty()
-                curr_table_key = f"ongoing_wafer_table_{st.session_state.ongoing_table_ver}"
-                
-                selection = table_placeholder.dataframe(
+                if "ongoing_last_sel" not in st.session_state:
+                    st.session_state.ongoing_last_sel = []
+
+                sel_state = "single-row"
+                if st.session_state.clear_ongoing_selection:
+                    st.session_state.ongoing_last_sel = []
+                    st.session_state.clear_ongoing_selection = False
+                    table_key = f"ongoing_wafer_table_{time.time()}" 
+                else:
+                    table_key = "ongoing_wafer_table"
+
+                selection = st.dataframe(
                     styled_df,
                     use_container_width=True,
                     hide_index=True,
                     on_select="rerun",
-                    selection_mode="single-row",
-                    key=curr_table_key
+                    selection_mode=sel_state,
+                    key=table_key
                 )
                 
                 curr_sel = selection.get("selection", {}).get("rows", [])
                 
-                if curr_sel:
-                    selected_idx = curr_sel[0]
-                    selected_item = wip_data_list[selected_idx]
+                if curr_sel != st.session_state.ongoing_last_sel:
+                    st.session_state.ongoing_last_sel = curr_sel
                     
-                    st.session_state.search_wafer_id_history = str(selected_item['ID (Wafer)']).strip()
-                    
-                    st.session_state.ongoing_table_ver += 1
-                    if curr_table_key in st.session_state:
-                        del st.session_state[curr_table_key]
-                    
-                    show_ongoing_action_dialog(
-                        selected_item['ID (Wafer)'], 
-                        selected_item['_raw_step'], 
-                        selected_item['_row_dict'], 
-                        selected_item['_avail_steps']
-                    )
+                    if curr_sel:
+                        selected_idx = curr_sel[0]
+                        selected_item = wip_data_list[selected_idx]
+                        
+                        st.session_state.search_wafer_id_history = str(selected_item['ID (Wafer)']).strip()
+                        
+                        st.session_state.clear_ongoing_selection = True
+                        
+                        show_ongoing_action_dialog(
+                            selected_item['ID (Wafer)'], 
+                            selected_item['_raw_step'], 
+                            selected_item['_row_dict'], 
+                            selected_item['_avail_steps']
+                        )
             else:
                 st.info("No Ongoing Wafers at this moment.")
         else:
@@ -593,7 +584,7 @@ with all_tabs[1]:
         
         urls_to_send = []
         enc_w_id = requests.utils.quote(str(pa["w_id"]))
-        enc_s_no = requests.utils.quote(gas_safe_step(pa["s_no"]))
+        enc_s_no = requests.utils.quote(str(pa["s_no"]))
         
         final_result_link = ""
         if pa["img"] is not None:
@@ -894,7 +885,7 @@ with all_tabs[3]:
                         if fco in ["", "NAN", "INPR", "HOLD", "BANK"]:
                             if fco == "BANK":
                                 is_banked = True
-                                bank_step_no = clean_step(row.get(step_col, ""))
+                                bank_step_no = str(row.get(step_col, "")).replace(".0", "")
                                 bank_comment = str(row.get(comment_col, ""))
                             break
                             
@@ -934,7 +925,7 @@ with all_tabs[3]:
                         enc_comment = requests.utils.quote("[KICK OFF] 從 Bank Wafers 批次出庫下線")
                         
                         for w, s in zip(selected_wids, selected_steps):
-                            enc_s = requests.utils.quote(gas_safe_step(s))
+                            enc_s = requests.utils.quote(str(s))
                             urls_to_send.append(f"{MY_ORGANIZATION_GAS_URL}?wafer_id={requests.utils.quote(str(w))}&step_no={enc_s}&action=Kick%20off&comment={enc_comment}&time={enc_time}")
                             
                         with st.spinner(f"Syncing Kick off for {len(selected_wids)} wafers..."):
@@ -970,6 +961,7 @@ with all_tabs[3]:
             summary_data = []
             
             def get_lot_number(wid):
+                import re
                 match = re.search(r'lot(\d+)', str(wid).lower())
                 return int(match.group(1)) if match else 999999
                 
@@ -1065,6 +1057,7 @@ with all_tabs[4]:
             df_route[team_col] = df_route[team_col].fillna("")
             
             def get_lot_number(wid):
+                import re
                 match = re.search(r'lot(\d+)', str(wid).lower())
                 return int(match.group(1)) if match else 999999
                 
@@ -1230,336 +1223,3 @@ with all_tabs[4]:
                 
         else:
             st.warning("⚠️ 母表中找不到 Wafer ID 欄位。")
-
-# =========================================================================
-# 📈 頁籤 6: Key Stage Report (KSR)
-# =========================================================================
-with all_tabs[5]:
-    tw_tz = datetime.timezone(datetime.timedelta(hours=8))
-    today_str = datetime.datetime.now(tw_tz).strftime("%Y/%m/%d")
-    
-    # 頂部狀態圖例與簡報風格標題
-    st.markdown(f"""
-    <div style="display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 3px solid #b8860b; padding-bottom: 8px; margin-bottom: 16px;">
-        <div style="font-size: 13px; line-height: 1.6; font-weight: bold;">
-            <span style="color: #009944;">■ 綠: Normal Run</span><br>
-            <span style="color: #92278f;">■ 紫: Hold Wafer</span><br>
-            <span style="color: #d9534f;">■ 紅: 報廢 (SCRP)</span>
-        </div>
-        <div style="font-size: 30px; font-weight: bold; color: #b30000; text-align: center; flex-grow: 1;">
-            Wafer in Process by Stage
-        </div>
-        <div style="font-size: 20px; font-weight: bold; color: #212529; min-width: 120px; text-align: right;">
-            {today_str}
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    df_ksr, _ = fetch_route_data_via_csv("route_template")
-    
-    if not df_ksr.empty:
-        wafer_col = next((c for c in df_ksr.columns if str(c).strip().lower() in ["wafer id", "id", "wafer"]), "Wafer ID")
-        step_col = next((c for c in df_ksr.columns if str(c).strip().lower() in ["step", "step no.", "step no"]), "Step")
-        shuttle_col = next((c for c in df_ksr.columns if "shuttle" in str(c).lower()), "Shuttle Name")
-        fco_col = next((c for c in df_ksr.columns if "check out" in str(c).lower()), "Check out Time")
-        desc_col = next((c for c in df_ksr.columns if "description" in str(c).lower()), "Step description")
-
-        # 視覺座標轉換：將含有小數點的支線 (如 68.01~68.24) 展開至專屬區間 (X: 68.5 ~ 83.5)，
-        # 並將 69~92 步平移 (+16)，讓小數點站點擁有獨立清晰的 Cu Pad (RDL) Section 空間！
-        RDL_SHIFT = 16.0
-        
-        def step_to_x_pos(step_str):
-            if "." in step_str:
-                parts = step_str.split(".")
-                m_val = int(re.findall(r'\d+', parts[0])[0]) if re.findall(r'\d+', parts[0]) else 68
-                s_val = int(re.findall(r'\d+', parts[1])[0]) if re.findall(r'\d+', parts[1]) else 1
-                # 將 .01 ~ .24 均勻映射在 68.8 ~ 83.2 之間
-                return float(m_val) + 0.5 + (s_val / 25.0) * (RDL_SHIFT - 1.0)
-            else:
-                m_val = int(re.findall(r'\d+', step_str)[0]) if re.findall(r'\d+', step_str) else 1
-                return float(m_val) if m_val <= 68 else float(m_val) + RDL_SHIFT
-
-        def get_section_name(step_str):
-            if "." in step_str:
-                return "Cu Pad (RDL) Section"
-            m_val = int(re.findall(r'\d+', step_str)[0]) if re.findall(r'\d+', step_str) else 1
-            if m_val < 27: return "W2W Bonding Section"
-            elif m_val < 37: return "Grinding Section"
-            elif m_val < 61: return "TSV Etch Section"
-            elif m_val <= 68: return "TSV Cu ECP"
-            elif m_val < 88: return "Bumping Section"
-            else: return "Dicing"
-
-        if wafer_col in df_ksr.columns:
-            ksr_records = []
-            
-            for wid, w_group in df_ksr.groupby(wafer_col, sort=False):
-                if not str(wid).strip():
-                    continue
-                w_group = w_group.reset_index(drop=True)
-                total_steps = len(w_group)
-                has_scrap, is_banked = False, False
-                wip_idx = total_steps
-                active_row = None
-                
-                shuttle_val = ""
-                for _, r in w_group.iterrows():
-                    sv = str(r.get(shuttle_col, "")).strip()
-                    if sv:
-                        shuttle_val = sv
-                        break
-                if not shuttle_val:
-                    shuttle_val = "No Shuttle"
-
-                for idx, row in w_group.iterrows():
-                    fco = str(row.get(fco_col, "")).strip().upper()
-                    if fco == "SCRP":
-                        has_scrap = True
-                        wip_idx = idx
-                        active_row = row
-                        break
-
-                if not has_scrap:
-                    for idx, row in w_group.iterrows():
-                        fco = str(row.get(fco_col, "")).strip().upper()
-                        if fco in ["", "NAN", "INPR", "HOLD", "BANK"]:
-                            wip_idx = idx
-                            active_row = row
-                            if fco == "BANK":
-                                is_banked = True
-                            break
-
-                # 排除已入庫 (Bank) 與全部跑完已出貨 (Shipped) 的晶圓
-                if is_banked or (wip_idx == total_steps and not has_scrap):
-                    continue
-
-                if active_row is not None:
-                    raw_step = clean_step(active_row.get(step_col, ""))
-                    step_str = str(wip_idx + 1) if raw_step in ["", "nan", "NaN", "None"] else raw_step
-                    fco_status = str(active_row.get(fco_col, "")).strip().upper()
-                    
-                    if fco_status == "SCRP":
-                        status_cat = "Scrap (報廢)"
-                    elif fco_status == "HOLD":
-                        status_cat = "Hold Wafer"
-                    else:
-                        status_cat = "Normal Run"
-
-                    ksr_records.append({
-                        "Wafer ID": str(wid).strip(),
-                        "Shuttle": shuttle_val,
-                        "Shuttle_Wafer": f"{shuttle_val} ({str(wid).strip()})",
-                        "Step": step_str,
-                        "Section": get_section_name(step_str),
-                        "Status": status_cat,
-                        "Step Description": str(active_row.get(desc_col, "")).strip(),
-                        "x_pos": step_to_x_pos(step_str)
-                    })
-
-            if ksr_records:
-                df_items = pd.DataFrame(ksr_records)
-                
-                # 1. 依 (Step, Status) 聚合長條圖與浮動視窗資訊
-                bar_groups = []
-                for (step_s, status_s, x_p, sec_s), grp in df_items.groupby(["Step", "Status", "x_pos", "Section"], sort=False):
-                    wafer_list_str = " | ".join(grp["Shuttle_Wafer"].tolist())
-                    desc_sample = grp["Step Description"].iloc[0] if not grp.empty else ""
-                    bar_groups.append({
-                        "Step": step_s,
-                        "Section": sec_s,
-                        "Status": status_s,
-                        "Count": len(grp),
-                        "Shuttle / Wafer ID": wafer_list_str,
-                        "Step Description": desc_sample,
-                        "x_pos": x_p
-                    })
-                df_bars = pd.DataFrame(bar_groups)
-
-                # 2. 依 Step 聚合總片數 (標註在柱狀圖頂端 & X 軸動態顯示有 Wafer 的 Step No.)
-                step_totals = []
-                for (step_s, x_p, sec_s), grp in df_items.groupby(["Step", "x_pos", "Section"], sort=False):
-                    all_wafers_str = " | ".join(grp["Shuttle_Wafer"].tolist())
-                    step_totals.append({
-                        "Step": step_s,
-                        "Section": sec_s,
-                        "Total": len(grp),
-                        "All Wafers": all_wafers_str,
-                        "x_pos": x_p,
-                        "y_zero": 0
-                    })
-                df_totals = pd.DataFrame(step_totals).sort_values("x_pos")
-
-                max_cnt = int(df_totals["Total"].max()) if not df_totals.empty else 5
-                top_y = max(max_cnt + 3, 7)
-
-                # 3. 定義頂部各大製程區間與分界虛線 (含小數點專屬的 Cu Pad (RDL) Section)
-                sections_meta = [
-                    {"name": "W2W Bonding Section", "x1": 1.0, "x2": 27.0},
-                    {"name": "Grinding Section", "x1": 27.0, "x2": 37.0},
-                    {"name": "TSV Etch Section", "x1": 37.0, "x2": 61.0},
-                    {"name": "TSV Cu ECP", "x1": 61.0, "x2": 68.0},
-                    {"name": "Cu Pad (RDL) Section", "x1": 68.0, "x2": 68.0 + RDL_SHIFT},
-                    {"name": "Bumping Section", "x1": 68.0 + RDL_SHIFT, "x2": 88.0 + RDL_SHIFT},
-                    {"name": "Dicing", "x1": 88.0 + RDL_SHIFT, "x2": 92.0 + RDL_SHIFT},
-                ]
-                for sm in sections_meta:
-                    sm["x_mid"] = (sm["x1"] + sm["x2"]) / 2.0
-                    sm["y_line"] = top_y - 0.8
-                    sm["y_text"] = top_y - 0.25
-                    sm["arrow_label"] = f"◄──── {sm['name']} ────►"
-                df_sections = pd.DataFrame(sections_meta)
-
-                boundaries = [
-                    {"b_label": "1", "x_pos": 1.0},
-                    {"b_label": "27", "x_pos": 27.0},
-                    {"b_label": "37", "x_pos": 37.0},
-                    {"b_label": "61", "x_pos": 61.0},
-                    {"b_label": "68", "x_pos": 68.0},
-                    {"b_label": "69", "x_pos": 68.0 + RDL_SHIFT},
-                    {"b_label": "88", "x_pos": 88.0 + RDL_SHIFT},
-                    {"b_label": "92", "x_pos": 92.0 + RDL_SHIFT},
-                ]
-                # 若該邊界站點剛好有 Wafer，交由黑色粗體的 Active Step 顯示，避免標籤重疊
-                active_x_set = set(round(x, 2) for x in df_totals["x_pos"].tolist())
-                df_bounds_all = pd.DataFrame(boundaries)
-                df_bounds_unoccupied = df_bounds_all[~df_bounds_all["x_pos"].round(2).isin(active_x_set)].copy()
-                df_bounds_unoccupied["y_zero"] = 0
-
-                x_scale = alt.Scale(domain=[-1, 95 + RDL_SHIFT])
-                y_scale = alt.Scale(domain=[-1.6, top_y + 0.6])
-
-                # 圖層 A：區間垂直灰色虛線
-                vline_layer = alt.Chart(df_bounds_all).mark_rule(
-                    strokeDash=[5, 5], color="#cccccc", strokeWidth=1.5
-                ).encode(x=alt.X("x_pos:Q", scale=x_scale, axis=None))
-
-                # 圖層 B：頂部區間雙向線段與名稱
-                sec_rule_layer = alt.Chart(df_sections).mark_rule(
-                    color="#7f8c8d", strokeWidth=1.5
-                ).encode(
-                    x=alt.X("x1:Q", scale=x_scale),
-                    x2="x2:Q",
-                    y=alt.Y("y_line:Q", scale=y_scale, axis=None)
-                )
-                sec_text_layer = alt.Chart(df_sections).mark_text(
-                    fontSize=13, fontWeight="bold", color="#555555", baseline="bottom"
-                ).encode(
-                    x=alt.X("x_mid:Q", scale=x_scale),
-                    y=alt.Y("y_text:Q", scale=y_scale),
-                    text="name:N"
-                )
-
-                # 圖層 C：Y=0 黑色主橫軸線與右側「片數 / Step」標籤
-                base_axis_df = pd.DataFrame([{"x1": 0.0, "x2": 93.5 + RDL_SHIFT, "y": 0.0}])
-                hline_layer = alt.Chart(base_axis_df).mark_rule(
-                    color="#000000", strokeWidth=2
-                ).encode(
-                    x=alt.X("x1:Q", scale=x_scale),
-                    x2="x2:Q",
-                    y=alt.Y("y:Q", scale=y_scale)
-                )
-                right_labels_df = pd.DataFrame([
-                    {"x": 94.2 + RDL_SHIFT, "y": 0.45, "txt": "片數"},
-                    {"x": 94.2 + RDL_SHIFT, "y": -0.65, "txt": "Step"}
-                ])
-                right_label_layer = alt.Chart(right_labels_df).mark_text(
-                    fontSize=13, fontWeight="bold", color="#000000", align="left"
-                ).encode(
-                    x=alt.X("x:Q", scale=x_scale),
-                    y=alt.Y("y:Q", scale=y_scale),
-                    text="txt:N"
-                )
-
-                # 圖層 D：直條圖 (支援滑鼠移過去浮動顯示 Shuttle / Wafer ID)
-                color_scale = alt.Scale(
-                    domain=["Normal Run", "Hold Wafer", "Scrap (報廢)"],
-                    range=["#009944", "#92278f", "#d9534f"]
-                )
-                bars_layer = alt.Chart(df_bars).mark_bar(
-                    size=12, stroke="#000000", strokeWidth=1
-                ).encode(
-                    x=alt.X("x_pos:Q", scale=x_scale, axis=None),
-                    y=alt.Y("Count:Q", scale=y_scale, stack="zero", axis=None),
-                    color=alt.Color("Status:N", scale=color_scale, legend=None),
-                    tooltip=[
-                        alt.Tooltip("Step:N", title="Step No."),
-                        alt.Tooltip("Section:N", title="製程區間"),
-                        alt.Tooltip("Status:N", title="狀態"),
-                        alt.Tooltip("Count:Q", title="片數"),
-                        alt.Tooltip("Shuttle / Wafer ID:N", title="Shuttle / Wafer ID"),
-                        alt.Tooltip("Step Description:N", title="站點說明")
-                    ]
-                )
-
-                # 圖層 E：直條圖頂端片數數字
-                count_text_layer = alt.Chart(df_totals).mark_text(
-                    dy=-12, fontSize=14, fontWeight="bold", color="#000000"
-                ).encode(
-                    x=alt.X("x_pos:Q", scale=x_scale),
-                    y=alt.Y("Total:Q", scale=y_scale),
-                    text="Total:Q",
-                    tooltip=[
-                        alt.Tooltip("Step:N", title="Step No."),
-                        alt.Tooltip("Section:N", title="製程區間"),
-                        alt.Tooltip("Total:Q", title="總片數"),
-                        alt.Tooltip("All Wafers:N", title="所有 Shuttle / Wafer ID")
-                    ]
-                )
-
-                # 圖層 F：底部刻度標示（有 Wafer 的站點顯示黑色粗體 Step No.，無 Wafer 的區間邊界顯示淺灰字）
-                active_tick_layer = alt.Chart(df_totals).mark_tick(
-                    color="#000000", thickness=2, size=8, orient="vertical", dy=4
-                ).encode(
-                    x=alt.X("x_pos:Q", scale=x_scale),
-                    y=alt.Y("y_zero:Q", scale=y_scale)
-                )
-                active_step_text = alt.Chart(df_totals).mark_text(
-                    dy=20, fontSize=13, fontWeight="bold", color="#000000"
-                ).encode(
-                    x=alt.X("x_pos:Q", scale=x_scale),
-                    y=alt.Y("y_zero:Q", scale=y_scale),
-                    text="Step:N"
-                )
-                bound_step_text = alt.Chart(df_bounds_unoccupied).mark_text(
-                    dy=20, fontSize=12, color="#999999"
-                ).encode(
-                    x=alt.X("x_pos:Q", scale=x_scale),
-                    y=alt.Y("y_zero:Q", scale=y_scale),
-                    text="b_label:N"
-                )
-
-                ksr_chart = alt.layer(
-                    vline_layer,
-                    sec_rule_layer,
-                    sec_text_layer,
-                    hline_layer,
-                    right_label_layer,
-                    bars_layer,
-                    count_text_layer,
-                    active_tick_layer,
-                    bound_step_text,
-                    active_step_text
-                ).properties(
-                    height=380
-                ).configure_view(
-                    strokeWidth=0
-                )
-
-                st.altair_chart(ksr_chart, use_container_width=True)
-                st.caption("💡 提示：將滑鼠游標移至任一長條圖上，即可浮動檢視該站點停留的所有 Shuttle Name 與 Wafer ID。")
-
-                # 下方附帶展開式總表，方便複製或核對清單
-                with st.expander("📋 檢視各站點 Shuttle / Wafer ID 明細表"):
-                    df_detail_view = df_totals[["Section", "Step", "Total", "All Wafers"]].rename(columns={
-                        "Section": "製程區間 (Section)",
-                        "Step": "站點 (Step No.)",
-                        "Total": "片數",
-                        "All Wafers": "Shuttle / Wafer ID 清單"
-                    })
-                    st.dataframe(df_detail_view, hide_index=True, use_container_width=True)
-            else:
-                st.info("目前產線上沒有任何在製中 (WIP) 的晶圓可供繪製圖表。")
-        else:
-            st.warning("⚠️ 母表中找不到 Wafer ID 欄位。")
-    else:
-        st.info("💡 目前雲端母表尚無資料。")
