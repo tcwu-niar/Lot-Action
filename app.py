@@ -210,7 +210,7 @@ def build_log_hold_note_map(df_logs):
     return hold_map
 
 # =========================================================================
-# 1.5 純向量無背景無標題 Process Flow SVG 產生器 (供 KSR 點擊區間顯示)
+# 1.5 純向量無背景無標題 Process Flow SVG 產生器 (圓圈內皆不顯示數字)
 # =========================================================================
 def build_process_flow_svgs():
     C_SI = "#4A90D9"
@@ -243,11 +243,9 @@ def build_process_flow_svgs():
 
     def timeline_row(y_line, nodes, x1=45, x2=1145, arr_id="pf-arr"):
         p = [f'<line x1="{x1}" y1="{y_line}" x2="{x2}" y2="{y_line}" stroke="#000" stroke-width="2.5" marker-end="url(#{arr_id})"/>']
-        for nx, title_html, step_num in nodes:
+        for nx, title_html in nodes:
             p.append(title_html)
             p.append(f'<circle cx="{nx}" cy="{y_line}" r="11" fill="#fff" stroke="#000" stroke-width="2"/>')
-            if step_num:
-                p.append(txt(nx, y_line, step_num, sz=11, col="#000"))
         return "".join(p)
 
     def base_stack(cx, y_m1, w=170, has_glass=True):
@@ -333,11 +331,11 @@ def build_process_flow_svgs():
     xs5 = [145, 370, 595, 820, 1045]
     s1 = [f'<svg viewBox="0 0 1190 275" style="width:100%; min-width:860px; height:auto; display:block;">{defs}']
     s1.append(timeline_row(48, [
-        (xs5[0], txt(xs5[0], 20, "305 Glue on Wafer", sz=14), ""),
-        (xs5[1], txt(xs5[1], 20, "701 Glue on Glass", sz=14), ""),
-        (xs5[2], txt(xs5[2], 20, "W2W Bonding", sz=14), ""),
-        (xs5[3], txt(xs5[3], 20, "Wafer Edge Trim", sz=14), ""),
-        (xs5[4], txt(xs5[4], 20, "Wafer Grinding &amp; CMP(拋光)", sz=13.5), "")
+        (xs5[0], txt(xs5[0], 20, "305 Glue on Wafer", sz=14)),
+        (xs5[1], txt(xs5[1], 20, "701 Glue on Glass", sz=14)),
+        (xs5[2], txt(xs5[2], 20, "W2W Bonding", sz=14)),
+        (xs5[3], txt(xs5[3], 20, "Wafer Edge Trim", sz=14)),
+        (xs5[4], txt(xs5[4], 20, "Wafer Grinding &amp; CMP(拋光)", sz=13.5))
     ]))
     for idx in [0, 1]:
         cx = xs5[idx]
@@ -389,11 +387,11 @@ def build_process_flow_svgs():
     # 2. TSV Etch Section
     s2 = [f'<svg viewBox="0 0 1190 225" style="width:100%; min-width:860px; height:auto; display:block;">{defs}']
     s2.append(timeline_row(48, [
-        (xs5[0], sub_txt(xs5[0], 20, "Top SiO", "2", " CVD"), "37"),
-        (xs5[1], txt(xs5[1], 20, "LIT Patterning", sz=14), "40"),
-        (xs5[2], sub_txt(xs5[2], 20, "Surface SiO", "2", " Etch"), "45"),
-        (xs5[3], txt(xs5[3], 20, "Bosch Si Etch", sz=14), "47"),
-        (xs5[4], sub_txt(xs5[4], 20, "1st BT SiO", "2", " Etch"), "52")
+        (xs5[0], sub_txt(xs5[0], 20, "Top SiO", "2", " CVD")),
+        (xs5[1], txt(xs5[1], 20, "LIT Patterning", sz=14)),
+        (xs5[2], sub_txt(xs5[2], 20, "Surface SiO", "2", " Etch")),
+        (xs5[3], txt(xs5[3], 20, "Bosch Si Etch", sz=14)),
+        (xs5[4], sub_txt(xs5[4], 20, "1st BT SiO", "2", " Etch"))
     ]))
     configs_etch = [
         (xs5[0], False, "full", False, False, "#002080", "#fff", "#fff"),
@@ -424,10 +422,10 @@ def build_process_flow_svgs():
         txt(xs4[1], 32, "(蝕刻完M1會裸露)", sz=12.5, col="#1c3faa")
     )
     s3.append(timeline_row(56, [
-        (xs4[0], sub_txt(xs4[0], 24, "Liner SiO", "2", " CVD"), "60"),
-        (xs4[1], n2_lbl, "61"),
-        (xs4[2], txt(xs4[2], 24, "Ti/Cu seed layer", sz=14), "64"),
-        (xs4[3], txt(xs4[3], 24, "TSV Cu ECP", sz=14), "66")
+        (xs4[0], sub_txt(xs4[0], 24, "Liner SiO", "2", " CVD")),
+        (xs4[1], n2_lbl),
+        (xs4[2], txt(xs4[2], 24, "Ti/Cu seed layer", sz=14)),
+        (xs4[3], txt(xs4[3], 24, "TSV Cu ECP", sz=14))
     ], x1=90, x2=1110))
 
     for i, cx in enumerate(xs4):
@@ -470,11 +468,11 @@ def build_process_flow_svgs():
     # 4. Cu Pad (RDL)
     s4 = [f'<svg viewBox="0 0 1190 455" style="width:100%; min-width:860px; height:auto; display:block;">{defs}']
     s4.append(timeline_row(44, [
-        (xs5[0], txt(xs5[0], 18, "Cu ECP (Over)", sz=14), ""),
-        (xs5[1], txt(xs5[1], 18, "Cu CMP", sz=14), ""),
-        (xs5[2], txt(xs5[2], 18, "RDL Pattern by C4 Mask", sz=13.5), ""),
-        (xs5[3], txt(xs5[3], 18, "Cu Etch", sz=14), ""),
-        (xs5[4], txt(xs5[4], 18, "PR Remove", sz=14), "")
+        (xs5[0], txt(xs5[0], 18, "Cu ECP (Over)", sz=14)),
+        (xs5[1], txt(xs5[1], 18, "Cu CMP", sz=14)),
+        (xs5[2], txt(xs5[2], 18, "RDL Pattern by C4 Mask", sz=13.5)),
+        (xs5[3], txt(xs5[3], 18, "Cu Etch", sz=14)),
+        (xs5[4], txt(xs5[4], 18, "PR Remove", sz=14))
     ]))
     for i, cx in enumerate(xs5):
         core_svg, pxs, vxs, y_lt, _ = filled_tsv_core(cx, 102, has_glass=True)
@@ -503,11 +501,11 @@ def build_process_flow_svgs():
                 s4.append(txt(pdx + 19, 98, "Cu", sz=8, col="#002080"))
 
     s4.append(timeline_row(268, [
-        (xs5[0], sub_txt(xs5[0], 242, "SiO", "2", " CVD"), ""),
-        (xs5[1], sub_txt(xs5[1], 242, "SiO", "2", " CMP"), ""),
-        (xs5[2], sub_txt(xs5[2], 242, "LIT Pattern for SiO", "2", " Etch", sz=13.5), ""),
-        (xs5[3], sub_txt(xs5[3], 242, "SiO", "2", " Etch"), ""),
-        (xs5[4], txt(xs5[4], 242, "PR Remove", sz=14), "")
+        (xs5[0], sub_txt(xs5[0], 242, "SiO", "2", " CVD")),
+        (xs5[1], sub_txt(xs5[1], 242, "SiO", "2", " CMP")),
+        (xs5[2], sub_txt(xs5[2], 242, "LIT Pattern for SiO", "2", " Etch", sz=13.5)),
+        (xs5[3], sub_txt(xs5[3], 242, "SiO", "2", " Etch")),
+        (xs5[4], txt(xs5[4], 242, "PR Remove", sz=14))
     ]))
     for i, cx in enumerate(xs5):
         core_svg, pxs, vxs, y_lt, _ = filled_tsv_core(cx, 336, has_glass=True)
@@ -540,10 +538,10 @@ def build_process_flow_svgs():
     xb4 = [175, 425, 675, 925]
     s5 = [f'<svg viewBox="0 0 1190 250" style="width:100%; min-width:820px; height:auto; display:block;">{defs}']
     s5.append(timeline_row(48, [
-        (xb4[0], txt(xb4[0], 20, "Ti/Cu seed layer", sz=14), ""),
-        (xb4[1], txt(xb4[1], 20, "JSR Patterning", sz=14), ""),
-        (xb4[2], txt(xb4[2], 20, "Cu Stud + Sn/Ag Bump", sz=14), ""),
-        (xb4[3], txt(xb4[3], 20, "JSR Remove", sz=14), "")
+        (xb4[0], txt(xb4[0], 20, "Ti/Cu seed layer", sz=14)),
+        (xb4[1], txt(xb4[1], 20, "JSR Patterning", sz=14)),
+        (xb4[2], txt(xb4[2], 20, "Cu Stud + Sn/Ag Bump", sz=14)),
+        (xb4[3], txt(xb4[3], 20, "JSR Remove", sz=14))
     ], x1=65, x2=1120))
     for i, cx in enumerate(xb4):
         x0 = cx - 85.0
@@ -578,11 +576,11 @@ def build_process_flow_svgs():
     # 6. Dicing Section
     s6 = [f'<svg viewBox="0 0 1190 250" style="width:100%; min-width:860px; height:auto; display:block;">{defs}']
     s6.append(timeline_row(48, [
-        (xs5[0], txt(xs5[0], 20, "Cu/Ti seed layer Etch", sz=14), "83"),
-        (xs5[1], txt(xs5[1], 20, "Bump cover by PR", sz=14), "88"),
-        (xs5[2], txt(xs5[2], 20, "Dicing tape lamination", sz=14), "89"),
-        (xs5[3], txt(xs5[3], 20, "Laser Debond", sz=14), "90"),
-        (xs5[4], txt(xs5[4], 20, "Dicing &amp; Pick-up Chip-let", sz=13.5), "91")
+        (xs5[0], txt(xs5[0], 20, "Cu/Ti seed layer Etch", sz=14)),
+        (xs5[1], txt(xs5[1], 20, "Bump cover by PR", sz=14)),
+        (xs5[2], txt(xs5[2], 20, "Dicing tape lamination", sz=14)),
+        (xs5[3], txt(xs5[3], 20, "Laser Debond", sz=14)),
+        (xs5[4], txt(xs5[4], 20, "Dicing &amp; Pick-up Chip-let", sz=13.5))
     ]))
     for i, cx in enumerate(xs5):
         has_gls = (i < 3)
