@@ -5,7 +5,7 @@ import datetime
 import time      
 import re
 import concurrent.futures
-import altair as alt
+import html as html_lib
 
 # =========================================================================
 # 1. 系統全域基礎配置與資料載入
@@ -310,7 +310,6 @@ def show_history_edit_dialog(tw_id, ts_no, target_row_dict):
         }
         st.rerun()
 
-# 🎯 新增第 6 個頁籤：Key Stage Report (KSR)
 all_tabs = st.tabs([
     "🔍 Ongoing Wafer", 
     "📜 Wafer History", 
@@ -1232,28 +1231,24 @@ with all_tabs[4]:
             st.warning("⚠️ 母表中找不到 Wafer ID 欄位。")
 
 # =========================================================================
-# 📈 頁籤 6: Key Stage Report (KSR)
+# 📈 頁籤 6: Key Stage Report (KSR) - 原生 HTML + SVG 互動圖表 (不顯示日期)
 # =========================================================================
 with all_tabs[5]:
-    tw_tz = datetime.timezone(datetime.timedelta(hours=8))
-    today_str = datetime.datetime.now(tw_tz).strftime("%Y/%m/%d")
-    
-    # 頂部狀態圖例與簡報風格標題
-    st.markdown(f"""
-    <div style="display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 3px solid #b8860b; padding-bottom: 8px; margin-bottom: 16px;">
-        <div style="font-size: 13px; line-height: 1.6; font-weight: bold;">
-            <span style="color: #009944;">■ 綠: Normal Run</span><br>
-            <span style="color: #92278f;">■ 紫: Hold Wafer</span><br>
-            <span style="color: #d9534f;">■ 紅: 報廢 (SCRP)</span>
-        </div>
-        <div style="font-size: 30px; font-weight: bold; color: #b30000; text-align: center; flex-grow: 1;">
-            Wafer in Process by Stage
-        </div>
-        <div style="font-size: 20px; font-weight: bold; color: #212529; min-width: 120px; text-align: right;">
-            {today_str}
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+    # 頂部狀態圖例與簡報風格標題（已移除右側日期）
+    st.markdown(
+        '<div style="display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 3px solid #b8860b; padding-bottom: 8px; margin-bottom: 16px;">'
+        '<div style="font-size: 13px; line-height: 1.6; font-weight: bold; min-width: 150px;">'
+        '<span style="color: #009944;">■ 綠: Normal Run</span><br>'
+        '<span style="color: #92278f;">■ 紫: Hold Wafer</span><br>'
+        '<span style="color: #d9534f;">■ 紅: 報廢 (SCRP)</span>'
+        '</div>'
+        '<div style="font-size: 30px; font-weight: bold; color: #b30000; text-align: center; flex-grow: 1;">'
+        'Wafer in Process by Stage'
+        '</div>'
+        '<div style="min-width: 150px;"></div>'
+        '</div>',
+        unsafe_allow_html=True
+    )
 
     df_ksr, _ = fetch_route_data_via_csv("route_template")
     
@@ -1264,17 +1259,15 @@ with all_tabs[5]:
         fco_col = next((c for c in df_ksr.columns if "check out" in str(c).lower()), "Check out Time")
         desc_col = next((c for c in df_ksr.columns if "description" in str(c).lower()), "Step description")
 
-        # 視覺座標轉換：將含有小數點的支線 (如 68.01~68.24) 展開至專屬區間 (X: 68.5 ~ 83.5)，
-        # 並將 69~92 步平移 (+16)，讓小數點站點擁有獨立清晰的 Cu Pad (RDL) Section 空間！
-        RDL_SHIFT = 16.0
+        # 視覺座標展開：為小數點支線 (Cu Pad (RDL) Section) 保留獨立寬度
+        RDL_SHIFT = 18.0
         
         def step_to_x_pos(step_str):
             if "." in step_str:
                 parts = step_str.split(".")
                 m_val = int(re.findall(r'\d+', parts[0])[0]) if re.findall(r'\d+', parts[0]) else 68
                 s_val = int(re.findall(r'\d+', parts[1])[0]) if re.findall(r'\d+', parts[1]) else 1
-                # 將 .01 ~ .24 均勻映射在 68.8 ~ 83.2 之間
-                return float(m_val) + 0.5 + (s_val / 25.0) * (RDL_SHIFT - 1.0)
+                return float(m_val) + 0.8 + (s_val / 25.0) * (RDL_SHIFT - 1.6)
             else:
                 m_val = int(re.findall(r'\d+', step_str)[0]) if re.findall(r'\d+', step_str) else 1
                 return float(m_val) if m_val <= 68 else float(m_val) + RDL_SHIFT
@@ -1329,7 +1322,7 @@ with all_tabs[5]:
                                 is_banked = True
                             break
 
-                # 排除已入庫 (Bank) 與全部跑完已出貨 (Shipped) 的晶圓
+                # 排除已入庫 (Bank) 與已出貨 (Shipped) 的晶圓
                 if is_banked or (wip_idx == total_steps and not has_scrap):
                     continue
 
@@ -1340,10 +1333,13 @@ with all_tabs[5]:
                     
                     if fco_status == "SCRP":
                         status_cat = "Scrap (報廢)"
+                        bar_color = "#d9534f"
                     elif fco_status == "HOLD":
                         status_cat = "Hold Wafer"
+                        bar_color = "#92278f"
                     else:
                         status_cat = "Normal Run"
+                        bar_color = "#009944"
 
                     ksr_records.append({
                         "Wafer ID": str(wid).strip(),
@@ -1352,203 +1348,175 @@ with all_tabs[5]:
                         "Step": step_str,
                         "Section": get_section_name(step_str),
                         "Status": status_cat,
+                        "Color": bar_color,
                         "Step Description": str(active_row.get(desc_col, "")).strip(),
                         "x_pos": step_to_x_pos(step_str)
                     })
 
             if ksr_records:
                 df_items = pd.DataFrame(ksr_records)
-                
-                # 1. 依 (Step, Status) 聚合長條圖與浮動視窗資訊
-                bar_groups = []
-                for (step_s, status_s, x_p, sec_s), grp in df_items.groupby(["Step", "Status", "x_pos", "Section"], sort=False):
-                    wafer_list_str = " | ".join(grp["Shuttle_Wafer"].tolist())
-                    desc_sample = grp["Step Description"].iloc[0] if not grp.empty else ""
-                    bar_groups.append({
-                        "Step": step_s,
-                        "Section": sec_s,
-                        "Status": status_s,
-                        "Count": len(grp),
-                        "Shuttle / Wafer ID": wafer_list_str,
-                        "Step Description": desc_sample,
-                        "x_pos": x_p
-                    })
-                df_bars = pd.DataFrame(bar_groups)
 
-                # 2. 依 Step 聚合總片數 (標註在柱狀圖頂端 & X 軸動態顯示有 Wafer 的 Step No.)
+                # 依站點聚合明細表與繪圖資料
                 step_totals = []
                 for (step_s, x_p, sec_s), grp in df_items.groupby(["Step", "x_pos", "Section"], sort=False):
                     all_wafers_str = " | ".join(grp["Shuttle_Wafer"].tolist())
+                    desc_sample = grp["Step Description"].iloc[0] if not grp.empty else ""
                     step_totals.append({
                         "Step": step_s,
                         "Section": sec_s,
                         "Total": len(grp),
                         "All Wafers": all_wafers_str,
+                        "Desc": desc_sample,
                         "x_pos": x_p,
-                        "y_zero": 0
+                        "items": grp.to_dict("records")
                     })
                 df_totals = pd.DataFrame(step_totals).sort_values("x_pos")
 
-                max_cnt = int(df_totals["Total"].max()) if not df_totals.empty else 5
-                top_y = max(max_cnt + 3, 7)
+                # 建立純原生 SVG + CSS Hover 浮動資訊圖表 (單行無縮排防破圖)
+                max_domain_x = 92.0 + RDL_SHIFT
+                svg_w = 1200.0
+                svg_h = 340.0
+                pad_l = 35.0
+                pad_r = 75.0
+                base_y = 265.0
+                sec_y = 52.0
+                max_bar_area_h = 165.0
 
-                # 3. 定義頂部各大製程區間與分界虛線 (含小數點專屬的 Cu Pad (RDL) Section)
+                def to_px_x(vx):
+                    return pad_l + ((vx - 1.0) / (max_domain_x - 1.0)) * (svg_w - pad_l - pad_r)
+
+                max_cnt = max(int(df_totals["Total"].max()), 5)
+                unit_h = max_bar_area_h / float(max_cnt)
+
                 sections_meta = [
-                    {"name": "W2W Bonding Section", "x1": 1.0, "x2": 27.0},
-                    {"name": "Grinding Section", "x1": 27.0, "x2": 37.0},
-                    {"name": "TSV Etch Section", "x1": 37.0, "x2": 61.0},
-                    {"name": "TSV Cu ECP", "x1": 61.0, "x2": 68.0},
-                    {"name": "Cu Pad (RDL) Section", "x1": 68.0, "x2": 68.0 + RDL_SHIFT},
-                    {"name": "Bumping Section", "x1": 68.0 + RDL_SHIFT, "x2": 88.0 + RDL_SHIFT},
-                    {"name": "Dicing", "x1": 88.0 + RDL_SHIFT, "x2": 92.0 + RDL_SHIFT},
+                    ("W2W Bonding Section", 1.0, 27.0),
+                    ("Grinding Section", 27.0, 37.0),
+                    ("TSV Etch Section", 37.0, 61.0),
+                    ("TSV Cu ECP", 61.0, 68.0),
+                    ("Cu Pad (RDL) Section", 68.0, 68.0 + RDL_SHIFT),
+                    ("Bumping Section", 68.0 + RDL_SHIFT, 88.0 + RDL_SHIFT),
+                    ("Dicing", 88.0 + RDL_SHIFT, 92.0 + RDL_SHIFT),
                 ]
-                for sm in sections_meta:
-                    sm["x_mid"] = (sm["x1"] + sm["x2"]) / 2.0
-                    sm["y_line"] = top_y - 0.8
-                    sm["y_text"] = top_y - 0.25
-                    sm["arrow_label"] = f"◄──── {sm['name']} ────►"
-                df_sections = pd.DataFrame(sections_meta)
-
                 boundaries = [
-                    {"b_label": "1", "x_pos": 1.0},
-                    {"b_label": "27", "x_pos": 27.0},
-                    {"b_label": "37", "x_pos": 37.0},
-                    {"b_label": "61", "x_pos": 61.0},
-                    {"b_label": "68", "x_pos": 68.0},
-                    {"b_label": "69", "x_pos": 68.0 + RDL_SHIFT},
-                    {"b_label": "88", "x_pos": 88.0 + RDL_SHIFT},
-                    {"b_label": "92", "x_pos": 92.0 + RDL_SHIFT},
+                    ("1", 1.0),
+                    ("27", 27.0),
+                    ("37", 37.0),
+                    ("61", 61.0),
+                    ("68", 68.0),
+                    ("69", 68.0 + RDL_SHIFT),
+                    ("88", 88.0 + RDL_SHIFT),
+                    ("92", 92.0 + RDL_SHIFT),
                 ]
-                # 若該邊界站點剛好有 Wafer，交由黑色粗體的 Active Step 顯示，避免標籤重疊
-                active_x_set = set(round(x, 2) for x in df_totals["x_pos"].tolist())
-                df_bounds_all = pd.DataFrame(boundaries)
-                df_bounds_unoccupied = df_bounds_all[~df_bounds_all["x_pos"].round(2).isin(active_x_set)].copy()
-                df_bounds_unoccupied["y_zero"] = 0
 
-                x_scale = alt.Scale(domain=[-1, 95 + RDL_SHIFT])
-                y_scale = alt.Scale(domain=[-1.6, top_y + 0.6])
-
-                # 圖層 A：區間垂直灰色虛線
-                vline_layer = alt.Chart(df_bounds_all).mark_rule(
-                    strokeDash=[5, 5], color="#cccccc", strokeWidth=1.5
-                ).encode(x=alt.X("x_pos:Q", scale=x_scale, axis=None))
-
-                # 圖層 B：頂部區間雙向線段與名稱
-                sec_rule_layer = alt.Chart(df_sections).mark_rule(
-                    color="#7f8c8d", strokeWidth=1.5
-                ).encode(
-                    x=alt.X("x1:Q", scale=x_scale),
-                    x2="x2:Q",
-                    y=alt.Y("y_line:Q", scale=y_scale, axis=None)
-                )
-                sec_text_layer = alt.Chart(df_sections).mark_text(
-                    fontSize=13, fontWeight="bold", color="#555555", baseline="bottom"
-                ).encode(
-                    x=alt.X("x_mid:Q", scale=x_scale),
-                    y=alt.Y("y_text:Q", scale=y_scale),
-                    text="name:N"
+                svg_parts = []
+                # 箭頭標記定義
+                svg_parts.append(
+                    f'<svg viewBox="0 0 {svg_w} {svg_h}" style="width: 100%; height: auto; display: block; overflow: visible;">'
+                    '<defs>'
+                    '<marker id="ksr-arr-r" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 1 L 10 5 L 0 9 z" fill="#7f8c8d"/></marker>'
+                    '<marker id="ksr-arr-l" viewBox="0 0 10 10" refX="2" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 10 1 L 0 5 L 10 9 z" fill="#7f8c8d"/></marker>'
+                    '<marker id="ksr-axis-r" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 1 L 10 5 L 0 9 z" fill="#000000"/></marker>'
+                    '</defs>'
                 )
 
-                # 圖層 C：Y=0 黑色主橫軸線與右側「片數 / Step」標籤
-                base_axis_df = pd.DataFrame([{"x1": 0.0, "x2": 93.5 + RDL_SHIFT, "y": 0.0}])
-                hline_layer = alt.Chart(base_axis_df).mark_rule(
-                    color="#000000", strokeWidth=2
-                ).encode(
-                    x=alt.X("x1:Q", scale=x_scale),
-                    x2="x2:Q",
-                    y=alt.Y("y:Q", scale=y_scale)
-                )
-                right_labels_df = pd.DataFrame([
-                    {"x": 94.2 + RDL_SHIFT, "y": 0.45, "txt": "片數"},
-                    {"x": 94.2 + RDL_SHIFT, "y": -0.65, "txt": "Step"}
-                ])
-                right_label_layer = alt.Chart(right_labels_df).mark_text(
-                    fontSize=13, fontWeight="bold", color="#000000", align="left"
-                ).encode(
-                    x=alt.X("x:Q", scale=x_scale),
-                    y=alt.Y("y:Q", scale=y_scale),
-                    text="txt:N"
+                # 1. 垂直灰色分界虛線
+                active_px_list = [to_px_x(r["x_pos"]) for _, r in df_totals.iterrows()]
+                for b_lbl, bx in boundaries:
+                    px = to_px_x(bx)
+                    svg_parts.append(f'<line x1="{px:.1f}" y1="18" x2="{px:.1f}" y2="{base_y + 32:.1f}" stroke="#d3d3d3" stroke-width="1.5" stroke-dasharray="5,5" />')
+                    # 若邊界旁沒有緊鄰的在製站點，才印出淺灰色邊界步數，避免與黑色粗體重疊
+                    if all(abs(px - apx) > 12.0 for apx in active_px_list):
+                        svg_parts.append(f'<line x1="{px:.1f}" y1="{base_y - 4:.1f}" x2="{px:.1f}" y2="{base_y + 5:.1f}" stroke="#999999" stroke-width="1.5" />')
+                        svg_parts.append(f'<text x="{px:.1f}" y="{base_y + 24:.1f}" text-anchor="middle" font-size="13" fill="#999999" font-family="sans-serif">{b_lbl}</text>')
+
+                # 2. 頂部製程區間雙向箭頭與文字
+                for s_name, sx1, sx2 in sections_meta:
+                    px1 = to_px_x(sx1) + 4.0
+                    px2 = to_px_x(sx2) - 4.0
+                    pmid = (px1 + px2) / 2.0
+                    txt_color = "#0b7285" if "RDL" in s_name else "#666666"
+                    svg_parts.append(f'<line x1="{px1:.1f}" y1="{sec_y:.1f}" x2="{px2:.1f}" y2="{sec_y:.1f}" stroke="#7f8c8d" stroke-width="1.5" marker-start="url(#ksr-arr-l)" marker-end="url(#ksr-arr-r)" />')
+                    svg_parts.append(f'<text x="{pmid:.1f}" y="{sec_y - 8:.1f}" text-anchor="middle" font-size="13" font-weight="bold" fill="{txt_color}" font-family="sans-serif">{html_lib.escape(s_name)}</text>')
+
+                # 3. 底部黑色主橫軸與右側「片數 / Step」
+                axis_end_x = svg_w - pad_r + 18.0
+                svg_parts.append(f'<line x1="{pad_l - 15:.1f}" y1="{base_y:.1f}" x2="{axis_end_x:.1f}" y2="{base_y:.1f}" stroke="#000000" stroke-width="2" marker-end="url(#ksr-axis-r)" />')
+                svg_parts.append(f'<text x="{axis_end_x + 8:.1f}" y="{base_y - 8:.1f}" text-anchor="start" font-size="14" font-weight="bold" fill="#000000" font-family="sans-serif">片數</text>')
+                svg_parts.append(f'<text x="{axis_end_x + 8:.1f}" y="{base_y + 24:.1f}" text-anchor="start" font-size="14" font-weight="bold" fill="#000000" font-family="sans-serif">Step</text>')
+
+                # 4. 繪製各站點堆疊長條圖、頂端片數與底部 Step No.
+                bar_w = 10.0
+                overlay_divs = []
+                status_order = {"Normal Run": 0, "Hold Wafer": 1, "Scrap (報廢)": 2}
+
+                for _, s_row in df_totals.iterrows():
+                    px = to_px_x(s_row["x_pos"])
+                    items_sorted = sorted(s_row["items"], key=lambda x: status_order.get(x["Status"], 9))
+                    
+                    curr_bottom_y = base_y
+                    # 依狀態分組堆疊繪製矩形
+                    for st_cat in ["Normal Run", "Hold Wafer", "Scrap (報廢)"]:
+                        sub_items = [it for it in items_sorted if it["Status"] == st_cat]
+                        if not sub_items:
+                            continue
+                        seg_h = len(sub_items) * unit_h
+                        rect_y = curr_bottom_y - seg_h
+                        color_hex = sub_items[0]["Color"]
+                        svg_parts.append(
+                            f'<rect x="{px - bar_w/2.0:.1f}" y="{rect_y:.1f}" width="{bar_w:.1f}" height="{seg_h:.1f}" '
+                            f'fill="{color_hex}" stroke="#000000" stroke-width="1.2" />'
+                        )
+                        curr_bottom_y = rect_y
+
+                    total_cnt = int(s_row["Total"])
+                    top_bar_y = base_y - total_cnt * unit_h
+
+                    # 長條頂部片數與底部黑色粗體 Step No.
+                    svg_parts.append(f'<text x="{px:.1f}" y="{top_bar_y - 8:.1f}" text-anchor="middle" font-size="15" font-weight="bold" fill="#000000" font-family="sans-serif">{total_cnt}</text>')
+                    svg_parts.append(f'<line x1="{px:.1f}" y1="{base_y:.1f}" x2="{px:.1f}" y2="{base_y + 7:.1f}" stroke="#000000" stroke-width="2" />')
+                    svg_parts.append(f'<text x="{px:.1f}" y="{base_y + 24:.1f}" text-anchor="middle" font-size="13" font-weight="bold" fill="#000000" font-family="sans-serif">{html_lib.escape(s_row["Step"])}</text>')
+
+                    # 製作對應百分比座標的透明感應區與精美 HTML 浮動提示框 (Tooltip)
+                    left_pct = (px / svg_w) * 100.0
+                    top_pct = ((top_bar_y - 18.0) / svg_h) * 100.0
+                    height_pct = (((base_y + 28.0) - (top_bar_y - 18.0)) / svg_h) * 100.0
+                    # 靠右邊緣的提示框自動往左偏移避免超出畫面
+                    tip_pos_style = "right: 0; transform: translateX(0);" if left_pct > 82 else ("left: 0; transform: translateX(0);" if left_pct < 18 else "left: 50%; transform: translateX(-50%);")
+
+                    wafer_lines_html = "".join([
+                        f'<div style="margin-top: 3px;"><span style="color: {it["Color"]};">●</span> {html_lib.escape(it["Shuttle"])} <b>({html_lib.escape(it["Wafer ID"])})</b></div>'
+                        for it in items_sorted
+                    ])
+                    desc_txt = html_lib.escape(s_row["Desc"])
+
+                    overlay_divs.append(
+                        f'<div class="ksr-hit" style="left: calc({left_pct:.2f}% - 12px); top: {top_pct:.2f}%; height: {height_pct:.2f}%;">'
+                        f'<div class="ksr-tip" style="{tip_pos_style}">'
+                        f'<div style="font-weight: bold; font-size: 13px; color: #ffd43b; border-bottom: 1px solid #495057; padding-bottom: 4px; margin-bottom: 4px;">'
+                        f'Step {html_lib.escape(s_row["Step"])} ｜ {html_lib.escape(s_row["Section"])} ({total_cnt} 片)'
+                        f'</div>'
+                        f'<div style="font-size: 12px; color: #ced4da; margin-bottom: 4px;">{desc_txt}</div>'
+                        f'{wafer_lines_html}'
+                        f'</div></div>'
+                    )
+
+                svg_parts.append('</svg>')
+
+                ksr_html = (
+                    '<style>'
+                    '.ksr-wrap { position: relative; width: 100%; background: #ffffff; border: 1px solid #e9ecef; border-radius: 8px; padding: 14px 10px 18px 10px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }'
+                    '.ksr-stage { position: relative; width: 100%; }'
+                    '.ksr-hit { position: absolute; width: 24px; cursor: pointer; z-index: 10; }'
+                    '.ksr-hit:hover { background: rgba(13, 110, 253, 0.08); border-radius: 4px; }'
+                    '.ksr-tip { display: none; position: absolute; bottom: 102%; background: rgba(33, 37, 41, 0.96); color: #ffffff; padding: 10px 14px; border-radius: 6px; font-size: 12.5px; white-space: nowrap; z-index: 999; box-shadow: 0 4px 14px rgba(0,0,0,0.25); pointer-events: none; line-height: 1.45; }'
+                    '.ksr-hit:hover .ksr-tip { display: block; }'
+                    '</style>'
+                    f'<div class="ksr-wrap"><div class="ksr-stage">{"".join(svg_parts)}{"".join(overlay_divs)}</div></div>'
                 )
 
-                # 圖層 D：直條圖 (支援滑鼠移過去浮動顯示 Shuttle / Wafer ID)
-                color_scale = alt.Scale(
-                    domain=["Normal Run", "Hold Wafer", "Scrap (報廢)"],
-                    range=["#009944", "#92278f", "#d9534f"]
-                )
-                bars_layer = alt.Chart(df_bars).mark_bar(
-                    size=12, stroke="#000000", strokeWidth=1
-                ).encode(
-                    x=alt.X("x_pos:Q", scale=x_scale, axis=None),
-                    y=alt.Y("Count:Q", scale=y_scale, stack="zero", axis=None),
-                    color=alt.Color("Status:N", scale=color_scale, legend=None),
-                    tooltip=[
-                        alt.Tooltip("Step:N", title="Step No."),
-                        alt.Tooltip("Section:N", title="製程區間"),
-                        alt.Tooltip("Status:N", title="狀態"),
-                        alt.Tooltip("Count:Q", title="片數"),
-                        alt.Tooltip("Shuttle / Wafer ID:N", title="Shuttle / Wafer ID"),
-                        alt.Tooltip("Step Description:N", title="站點說明")
-                    ]
-                )
+                st.markdown(ksr_html, unsafe_allow_html=True)
+                st.caption("💡 提示：將滑鼠游標移至任一長條圖或步數上，即可浮動檢視該站點停留的所有 Shuttle Name 與 Wafer ID。")
 
-                # 圖層 E：直條圖頂端片數數字
-                count_text_layer = alt.Chart(df_totals).mark_text(
-                    dy=-12, fontSize=14, fontWeight="bold", color="#000000"
-                ).encode(
-                    x=alt.X("x_pos:Q", scale=x_scale),
-                    y=alt.Y("Total:Q", scale=y_scale),
-                    text="Total:Q",
-                    tooltip=[
-                        alt.Tooltip("Step:N", title="Step No."),
-                        alt.Tooltip("Section:N", title="製程區間"),
-                        alt.Tooltip("Total:Q", title="總片數"),
-                        alt.Tooltip("All Wafers:N", title="所有 Shuttle / Wafer ID")
-                    ]
-                )
-
-                # 圖層 F：底部刻度標示（有 Wafer 的站點顯示黑色粗體 Step No.，無 Wafer 的區間邊界顯示淺灰字）
-                active_tick_layer = alt.Chart(df_totals).mark_tick(
-                    color="#000000", thickness=2, size=8, orient="vertical", dy=4
-                ).encode(
-                    x=alt.X("x_pos:Q", scale=x_scale),
-                    y=alt.Y("y_zero:Q", scale=y_scale)
-                )
-                active_step_text = alt.Chart(df_totals).mark_text(
-                    dy=20, fontSize=13, fontWeight="bold", color="#000000"
-                ).encode(
-                    x=alt.X("x_pos:Q", scale=x_scale),
-                    y=alt.Y("y_zero:Q", scale=y_scale),
-                    text="Step:N"
-                )
-                bound_step_text = alt.Chart(df_bounds_unoccupied).mark_text(
-                    dy=20, fontSize=12, color="#999999"
-                ).encode(
-                    x=alt.X("x_pos:Q", scale=x_scale),
-                    y=alt.Y("y_zero:Q", scale=y_scale),
-                    text="b_label:N"
-                )
-
-                ksr_chart = alt.layer(
-                    vline_layer,
-                    sec_rule_layer,
-                    sec_text_layer,
-                    hline_layer,
-                    right_label_layer,
-                    bars_layer,
-                    count_text_layer,
-                    active_tick_layer,
-                    bound_step_text,
-                    active_step_text
-                ).properties(
-                    height=380
-                ).configure_view(
-                    strokeWidth=0
-                )
-
-                st.altair_chart(ksr_chart, use_container_width=True)
-                st.caption("💡 提示：將滑鼠游標移至任一長條圖上，即可浮動檢視該站點停留的所有 Shuttle Name 與 Wafer ID。")
-
-                # 下方附帶展開式總表，方便複製或核對清單
                 with st.expander("📋 檢視各站點 Shuttle / Wafer ID 明細表"):
                     df_detail_view = df_totals[["Section", "Step", "Total", "All Wafers"]].rename(columns={
                         "Section": "製程區間 (Section)",
